@@ -1,0 +1,9 @@
+# Runtime artifacts
+*.log
+lenovo_driver_plan.txt
+install-state.json
+install-state.json.*
+
+# Editor/OS noise
+.DS_Store
+Thumbs.db
