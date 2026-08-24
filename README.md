@@ -5,6 +5,20 @@ machine model at runtime, queries the official Lenovo driver API, compares
 available drivers with locally installed versions, and installs only the
 selected applicable drivers.
 
+## Fact Standard
+
+The factual standard for Lenovo driver decisions is documented in
+[DRIVER_FACT_STANDARD.md](DRIVER_FACT_STANDARD.md). In short:
+
+- The normal source is the official Lenovo driver list for the installed OS.
+- `Local newer` is usually a source mismatch, not a bug, and is not a reason to
+  downgrade or switch OS lists.
+- The official QuickFix tool is good for one-click current-OS matching, but it
+  is not a dry-run/audit tool.
+- This script remains a current-OS-first dry-run, selection, logging, and
+  integrity-checking tool; `-LatestAcrossOS` is an explicit experimental
+  exception, not the standard update path.
+
 ## Quick Start
 
 Run the batch file from an elevated PowerShell or Command Prompt:
@@ -38,7 +52,8 @@ install_lenovo_drivers.bat -LatestAcrossOS
 1. Resolve the machine model and serial number.
 2. Detect the current Windows edition and architecture.
 3. Resolve the Lenovo machine category ID.
-4. Load the current-OS driver list, with optional cross-OS comparison.
+4. Load the current-OS driver list from the official QuickFix backend
+   (`SearchForXbb`), falling back to the official webpage API.
 5. Filter BIOS/EC packages unless explicitly enabled.
 6. Snapshot local devices and installed applications.
 7. Compare remote and local versions and mark each driver as:
@@ -48,10 +63,14 @@ install_lenovo_drivers.bat -LatestAcrossOS
    - `Local newer`
    - `Unknown`
    - `Not applicable`
-8. Write a detailed plan file and show a compact console table.
-9. Ask which drivers to download and install.
-10. Validate cached or downloaded files, install them, and run one
-    post-install verification pass.
+8. For `Local newer`, use the local install history or the alternate OS list to
+   label the likely source OS instead of treating it as an error.
+9. Write a detailed plan file and show a compact console table.
+10. Ask which drivers to download and install.
+11. Validate cached or downloaded files with size, official MD5 when provided,
+    and a local SHA-256 companion file.
+12. Install them, write a CSV history record, and run one post-install
+    verification pass.
 
 ## Options
 
@@ -74,13 +93,17 @@ fails fast with exit code `2`.
 ## Safety And Integrity
 
 - Current-OS-only comparison is the safe default; cross-OS comparison is an
-  explicit opt-in.
+  explicit experimental opt-in.
+- Driver lists are loaded from the official QuickFix backend first and fall
+  back to the official webpage API if that backend is unavailable.
 - Downloads are stored with unique `DriverCode_FileName` names.
 - File size is checked against the Lenovo driver list when available.
+- Official `MD5` is validated when the data source provides it; cached files
+  are also checked against it before reuse.
 - Fresh downloads receive a local `.sha256` companion file, and cached files
   are validated before reuse.
-- `-SkipHashCheck` bypasses SHA-256 validation but still enforces non-empty
-  files and size checks when available.
+- `-SkipHashCheck` bypasses SHA-256 and official MD5 validation but still
+  enforces non-empty files and size checks when available.
 - Expired Lenovo CDN URLs are refreshed from the current driver list before
   retrying.
 - EXE, MSI, pnputil, and expand runs use a timeout and kill the full process
@@ -104,6 +127,7 @@ fails fast with exit code `2`.
 
 - Log file: `%TEMP%\lenovo_driver_install.log`
 - Plan file: `%TEMP%\lenovo_driver_plan.txt`
+- Driver history: `%TEMP%\lenovo_driver_history.csv`
 - Download directory: `%TEMP%\LenovoDrivers` unless `-DownloadDir` is used.
 
 ## Exit Codes
@@ -148,5 +172,5 @@ $tokens = $null; $errors = $null
 if ($errors) { $errors | Format-List; exit 1 } else { 'PARSE OK' }
 ```
 
-The v4 scope and non-goals are documented in
+The v5 scope and non-goals are documented in
 `lenovo_installer_improvement_plan.md`.
