@@ -1,42 +1,152 @@
 # Lenovo Driver Installer
 
-PowerShell installer that detects the current Lenovo machine model at runtime, queries the official Lenovo driver API, compares available drivers with locally installed versions, and installs only the selected applicable drivers.
+A single-file PowerShell installer for Lenovo machines. It detects the current
+machine model at runtime, queries the official Lenovo driver API, compares
+available drivers with locally installed versions, and installs only the
+selected applicable drivers.
 
-## Files
+## Quick Start
 
-- `install_lenovo_drivers.bat` - thin entry point for elevated PowerShell execution.
-- `install_lenovo_drivers.ps1` - the installer implementation.
-- `lenovo_installer_improvement_plan.md` - balanced v4 scope and contracts.
+Run the batch file from an elevated PowerShell or Command Prompt:
 
-## Usage
+```bat
+install_lenovo_drivers.bat
+```
+
+The batch wrapper requests administrator rights when they are missing. During a
+normal run, the installer prompts you to choose what to install:
+
+- `y` installs update-only drivers.
+- `a` installs all applicable drivers.
+- `s` selects driver numbers manually, for example `1,3,5`.
+- `n` cancels.
+
+A dry run never downloads or installs anything:
+
+```bat
+install_lenovo_drivers.bat -DryRun
+```
+
+To compare newer driver versions from other Lenovo OS entries:
 
 ```bat
 install_lenovo_drivers.bat -LatestAcrossOS
 ```
 
-Interactive choices:
+## How It Works
 
-- `y` - install update-only drivers.
-- `a` - install all applicable drivers.
-- `s` - select driver numbers manually.
-- `n` - cancel.
+1. Resolve the machine model and serial number.
+2. Detect the current Windows edition and architecture.
+3. Resolve the Lenovo machine category ID.
+4. Load the current-OS driver list, with optional cross-OS comparison.
+5. Filter BIOS/EC packages unless explicitly enabled.
+6. Snapshot local devices and installed applications.
+7. Compare remote and local versions and mark each driver as:
+   - `Update`
+   - `Up to date`
+   - `Not installed`
+   - `Local newer`
+   - `Unknown`
+   - `Not applicable`
+8. Write a detailed plan file and show a compact console table.
+9. Ask which drivers to download and install.
+10. Validate cached or downloaded files, install them, and run one
+    post-install verification pass.
 
-## Key Options
+## Options
 
 | Option | Meaning |
 | --- | --- |
 | `-DryRun` | Compare versions without downloading or installing. |
-| `-CurrentOSOnly` | Use only the current OS driver list (default). |
-| `-LatestAcrossOS` | Allow newer drivers from other OS entries. |
-| `-SkipHashCheck` | Skip local SHA-256 cache validation. |
-| `-IncludeBios` | Include BIOS/EC packages. |
-| `-DownloadOnly` | Download only; do not install. |
-| `-DownloadDir` | Download directory. |
-| `-Help` | Show help. |
+| `-CurrentOSOnly` | Use only the current OS driver list. This is the default. |
+| `-LatestAcrossOS` | Allow newer drivers from other OS entries. Cannot be used with `-CurrentOSOnly`. |
+| `-SkipHashCheck` | Skip local SHA-256 companion-file validation. |
+| `-IncludeBios` | Include BIOS/EC packages. They are skipped by default. |
+| `-DownloadOnly` | Download applicable files without installing. |
+| `-DownloadDir <path>` | Override the download directory. Defaults to `%TEMP%\LenovoDrivers`. |
+| `-Model <model>` | Override automatic machine model lookup, for example `82JQ`. |
+| `-Elevated` | Skip elevation. Used internally by the batch wrapper. |
+| `-Help` | Show usage help. |
 
-## Safety Notes
+`-CurrentOSOnly` and `-LatestAcrossOS` are mutually exclusive; passing both
+fails fast with exit code `2`.
 
-- Downloads are cached with SHA-256 companion files and validated before reuse.
-- Installer exit codes `3010` and `1641` are treated as success with reboot required.
-- Stale Lenovo CDN URLs are refreshed from the driver list before retrying.
-- If an Inno wrapper stalls, the script attempts extracted INF installation through `pnputil` or the inner installer as appropriate.
+## Safety And Integrity
+
+- Current-OS-only comparison is the safe default; cross-OS comparison is an
+  explicit opt-in.
+- Downloads are stored with unique `DriverCode_FileName` names.
+- File size is checked against the Lenovo driver list when available.
+- Fresh downloads receive a local `.sha256` companion file, and cached files
+  are validated before reuse.
+- `-SkipHashCheck` bypasses SHA-256 validation but still enforces non-empty
+  files and size checks when available.
+- Expired Lenovo CDN URLs are refreshed from the current driver list before
+  retrying.
+- EXE, MSI, pnputil, and expand runs use a timeout and kill the full process
+  tree when a run stalls.
+- Installer exit codes `3010` and `1641` are treated as success with reboot
+  required.
+- If an Inno-style wrapper stalls or fails, the script attempts extracted INF
+  installation through `pnputil` or an inner installer where available.
+
+## Installer Handling
+
+| File type | Strategy |
+| --- | --- |
+| `.exe` | Silent Inno-style flags, Lenovo `InstallCode` arguments when provided, timeout, log capture, and extracted-installer fallback. |
+| `.msi` | `msiexec /i <file> /qn /norestart` with timeout. |
+| `.inf` | `pnputil /add-driver <file> /install` with timeout. |
+| `.zip` | Expand and install every contained INF. |
+| `.cab` | Expand with `expand.exe` and install every contained INF. |
+
+## Logs And Plans
+
+- Log file: `%TEMP%\lenovo_driver_install.log`
+- Plan file: `%TEMP%\lenovo_driver_plan.txt`
+- Download directory: `%TEMP%\LenovoDrivers` unless `-DownloadDir` is used.
+
+## Exit Codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Completed successfully, or no drivers were selected. |
+| `1` | One or more downloads or installs failed. |
+| `2` | Invalid flag combination. |
+
+## Troubleshooting
+
+- **Machine lookup fails**: run with `-Model "<model>"`, for example
+  `install_lenovo_drivers.bat -Model "82JQ"`.
+- **Current OS entry is not found**: confirm the machine model is correct and
+  the Lenovo API returns an OS list. Do not use `-LatestAcrossOS` as a blind
+  workaround.
+- **A silent installer fails**: the installer log path is printed. Use `s` to
+  skip, or run the downloaded file interactively from
+  `%TEMP%\LenovoDrivers`.
+- **A driver still reports an old version after install**: the post-install
+  recheck logs `unchanged`; a reboot may be required.
+- **Download returns `403`**: the script refreshes the URL from the current
+  driver list and retries once.
+
+## Development
+
+The installer is intentionally kept as one `.ps1` file for easy deployment.
+The file is organized into regions for configuration, logging, system info,
+Lenovo API access, local inventory, version comparison, console output,
+selection, download integrity, installer dispatch, and main orchestration.
+
+Validate syntax with:
+
+```powershell
+$tokens = $null; $errors = $null
+[System.Management.Automation.Language.Parser]::ParseFile(
+  'install_lenovo_drivers.ps1',
+  [ref]$tokens,
+  [ref]$errors
+) | Out-Null
+if ($errors) { $errors | Format-List; exit 1 } else { 'PARSE OK' }
+```
+
+The v4 scope and non-goals are documented in
+`lenovo_installer_improvement_plan.md`.

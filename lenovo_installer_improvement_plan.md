@@ -1,5 +1,9 @@
 # Lenovo Driver Installer Improvement Plan (v4)
 
+> Status: this is the implemented v4 scope contract for
+> `install_lenovo_drivers.ps1`. Future refactors must preserve these decisions;
+> feature requests should be written as a new plan, not folded into this one.
+
 ## Objective
 
 Implement the balanced scope after four weighted cross-audits. The plan favors
@@ -19,6 +23,13 @@ Fast and Simple without removing the pragmatic safety fixes:
 - `n` cancels.
 
 ## Implementation Scope
+
+### C0. Deliverable Shape
+
+- Keep the installer as one `.ps1` file plus the thin `.bat` wrapper.
+- Keep the public CLI contract defined by this plan.
+- Organize the script into clear regions; do not introduce a module split
+  unless a later task explicitly changes the deployment shape.
 
 ### C1. OS Mode And CLI
 

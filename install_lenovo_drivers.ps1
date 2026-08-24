@@ -1,3 +1,48 @@
+<#
+.SYNOPSIS
+Detects, compares, downloads, and installs applicable Lenovo drivers for the current machine.
+
+.DESCRIPTION
+Queries the official Lenovo driver API, matches drivers against locally installed versions,
+and installs selected drivers. Current-OS-only comparison is the default; use -LatestAcrossOS
+to opt into newer drivers from other OS entries.
+
+.PARAMETER DryRun
+Compare versions and write a plan without downloading or installing files.
+
+.PARAMETER IncludeBios
+Include BIOS/EC packages. They are skipped by default.
+
+.PARAMETER LatestAcrossOS
+Allow newer versions of a driver from other OS entries. Cannot be combined with -CurrentOSOnly.
+
+.PARAMETER CurrentOSOnly
+Use only the current OS driver list. This is the default and exists for explicit callers.
+
+.PARAMETER DownloadOnly
+Download applicable files without installing them.
+
+.PARAMETER SkipHashCheck
+Skip SHA-256 companion-file validation for cached or fresh downloads.
+
+.PARAMETER Elevated
+Skip elevation. Used internally by the .bat wrapper.
+
+.PARAMETER Help
+Show usage help.
+
+.PARAMETER Model
+Override the automatic Lenovo machine model lookup.
+
+.PARAMETER DownloadDir
+Directory used for downloads. Defaults to %TEMP%\LenovoDrivers.
+
+.EXAMPLE
+.\install_lenovo_drivers.bat -DryRun
+
+.EXAMPLE
+.\install_lenovo_drivers.bat -LatestAcrossOS
+#>
 param(
     [switch]$DryRun,
     [switch]$IncludeBios,
@@ -19,11 +64,14 @@ try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 } catch {}
 
+#region Configuration
 $ApiBase = 'https://newsupport.lenovo.com.cn/api'
 $StartTime = Get-Date
 $LogPath = Join-Path $env:TEMP 'lenovo_driver_install.log'
 $PlanPath = Join-Path $env:TEMP 'lenovo_driver_plan.txt'
+#endregion
 
+#region Logging
 function Write-Log {
     param(
         [string]$Message,
@@ -36,7 +84,9 @@ function Write-Log {
     } catch {}
     Write-Host $line
 }
+#endregion
 
+#region Environment and system info
 function Test-Admin {
     try {
         $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -45,19 +95,6 @@ function Test-Admin {
     } catch {
         return $false
     }
-}
-
-function Invoke-LenovoApi {
-    param([string]$RelativeUrl)
-    $headers = @{
-        'User-Agent' = 'Mozilla/5.0'
-        'Referer'    = 'https://newsupport.lenovo.com.cn/driveDownloads_index.html'
-    }
-    $response = Invoke-RestMethod -Uri ($ApiBase + $RelativeUrl) -Headers $headers -TimeoutSec 30
-    if ([string]$response.statusCode -ne '200') {
-        throw "Lenovo API returned $($response.statusCode) for $RelativeUrl : $($response.message)"
-    }
-    return $response
 }
 
 function Get-MachineInfo {
@@ -90,6 +127,21 @@ function Get-OSInfo {
         OsName  = "$osKind $bits"
         Arch    = $bits
     }
+}
+#endregion
+
+#region Lenovo API
+function Invoke-LenovoApi {
+    param([string]$RelativeUrl)
+    $headers = @{
+        'User-Agent' = 'Mozilla/5.0'
+        'Referer'    = 'https://newsupport.lenovo.com.cn/driveDownloads_index.html'
+    }
+    $response = Invoke-RestMethod -Uri ($ApiBase + $RelativeUrl) -Headers $headers -TimeoutSec 30
+    if ([string]$response.statusCode -ne '200') {
+        throw "Lenovo API returned $($response.statusCode) for $RelativeUrl : $($response.message)"
+    }
+    return $response
 }
 
 function Resolve-LenovoCategoryId {
@@ -200,6 +252,9 @@ function Get-RefreshedDriverUrl {
     return ''
 }
 
+#endregion
+
+#region Local device and app inventory
 function Get-LocalDeviceSnapshot {
     $devices = @()
     try {
@@ -234,6 +289,9 @@ function Get-InstalledApps {
     return $apps
 }
 
+#endregion
+
+#region Driver version comparison
 function Get-InstalledSoftwareVersion {
     param(
         [string]$DriverName,
@@ -536,6 +594,9 @@ function Format-Cell {
     return ($text + (' ' * $pad))
 }
 
+#endregion
+
+#region Console and plan output
 function Show-DriverTable {
     param([object[]]$Drivers)
     $indexWidth = 3
@@ -624,6 +685,9 @@ function Write-PlanFile {
     return $Path
 }
 
+#endregion
+
+#region Driver selection
 function Select-LatestDrivers {
     param(
         [object[]]$Drivers,
@@ -645,6 +709,9 @@ function Select-LatestDrivers {
     return $selected
 }
 
+#endregion
+
+#region Download integrity
 function ConvertTo-Bytes {
     param([string]$SizeText)
     if (-not $SizeText) { return 0 }
@@ -662,6 +729,20 @@ function ConvertTo-Bytes {
         default { }
     }
     return [int64]$value
+}
+
+function Get-SizeTolerance {
+    param([int64]$ExpectedBytes)
+    return [int64][math]::Max(1024, [double]($ExpectedBytes * 0.02))
+}
+
+function Test-FileSizeMatch {
+    param(
+        [int64]$ExpectedBytes,
+        [int64]$ActualBytes
+    )
+    if ($ExpectedBytes -le 0) { return $true }
+    return [math]::Abs($ActualBytes - $ExpectedBytes) -le (Get-SizeTolerance -ExpectedBytes $ExpectedBytes)
 }
 
 function Get-FileSha256 {
@@ -726,6 +807,14 @@ function Invoke-DownloadWithRetry {
         }
     }
     return $false
+}
+
+#endregion
+
+#region Process and installer helpers
+function Test-RebootExitCode {
+    param([int]$ExitCode)
+    return ($ExitCode -eq 3010 -or $ExitCode -eq 1641)
 }
 
 function Invoke-ProcessWithTimeout {
@@ -871,7 +960,7 @@ function Invoke-ExtractedDriverFallback {
             Write-Log ("[{0}] Inner installer timed out and its process tree was killed." -f $Driver.DriverCode) 'ERROR'
             return [pscustomobject]@{ Used = $true; ExitCode = -1 }
         }
-        if ($result.ExitCode -eq 3010 -or $result.ExitCode -eq 1641) {
+        if (Test-RebootExitCode -ExitCode $result.ExitCode) {
             Write-Log ("[{0}] Inner installer succeeded; reboot may be required (exit {1})." -f $Driver.DriverCode, $result.ExitCode) 'WARN'
             return [pscustomobject]@{ Used = $true; ExitCode = 0 }
         }
@@ -897,7 +986,7 @@ function Install-DriverFile {
                 Write-Log "MSI timed out and its process tree was killed: $FilePath" 'ERROR'
                 return -1
             }
-            if ($result.ExitCode -eq 3010 -or $result.ExitCode -eq 1641) {
+            if (Test-RebootExitCode -ExitCode $result.ExitCode) {
                 Write-Log ("MSI install succeeded; reboot may be required (exit {0})." -f $result.ExitCode) 'WARN'
                 return 0
             }
@@ -975,7 +1064,7 @@ function Install-DriverFile {
                 Write-Log ("[{0}] EXE timed out and no extracted installer fallback was available." -f $Driver.DriverCode) 'ERROR'
                 return -1
             }
-            if ($result.ExitCode -eq 3010 -or $result.ExitCode -eq 1641) {
+            if (Test-RebootExitCode -ExitCode $result.ExitCode) {
                 Write-Log ("[{0}] Install succeeded; reboot may be required (exit {1})." -f $Driver.DriverCode, $result.ExitCode) 'WARN'
                 return 0
             }
@@ -1011,6 +1100,9 @@ function Install-DriverFile {
     }
 }
 
+#endregion
+
+#region Help and interactive selection
 function Show-Help {
     $help = @'
 Lenovo Driver Installer
@@ -1038,6 +1130,9 @@ Interactive choices:
 
 Plan file:
   %TEMP%\lenovo_driver_plan.txt
+
+Log file:
+  %TEMP%\lenovo_driver_install.log
 '@
     Write-Host $help
 }
@@ -1105,6 +1200,9 @@ function Select-InteractiveDrivers {
     return $null
 }
 
+#endregion
+
+#region Main
 if ($Help) {
     Show-Help
     exit 0
@@ -1297,17 +1395,12 @@ foreach ($driver in $selected) {
             $needsDownload = $true
             if (Test-Path -LiteralPath $outFile) {
                 $existingSize = (Get-Item -LiteralPath $outFile).Length
-                if ($expectedSize -gt 0) {
-                    $tolerance = [int64][math]::Max(1024, [double]($expectedSize * 0.02))
-                    if ([math]::Abs($existingSize - $expectedSize) -le $tolerance) {
-                        $needsDownload = $false
-                    } else {
-                        Write-Log ("[{0}] Cached file size mismatch, redownloading." -f $driver.DriverCode) 'WARN'
-                        Remove-Item -LiteralPath $outFile -Force
-                        Remove-Item -LiteralPath ($outFile + '.sha256') -Force -ErrorAction SilentlyContinue
-                    }
-                } elseif ($existingSize -gt 0) {
+                if (Test-FileSizeMatch -ExpectedBytes $expectedSize -ActualBytes $existingSize) {
                     $needsDownload = $false
+                } else {
+                    Write-Log ("[{0}] Cached file size mismatch, redownloading." -f $driver.DriverCode) 'WARN'
+                    Remove-Item -LiteralPath $outFile -Force
+                    Remove-Item -LiteralPath ($outFile + '.sha256') -Force -ErrorAction SilentlyContinue
                 }
                 if ($needsDownload -eq $false -and -not (Test-HashCompanion $outFile)) {
                     Write-Log ("[{0}] Cached file hash missing or mismatch, redownloading." -f $driver.DriverCode) 'WARN'
@@ -1322,12 +1415,9 @@ foreach ($driver in $selected) {
             if ($needsDownload) {
                 $null = Invoke-DownloadWithRetry -Url $driver.FilePath -OutFile $outFile
             }
-            if ($expectedSize -gt 0) {
-                $downloadedSize = (Get-Item -LiteralPath $outFile).Length
-                $tolerance = [int64][math]::Max(1024, [double]($expectedSize * 0.02))
-                if ([math]::Abs($downloadedSize - $expectedSize) -gt $tolerance) {
-                    throw "Downloaded size mismatch: expected $expectedSize, got $downloadedSize"
-                }
+            $downloadedSize = (Get-Item -LiteralPath $outFile).Length
+            if (-not (Test-FileSizeMatch -ExpectedBytes $expectedSize -ActualBytes $downloadedSize)) {
+                throw "Downloaded size mismatch: expected $expectedSize, got $downloadedSize"
             }
             if ($needsDownload -and -not $SkipHashCheck) {
                 $downloadedHash = Get-FileSha256 $outFile
@@ -1414,3 +1504,4 @@ if ($failed.Count -gt 0) {
     exit 1
 }
 exit 0
+#endregion

@@ -1,38 +1,47 @@
-# Backend Development Guidelines
+# Backend / PowerShell Runtime Guidelines
 
-> Best practices for backend development in this project.
+> Best practices for the non-UI runtime code in this repository.
 
 ---
 
 ## Overview
 
-This directory contains guidelines for backend development. Fill in each file with your project's specific conventions.
+This is a single-repo Lenovo driver installer. The runtime layer is one
+PowerShell script, `install_lenovo_drivers.ps1`, with a thin `.bat` wrapper.
+There is no web backend, no frontend application, and no database.
 
 ---
 
 ## Guidelines Index
 
-| Guide | Description | Status |
-|-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
-| [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
+| Guide | Description |
+|-------|-------------|
+| [Directory Structure](./directory-structure.md) | Repository layout and script organization |
+| [Error Handling](./error-handling.md) | Failure propagation, exit codes, and fallbacks |
+| [Logging Guidelines](./logging-guidelines.md) | Log format, levels, and artifacts |
+| [Quality Guidelines](./quality-guidelines.md) | Script structure, naming, and verification |
 
 ---
 
-## How to Fill These Guidelines
+## Pre-Development Checklist
 
-For each guideline file:
-
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
-
-The goal is to help AI assistants and new team members understand how YOUR project works.
+- [ ] Read `README.md` and `lenovo_installer_improvement_plan.md` before
+      changing CLI behavior.
+- [ ] Preserve the single-file PowerShell deployment shape unless a task
+      explicitly changes it.
+- [ ] Keep new code inside the matching `#region` in
+      `install_lenovo_drivers.ps1`.
+- [ ] Keep every public parameter, interactive choice, exit code, cache rule,
+      and installer fallback intact unless the task changes that contract.
+- [ ] Run the PowerShell parser validation from
+      [Quality Guidelines](./quality-guidelines.md).
 
 ---
 
-**Language**: All documentation should be written in **English**.
+## Quality Check
+
+- [ ] No template placeholders remain.
+- [ ] Claims reference real files in this repository.
+- [ ] New helpers are backed by repeated code or a clear local pattern.
+- [ ] No new external dependencies were added.
+- [ ] `git diff --check` is clean.

@@ -1,54 +1,76 @@
 # Directory Structure
 
-> How backend code is organized in this project.
+> How this repository is organized.
 
 ---
 
 ## Overview
 
-<!--
-Document your project's backend directory structure here.
-
-Questions to answer:
-- How are modules/packages organized?
-- Where does business logic live?
-- Where are API endpoints defined?
-- How are utilities and helpers organized?
--->
-
-(To be filled by the team)
+The project deliberately keeps deployment small: one PowerShell installer, one
+batch wrapper, and two user-facing documents. There are no packages, workspaces,
+or build artifacts.
 
 ---
 
 ## Directory Layout
 
+```text
+install_lenovo_drivers.ps1         Main installer runtime and CLI
+install_lenovo_drivers.bat         Thin elevated entry point
+README.md                          Operational guide and troubleshooting
+lenovo_installer_improvement_plan.md  Implemented v4 scope contract
+.trellis/                          Trellis workflow, tasks, specs, journals
 ```
-<!-- Replace with your actual structure -->
-src/
-├── ...
-└── ...
-```
+
+---
+
+## Script Organization
+
+`install_lenovo_drivers.ps1` is intentionally a single file. Its sections are
+declared with `#region` blocks so maintainers can navigate it without a module
+split:
+
+| Region | Contents |
+|--------|----------|
+| Configuration | API base URL, log path, plan path |
+| Logging | `Write-Log` |
+| Environment and system info | Admin check, machine info, OS info |
+| Lenovo API | API calls, category lookup, driver list parsing |
+| Local device and app inventory | PnP devices and installed applications |
+| Driver version comparison | Applicability and version matching |
+| Console and plan output | Table, summary, plan file |
+| Driver selection | Latest-driver grouping and interactive selection |
+| Download integrity | Size, SHA-256 companion, retry |
+| Process and installer helpers | Timeouts, pnputil, MSI/EXE/zip/cab handling |
+| Help and interactive selection | `-Help` and user prompts |
+| Main | Orchestration from startup through exit |
 
 ---
 
 ## Module Organization
 
-<!-- How should new features/modules be organized? -->
-
-(To be filled by the team)
+- Keep all runtime logic in `install_lenovo_drivers.ps1`.
+- Keep `install_lenovo_drivers.bat` thin: it only invokes the script with
+  `-ExecutionPolicy Bypass` and forwards exit codes.
+- Do not create PowerShell modules unless a future task changes the deployment
+  contract.
 
 ---
 
 ## Naming Conventions
 
-<!-- File and folder naming rules -->
-
-(To be filled by the team)
+- Use PowerShell approved verbs for functions: `Get-`, `Test-`, `Write-`,
+  `Show-`, `Select-`, `ConvertTo-`, `Invoke-`, `Format-`, `Read-`, `Find-`,
+  `Install-`, `Resolve-`, `Compare-`, `Parse-`.
+- Use PascalCase for functions and parameters.
+- Use `$camelCase` for local variables.
+- Use `#region <Name>` / `#endregion` for script sections.
 
 ---
 
 ## Examples
 
-<!-- Link to well-organized modules as examples -->
-
-(To be filled by the team)
+- Region boundaries: `install_lenovo_drivers.ps1` lines starting with
+  `#region Configuration` through `#region Main`.
+- Thin wrapper: `install_lenovo_drivers.bat` is six lines and delegates
+  directly to the PowerShell file.
