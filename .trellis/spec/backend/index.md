@@ -7,9 +7,9 @@
 ## Overview
 
 This is a single-repo Lenovo driver installer. The runtime is split into a
-side-effect shell, `install_lenovo_drivers.ps1`, and a deterministic core,
-`lenovo_driver_core.ps1`, with a thin `.bat` wrapper. There is no web backend,
-no frontend application, and no database.
+side-effect shell, `install_lenovo_drivers.ps1`, a deterministic core,
+`lenovo_driver_core.ps1`, and a WPF presentation layer,
+`lenovo_driver_wpf.ps1`, with thin `.bat` wrappers.
 
 ---
 

@@ -7,8 +7,9 @@
 ## Overview
 
 The project deliberately keeps deployment small: one deterministic PowerShell
-core, one side-effect PowerShell shell, one batch wrapper, and two user-facing
-documents. There are no packages, workspaces, or build artifacts.
+core, one side-effect PowerShell shell, a WPF presentation layer, two thin
+batch wrappers, and user-facing documents. There are no packages, workspaces,
+or build artifacts.
 
 ---
 
@@ -18,7 +19,9 @@ documents. There are no packages, workspaces, or build artifacts.
 install_lenovo_drivers.ps1         Side-effect shell, CLI, and orchestration
 lenovo_driver_core.ps1             Deterministic decision logic
 lenovo_driver_core.tests.ps1       Offline pure-core self-tests
-install_lenovo_drivers.bat         Thin elevated entry point
+lenovo_driver_wpf.ps1              WPF presentation layer
+install_lenovo_drivers.bat         Thin elevated CLI entry point
+install_lenovo_drivers_wpf.bat     Thin elevated WPF entry point
 README.md                          Operational guide and troubleshooting
 lenovo_installer_improvement_plan.md  Implemented v5 scope contract
 .trellis/                          Trellis workflow, tasks, specs, journals
@@ -50,6 +53,12 @@ lenovo_installer_improvement_plan.md  Implemented v5 scope contract
 `lenovo_driver_core.ps1` is the deterministic core. It must not call network,
 registry, PnP, file, console, `Read-Host`, or process APIs. Its functions take
 plain driver/device/history objects and return plain results.
+
+`lenovo_driver_wpf.ps1` is the desktop presentation layer. It must not contain
+driver matching, source attribution, or install logic. It starts the existing
+shell in a child PowerShell process, reads the JSON driver view, renders the
+table, and forwards checked driver codes back to the shell with
+`-GuiInstallCodes`.
 
 ---
 

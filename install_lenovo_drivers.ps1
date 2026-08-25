@@ -1,11 +1,12 @@
-<#
+﻿<#
 .SYNOPSIS
 Detects, compares, downloads, and installs applicable Lenovo drivers for the current machine.
 
 .DESCRIPTION
 Queries the official Lenovo driver API, matches drivers against locally installed versions,
 and installs selected drivers. Current-OS-only comparison is the default; use -LatestAcrossOS
-to opt into newer drivers from other OS entries.
+to opt into newer drivers from other OS entries, or -TargetOS to show the official list for a
+specific supported OS without merging lists.
 
 .PARAMETER DryRun
 Compare versions and write a plan without downloading or installing files.
@@ -18,6 +19,11 @@ Allow newer versions of a driver from other OS entries. Cannot be combined with 
 
 .PARAMETER CurrentOSOnly
 Use only the current OS driver list. This is the default and exists for explicit callers.
+
+.PARAMETER TargetOS
+Show and compare against the official driver list for one supported OS. Accepts an OSID
+such as 248 or an OS name such as "Windows 11". Cannot be combined with -LatestAcrossOS
+or -CurrentOSOnly.
 
 .PARAMETER DownloadOnly
 Download applicable files without installing them.
@@ -42,18 +48,24 @@ Directory used for downloads. Defaults to %TEMP%\LenovoDrivers.
 
 .EXAMPLE
 .\install_lenovo_drivers.bat -LatestAcrossOS
+
+.EXAMPLE
+.\install_lenovo_drivers.bat -DryRun -TargetOS 248
 #>
 param(
     [switch]$DryRun,
     [switch]$IncludeBios,
     [switch]$LatestAcrossOS,
     [switch]$CurrentOSOnly,
+    [string]$TargetOS = '',
     [switch]$DownloadOnly,
     [switch]$SkipHashCheck,
     [switch]$Elevated,
     [switch]$Help,
     [string]$Model = '',
-    [string]$DownloadDir = ''
+    [string]$DownloadDir = '',
+    [string]$GuiExportPath = '',
+    [string]$GuiInstallCodes = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -473,6 +485,95 @@ function Write-PlanFile {
     return $Path
 }
 
+function Compare-OsDriverView {
+    param(
+        [string]$ListOsId,
+        [string]$CategoryId,
+        [object[]]$OsList,
+        [string]$CurrentSystemOsId,
+        [object[]]$LocalDevices,
+        [object[]]$InstalledApps,
+        [object]$SoftwareSnapshot,
+        [object[]]$DriverHistory,
+        [bool]$IncludeBios = $false
+    )
+    $driverResult = Get-OfficialDriverObjects -CategoryId $CategoryId -OsId $ListOsId -PreferredSource 'QuickFix'
+    if (-not $driverResult.Source -or $driverResult.Drivers.Count -eq 0) {
+        throw 'Could not load the official driver list from QuickFix or the webpage API.'
+    }
+    $viewDrivers = @($driverResult.Drivers)
+    $dataSource = $driverResult.Source
+    Write-Log ("Driver source : {0} (OSID {1})" -f $dataSource, $ListOsId)
+
+    $viewDrivers = @($viewDrivers | Where-Object {
+        ($_.Status -eq '' -or $_.Status -ne '0') -and
+        ($_.IsEnable -eq '' -or $_.IsEnable -ne '0')
+    })
+    if (-not $IncludeBios) {
+        $beforeBios = $viewDrivers.Count
+        $viewDrivers = @($viewDrivers | Where-Object { $_.DriverName -notmatch 'BIOS|EC Version' })
+        if ($viewDrivers.Count -lt $beforeBios) {
+            Write-Log 'BIOS/EC package skipped by default. Use -IncludeBios to install it.' 'WARN'
+        }
+    }
+    $installableExts = @('.exe', '.msi', '.zip', '.inf', '.cab')
+    $beforeExt = $viewDrivers.Count
+    $viewDrivers = @($viewDrivers | Where-Object {
+        $installableExts -contains ([System.IO.Path]::GetExtension($_.FileName).ToLowerInvariant())
+    })
+    if ($viewDrivers.Count -lt $beforeExt) {
+        Write-Log 'Non-installable files (readme/text/etc.) skipped.' 'WARN'
+    }
+
+    $selected = @(Select-LatestDrivers -Drivers $viewDrivers -CurrentOsId $ListOsId)
+    Write-Log ("Drivers selected : {0}" -f $selected.Count)
+    Write-Log 'Comparing with locally installed versions...'
+    $currentSourceMap = Initialize-CurrentSourceMap -Drivers $selected
+    $alternateSourceMap = @{}
+    foreach ($driver in $selected) {
+        if (-not (Test-DriverApplicable -Driver $driver -LocalDevices $LocalDevices)) {
+            $driver.CompareStatus = 'Not applicable'
+            continue
+        }
+        $driver.LocalVersion = Get-LocalDriverVersion -Driver $driver -LocalDevices $LocalDevices -InstalledApps $InstalledApps -SoftwareSnapshot $SoftwareSnapshot
+        $driver.CompareStatus = Compare-DriverStatus -Remote $driver.Version -Local $driver.LocalVersion -Vendor $driver.LocalVendor
+        if ($driver.LocalVersion) {
+            if ($driver.CompareStatus -eq 'Local newer' -and $script:AlternateSourceMap -eq $null) {
+                $alternateSourceMap = Initialize-AlternateSourceMap -CategoryId $CategoryId -OsList $OsList -SysId $CurrentSystemOsId -PreferredSource $dataSource
+            } elseif ($script:AlternateSourceMap) {
+                $alternateSourceMap = $script:AlternateSourceMap
+            }
+            $driver.SourceAudit = Get-LocalDriverSourceAudit -Driver $driver -LocalDevices $LocalDevices -History $DriverHistory -CurrentSourceMap $currentSourceMap -AlternateSourceMap $alternateSourceMap
+            if ($driver.CompareStatus -eq 'Local newer') {
+                $driver.CompareSource = Resolve-DriverSourceLabel -Driver $driver -History $DriverHistory -AlternateSourceMap $alternateSourceMap -SourceAudit $driver.SourceAudit
+                Write-Log ("[{0}] {1}" -f $driver.DriverCode, $driver.CompareSource) 'WARN'
+            }
+        }
+    }
+
+    try {
+        Write-PlanFile -Drivers $selected -Path $PlanPath | Out-Null
+        Write-Log ("Plan file : {0}" -f $PlanPath)
+    } catch {
+        Write-Log ("Could not write plan file: {0}" -f $_.Exception.Message) 'WARN'
+    }
+    Write-Host ''
+    Write-Host 'Driver version comparison:' -ForegroundColor Cyan
+    Show-DriverTable -Drivers $selected
+    Show-StatusSummary -Drivers $selected
+
+    $allApplicable = @($selected | Where-Object { $_.CompareStatus -ne 'Not applicable' })
+    $updateDrivers = @($allApplicable | Where-Object { $_.CompareStatus -eq 'Update' })
+    Write-Log ("Applicable candidates : {0}; update-only drivers : {1}" -f $allApplicable.Count, $updateDrivers.Count)
+    return [pscustomobject]@{
+        Selected    = $selected
+        Applicable  = $allApplicable
+        Updates     = $updateDrivers
+        Source      = $dataSource
+        OsId        = $ListOsId
+    }
+}
+
 #endregion
 
 #region Driver selection
@@ -575,10 +676,12 @@ function Write-DriverHistoryRecord {
     param(
         [object]$Driver,
         [string]$Result,
-        [string]$Message = ''
+        [string]$Message = '',
+        [string]$VerifiedVersion = '',
+        [string]$BeforeVersion = ''
     )
-    $record = Build-DriverHistoryRecord -Driver $Driver -Result $Result -Message $Message -Timestamp (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-    $header = 'Timestamp,DriverCode,OSID,OSName,DriverName,Version,FileName,MD5,Source,Result,Message'
+    $record = Build-DriverHistoryRecord -Driver $Driver -Result $Result -Message $Message -VerifiedVersion $VerifiedVersion -BeforeVersion $BeforeVersion -Timestamp (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+    $header = 'Timestamp,DriverCode,OSID,OSName,DriverName,Version,VerifiedVersion,BeforeVersion,FileName,MD5,Source,Result,Message'
     if (-not (Test-Path -LiteralPath $HistoryPath)) {
         Set-Content -LiteralPath $HistoryPath -Value $header -Encoding UTF8
     }
@@ -593,42 +696,185 @@ function Write-DriverHistoryRecord {
 
 
 $script:AlternateSourceMap = $null
-function Get-DriverSourceLabel {
+$script:DriverImportEvidence = $null
+
+function Initialize-AlternateSourceMap {
     param(
-        [object]$Driver,
-        [object[]]$History,
         [string]$CategoryId,
         [object[]]$OsList,
         [string]$SysId,
         [string]$PreferredSource
     )
-    if ($null -eq $script:AlternateSourceMap) {
-        $script:AlternateSourceMap = @{}
-        foreach ($alt in @($OsList)) {
-            $altId = [string]$alt.OSID
-            if ($altId -eq $SysId) { continue }
-            try {
-                $altResult = Get-OfficialDriverObjects -CategoryId $CategoryId -OsId $altId -PreferredSource $PreferredSource
-                foreach ($altDriver in @($altResult.Drivers)) {
-                    foreach ($versionKey in @(Get-VersionMatchKeys $altDriver.Version)) {
-                        $nameKey = '{0}|{1}' -f ([string]$altDriver.DriverName).Trim(), $versionKey
-                        $codeKey = '{0}|{1}' -f $altDriver.DriverCode, $versionKey
-                        foreach ($key in @($nameKey, $codeKey)) {
-                            if (-not $script:AlternateSourceMap.ContainsKey($key)) {
-                                $script:AlternateSourceMap[$key] = [pscustomobject]@{
-                                    OSID   = [string]$altDriver.OSID
-                                    OSName = [string]$altDriver.OsName
-                                }
+    if ($null -ne $script:AlternateSourceMap) { return $script:AlternateSourceMap }
+    $script:AlternateSourceMap = @{}
+    foreach ($alt in @($OsList)) {
+        $altId = [string]$alt.OSID
+        if ($altId -eq $SysId) { continue }
+        try {
+            $altResult = Get-OfficialDriverObjects -CategoryId $CategoryId -OsId $altId -PreferredSource $PreferredSource
+            foreach ($altDriver in @($altResult.Drivers)) {
+                foreach ($versionKey in @(Get-VersionMatchKeys $altDriver.Version)) {
+                    $nameKey = '{0}|{1}' -f ([string]$altDriver.DriverName).Trim(), $versionKey
+                    $codeKey = '{0}|{1}' -f $altDriver.DriverCode, $versionKey
+                    foreach ($key in @($nameKey, $codeKey)) {
+                        if (-not $script:AlternateSourceMap.ContainsKey($key)) {
+                            $script:AlternateSourceMap[$key] = [pscustomobject]@{
+                                OSID   = [string]$altDriver.OSID
+                                OSName = [string]$altDriver.OsName
                             }
                         }
                     }
                 }
-            } catch {
-                Write-Log ("Could not load alternate source for attribution ({0}): {1}" -f $altId, $_.Exception.Message) 'WARN'
+            }
+        } catch {
+            Write-Log ("Could not load alternate source for attribution ({0}): {1}" -f $altId, $_.Exception.Message) 'WARN'
+        }
+    }
+    return $script:AlternateSourceMap
+}
+
+function Initialize-CurrentSourceMap {
+    param(
+        [object[]]$Drivers
+    )
+    $map = @{}
+    foreach ($d in @($Drivers)) {
+        foreach ($versionKey in @(Get-VersionMatchKeys $d.Version)) {
+            $nameKey = '{0}|{1}' -f ([string]$d.DriverName).Trim(), $versionKey
+            $codeKey = '{0}|{1}' -f $d.DriverCode, $versionKey
+            foreach ($key in @($nameKey, $codeKey)) {
+                if (-not $map.ContainsKey($key)) {
+                    $map[$key] = [pscustomobject]@{
+                        OSID   = [string]$d.OSID
+                        OSName = [string]$d.OsName
+                    }
+                }
             }
         }
     }
-    return Resolve-DriverSourceLabel -Driver $Driver -History $History -AlternateSourceMap $script:AlternateSourceMap
+    return $map
+}
+
+function Get-DriverImportEvidence {
+    $rows = @()
+    $logs = @(
+        'C:\Windows\INF\setupapi.offline.log',
+        'C:\Windows\INF\setupapi.dev.log',
+        'C:\Windows\INF\setupapi.setup.log'
+    )
+    foreach ($log in $logs) {
+        if (-not (Test-Path -LiteralPath $log)) { continue }
+        try {
+            $lines = @(Get-Content -LiteralPath $log -Encoding Default -ErrorAction Stop)
+            $rows += @(ConvertFrom-ImportLogText -Lines $lines -LogPath $log)
+        } catch {
+            Write-Log ("Could not parse driver import log {0}: {1}" -f $log, $_.Exception.Message) 'WARN'
+        }
+    }
+    return @($rows)
+}
+
+function Get-DriverPackageEvidence {
+    param(
+        [object]$MatchedDevice
+    )
+    $infName = [string]$MatchedDevice.InfName
+    $driverVersion = [string]$MatchedDevice.DriverVersion
+    if (-not $infName) { return $null }
+    if ($null -eq $script:DriverImportEvidence) {
+        $script:DriverImportEvidence = @(Get-DriverImportEvidence)
+    }
+
+    $infLeaf = Split-Path -Leaf $infName
+    $infParent = Split-Path -Parent $infName
+    $packageDirFromInf = ''
+    if ($infParent -match 'DriverStore\\FileRepository') {
+        $packageDirFromInf = $infParent
+    }
+
+    $matching = @($script:DriverImportEvidence | Where-Object {
+        $rowInf = [string]$_.InfName
+        $rowOem = [string]$_.OemInfName
+        $rowDir = if ([string]$_.PackageDir) { Split-Path -Leaf ([string]$_.PackageDir) } else { '' }
+        ($rowInf -and $rowInf -ieq $infLeaf) -or
+        ($rowOem -and $rowOem -ieq $infLeaf) -or
+        ($packageDirFromInf -and $rowDir -and $rowDir -ieq (Split-Path -Leaf $packageDirFromInf))
+    })
+    $import = @($matching | Where-Object { $_.Version -eq $driverVersion -or -not $_.Version } | Sort-Object LineNumber -Descending | Select-Object -First 1)
+    if (-not $import -and $matching.Count -gt 0) {
+        $import = @($matching | Sort-Object LineNumber -Descending | Select-Object -First 1)
+    }
+
+    $packageDir = ''
+    $packageCreation = ''
+    if ($import -and $import.PackageDir) {
+        $baseName = Split-Path -Leaf ([string]$import.PackageDir)
+        $candidate = Join-Path 'C:\Windows\System32\DriverStore\FileRepository' $baseName
+        if (Test-Path -LiteralPath $candidate) {
+            $packageDir = $candidate
+            try { $packageCreation = [string](Get-Item -LiteralPath $candidate).CreationTime } catch {}
+        }
+    }
+    if (-not $packageDir -and $packageDirFromInf) {
+        $packageDir = $packageDirFromInf
+        try { $packageCreation = [string](Get-Item -LiteralPath $packageDir).CreationTime } catch {}
+    }
+
+    return [pscustomobject]@{
+        DriverVersion       = $driverVersion
+        InfName             = $infName
+        OemInfName          = if ($import) { [string]$import.OemInfName } else { '' }
+        ImportSource        = if ($import) { [string]$import.SourcePath } else { '' }
+        ImportCommand       = if ($import) { [string]$import.Command } else { '' }
+        ImportLog           = if ($import) { [string]$import.LogPath } else { '' }
+        ImportLine          = if ($import) { [int]$import.LineNumber } else { 0 }
+        ImportKind          = if ($import -and $import.LogPath -match 'offline') { 'Offline' } elseif ($import) { 'Online' } else { '' }
+        PackageDir          = $packageDir
+        PackageCreationTime = $packageCreation
+        PackageDriverVer    = if ($import) { [string]$import.Version } else { '' }
+    }
+}
+
+function Get-LocalDriverSourceAudit {
+    param(
+        [object]$Driver,
+        [object[]]$LocalDevices,
+        [object[]]$History,
+        [hashtable]$CurrentSourceMap,
+        [hashtable]$AlternateSourceMap
+    )
+    $matchedDevices = @(Get-MatchingLocalDevices -Driver $Driver -LocalDevices $LocalDevices)
+    $deviceEvidence = @()
+    foreach ($matchedDevice in $matchedDevices) {
+        $props = @{}
+        foreach ($key in @('DEVPKEY_Device_DriverVersion', 'DEVPKEY_Device_DriverDate', 'DEVPKEY_Device_DriverInfPath', 'DEVPKEY_Device_DriverProvider', 'DEVPKEY_Device_DriverDesc', 'DEVPKEY_Device_InstallDate')) {
+            try {
+                $value = Get-PnpDeviceProperty -InstanceId $matchedDevice.PnpDeviceId -KeyName $key -ErrorAction Stop
+                if ($value.Data) { $props[$key] = [string]$value.Data }
+            } catch {}
+        }
+        $device = [pscustomobject]@{
+            DeviceName   = [string]$matchedDevice.Name
+            DriverVersion = [string]$props['DEVPKEY_Device_DriverVersion']
+            DriverDate   = [string]$props['DEVPKEY_Device_DriverDate']
+            InfName      = [string]$props['DEVPKEY_Device_DriverInfPath']
+            ProviderName = [string]$props['DEVPKEY_Device_DriverProvider']
+            InstallDate  = [string]$props['DEVPKEY_Device_InstallDate']
+        }
+        $package = Get-DriverPackageEvidence -MatchedDevice $device
+        if ($package) {
+            $device | Add-Member -NotePropertyName PackageDir -NotePropertyValue $package.PackageDir -Force
+            $device | Add-Member -NotePropertyName PackageCreationTime -NotePropertyValue $package.PackageCreationTime -Force
+            $device | Add-Member -NotePropertyName PackageDriverVer -NotePropertyValue $package.PackageDriverVer -Force
+            $device | Add-Member -NotePropertyName ImportSource -NotePropertyValue $package.ImportSource -Force
+            $device | Add-Member -NotePropertyName ImportCommand -NotePropertyValue $package.ImportCommand -Force
+            $device | Add-Member -NotePropertyName ImportLog -NotePropertyValue $package.ImportLog -Force
+            $device | Add-Member -NotePropertyName ImportLine -NotePropertyValue $package.ImportLine -Force
+            $device | Add-Member -NotePropertyName ImportKind -NotePropertyValue $package.ImportKind -Force
+        }
+        $deviceEvidence += $device
+    }
+    return Resolve-DriverSourceEvidence -Driver $Driver -DeviceEvidence $deviceEvidence -History $History -AlternateSourceMap $AlternateSourceMap -CurrentOsMap $CurrentSourceMap
 }
 #endregion
 
@@ -927,12 +1173,13 @@ function Show-Help {
 Lenovo Driver Installer
 
 Usage:
-  install_lenovo_drivers.bat [-DryRun] [-CurrentOSOnly] [-LatestAcrossOS] [-SkipHashCheck] [-IncludeBios] [-DownloadOnly] [-DownloadDir <path>] [-Model <model>] [-Help]
+  install_lenovo_drivers.bat [-DryRun] [-CurrentOSOnly] [-LatestAcrossOS] [-TargetOS <OSID|OSName>] [-SkipHashCheck] [-IncludeBios] [-DownloadOnly] [-DownloadDir <path>] [-Model <model>] [-Help]
 
 Options:
   -DryRun        Compare versions without downloading or installing.
   -CurrentOSOnly Use only the current OS driver list (default).
   -LatestAcrossOS Allow newer drivers from other OS entries. Cannot be used with -CurrentOSOnly.
+  -TargetOS      Show one supported OS list, e.g. 248 or "Windows 11". Cannot be used with -CurrentOSOnly or -LatestAcrossOS.
   -SkipHashCheck Skip local SHA-256 cache and official MD5 validation.
   -IncludeBios   Include BIOS/EC packages.
   -DownloadOnly  Download only; do not install.
@@ -945,7 +1192,10 @@ Interactive choices:
   y = install update-only drivers
   a = install all applicable drivers
   s = select driver numbers manually, e.g. 1,3,5
+  t = switch to another supported OS list (available in default mode)
   n = cancel
+
+The exact driver set for y and a is printed before the input prompt.
 
 Plan file:
   %TEMP%\lenovo_driver_plan.txt
@@ -979,16 +1229,93 @@ function Read-DriverSelection {
     return @($parsed.Selected)
 }
 
+function Show-DriverActionPreview {
+    param(
+        [string]$ActionKey,
+        [string]$ActionLabel,
+        [object[]]$Drivers
+    )
+    if ($Drivers.Count -eq 0) { return }
+    $plural = if ($Drivers.Count -eq 1) { 'driver' } else { 'drivers' }
+    Write-Host ''
+    Write-Host ("{0} will download/install these {1} {2} {3}:" -f $ActionKey, $Drivers.Count, $ActionLabel, $plural) -ForegroundColor Cyan
+    foreach ($driver in $Drivers) {
+        $local = if ($driver.LocalVersion) { [string]$driver.LocalVersion } else { 'not installed' }
+        $status = [string]$driver.CompareStatus
+        Write-Host ("  {0}  {1}  remote={2}  local={3}  status={4}" -f $driver.DriverCode, $driver.DriverName, $driver.Version, $local, $status)
+    }
+}
+
+function Select-DriversByCode {
+    param(
+        [object[]]$Drivers,
+        [string]$Codes
+    )
+    $codeList = @($Codes -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    return @($Drivers | Where-Object { $codeList -contains ([string]$_.DriverCode) })
+}
+
+function Export-LenovoDriverViewJson {
+    param(
+        [object]$View,
+        [string]$Path,
+        [object[]]$OsList,
+        [string]$CurrentSystemOsId,
+        [object]$Machine,
+        [object]$OsInfo
+    )
+    $currentOs = @($OsList | Where-Object { [string]$_.OSID -eq [string]$CurrentSystemOsId } | Select-Object -First 1)
+    $listOs = @($OsList | Where-Object { [string]$_.OSID -eq [string]$View.OsId } | Select-Object -First 1)
+    $rows = foreach ($d in @($View.Selected)) {
+        [ordered]@{
+            Selected      = $false
+            DriverCode    = [string]$d.DriverCode
+            DriverName    = [string]$d.DriverName
+            Version       = [string]$d.Version
+            LocalVersion  = [string]$d.LocalVersion
+            CompareStatus = [string]$d.CompareStatus
+            SourceAudit   = [string]$d.SourceAudit
+            CompareSource = [string]$d.CompareSource
+            FileName      = [string]$d.FileName
+            FilePath      = [string]$d.FilePath
+            FileSize      = [string]$d.FileSize
+            MD5           = [string]$d.MD5
+            IsApplicable  = ([string]$d.CompareStatus -ne 'Not applicable')
+            IsUpdate      = ([string]$d.CompareStatus -eq 'Update')
+        }
+    }
+    $payload = [ordered]@{
+        GeneratedAt   = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+        MachineModel  = [string]$Machine.Model
+        SerialNumber  = [string]$Machine.Serial
+        SystemCaption = [string]$OsInfo.Caption
+        CurrentOsId   = [string]$CurrentSystemOsId
+        CurrentOsName = [string]$currentOs.OSName
+        ListOsId      = [string]$View.OsId
+        ListOsName    = [string]$listOs.OSName
+        DataSource    = [string]$View.Source
+        OsList        = @($OsList | ForEach-Object { [ordered]@{ OSID = [string]$_.OSID; OSName = [string]$_.OSName } })
+        Drivers       = @($rows)
+    }
+    $payload | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Path -Encoding UTF8
+}
+
 function Select-InteractiveDrivers {
     param(
         [object[]]$AllSelected,
         [object[]]$UpdateDrivers,
-        [object[]]$AllApplicable
+        [object[]]$AllApplicable,
+        [bool]$AllowToggle = $false,
+        [string]$NextOsLabel = ''
     )
+    $toggleText = if ($AllowToggle) { ", t to switch to $NextOsLabel" } else { '' }
     if ($UpdateDrivers.Count -gt 0) {
         Write-Host ("Ready: {0} update-only drivers, {1} all applicable drivers." -f $UpdateDrivers.Count, $AllApplicable.Count) -ForegroundColor Yellow
-        $answer = Read-Host 'Type y to install updates, a to install all applicable, s to select, n to cancel'
+        Show-DriverActionPreview -ActionKey 'y' -ActionLabel 'update-only' -Drivers $UpdateDrivers
+        Show-DriverActionPreview -ActionKey 'a' -ActionLabel 'all applicable' -Drivers $AllApplicable
+        $answer = Read-Host ("Type y to install the update-only set, a to install the all-applicable set, s to select$toggleText, n to cancel")
         $choice = $answer.Trim().ToLowerInvariant()
+        if ($choice -eq 't' -and $AllowToggle) { return [pscustomobject]@{ Toggle = $true } }
         if ($choice -eq 'y') { return @($UpdateDrivers) }
         if ($choice -eq 'a') { return @($AllApplicable) }
         if ($choice -eq 's') {
@@ -999,8 +1326,10 @@ function Select-InteractiveDrivers {
         return $null
     }
     Write-Host ("No clear updates detected. {0} applicable candidates remain." -f $AllApplicable.Count) -ForegroundColor Yellow
-    $answer = Read-Host 'Type a to install all applicable, s to select, n to cancel'
+    Show-DriverActionPreview -ActionKey 'a' -ActionLabel 'all applicable' -Drivers $AllApplicable
+    $answer = Read-Host ("Type a to install the all-applicable set, s to select$toggleText, n to cancel")
     $choice = $answer.Trim().ToLowerInvariant()
+    if ($choice -eq 't' -and $AllowToggle) { return [pscustomobject]@{ Toggle = $true } }
     if ($choice -eq 'a') { return @($AllApplicable) }
     if ($choice -eq 's') {
         $manual = @(Read-DriverSelection -AllSelected $AllSelected)
@@ -1020,6 +1349,14 @@ if ($Help) {
 
 if ($CurrentOSOnly -and $LatestAcrossOS) {
     Write-Host 'Error: -CurrentOSOnly and -LatestAcrossOS cannot be used together.' -ForegroundColor Red
+    exit 2
+}
+if ($TargetOS -and $CurrentOSOnly) {
+    Write-Host 'Error: -TargetOS and -CurrentOSOnly cannot be used together.' -ForegroundColor Red
+    exit 2
+}
+if ($TargetOS -and $LatestAcrossOS) {
+    Write-Host 'Error: -TargetOS and -LatestAcrossOS cannot be used together.' -ForegroundColor Red
     exit 2
 }
 
@@ -1077,17 +1414,28 @@ if ($osResolution.Source -eq 'QuickFix') {
     Write-Log 'OS list source : QuickFix (webpage OS list unavailable)' 'WARN'
 }
 
-$driverResult = Get-OfficialDriverObjects -CategoryId $categoryId -OsId $sysId -PreferredSource 'QuickFix'
-if (-not $driverResult.Source -or $driverResult.Drivers.Count -eq 0) {
-    throw 'Could not load the official driver list from QuickFix or the webpage API.'
+$targetOsEntry = if ($TargetOS) { Resolve-TargetOsEntry -OsList $osList -TargetOS $TargetOS } else { $null }
+if ($TargetOS -and -not $targetOsEntry) {
+    $available = @($osList | ForEach-Object { "{0} ({1})" -f $_.OSName, $_.OSID }) -join ', '
+    throw "Could not resolve -TargetOS '$TargetOS' from the Lenovo OS list for this machine. Available: $available"
 }
-$drivers = @($driverResult.Drivers)
-$dataSource = $driverResult.Source
-Write-Log ("Driver source : {0} (OSID {1})" -f $dataSource, $sysId)
+$listOsId = if ($targetOsEntry) { [string]$targetOsEntry.OSID } else { $sysId }
+if ($targetOsEntry) {
+    Write-Log ("Target OS entry : {0} (OSID {1}); current system remains {2} (OSID {3})" -f $targetOsEntry.OSName, $listOsId, $osEntry.OSName, $sysId)
+} elseif (-not $LatestAcrossOS -and -not $CurrentOSOnly -and @($osList).Count -gt 1) {
+    Write-Log 'Current OS mode enabled (default). In the interactive menu, press t to switch supported OS lists.'
+}
 
-$enableLatest = $LatestAcrossOS
+$enableLatest = $LatestAcrossOS -and -not $targetOsEntry
 if ($enableLatest) {
     Write-Log 'Cross-OS latest mode is an experimental exception, not the standard update path.'
+    $driverResult = Get-OfficialDriverObjects -CategoryId $categoryId -OsId $listOsId -PreferredSource 'QuickFix'
+    if (-not $driverResult.Source -or $driverResult.Drivers.Count -eq 0) {
+        throw 'Could not load the official driver list from QuickFix or the webpage API.'
+    }
+    $drivers = @($driverResult.Drivers)
+    $dataSource = $driverResult.Source
+    Write-Log ("Driver source : {0} (OSID {1})" -f $dataSource, $listOsId)
     foreach ($alt in $osList) {
         $altId = [string]$alt.OSID
         if ($altId -eq $sysId) { continue }
@@ -1098,91 +1446,183 @@ if ($enableLatest) {
             Write-Log ("Could not load alternate OS entry {0}." -f $altId) 'WARN'
         }
     }
+
+    $drivers = @($drivers | Where-Object {
+        ($_.Status -eq '' -or $_.Status -ne '0') -and
+        ($_.IsEnable -eq '' -or $_.IsEnable -ne '0')
+    })
+    if (-not $IncludeBios) {
+        $beforeBios = $drivers.Count
+        $drivers = @($drivers | Where-Object { $_.DriverName -notmatch 'BIOS|EC Version' })
+        if ($drivers.Count -lt $beforeBios) {
+            Write-Log 'BIOS/EC package skipped by default. Use -IncludeBios to install it.' 'WARN'
+        }
+    }
+    $installableExts = @('.exe', '.msi', '.zip', '.inf', '.cab')
+    $beforeExt = $drivers.Count
+    $drivers = @($drivers | Where-Object {
+        $installableExts -contains ([System.IO.Path]::GetExtension($_.FileName).ToLowerInvariant())
+    })
+    if ($drivers.Count -lt $beforeExt) {
+        Write-Log 'Non-installable files (readme/text/etc.) skipped.' 'WARN'
+    }
+
+    $selected = @(Select-LatestDrivers -Drivers $drivers -CurrentOsId $sysId)
+    Write-Log ("Drivers selected : {0}" -f $selected.Count)
+    Write-Log 'Comparing with locally installed versions...'
+    $localDevices = @(Get-LocalDeviceSnapshot)
+    $installedApps = @(Get-InstalledApps)
+    $softwareSnapshot = Get-LocalSoftwareSnapshot -InstalledApps $installedApps
+    $driverHistory = @(Read-DriverHistory)
+    $currentSourceMap = Initialize-CurrentSourceMap -Drivers $selected
+    $alternateSourceMap = @{}
+    foreach ($driver in $selected) {
+        if (-not (Test-DriverApplicable -Driver $driver -LocalDevices $localDevices)) {
+            $driver.CompareStatus = 'Not applicable'
+            continue
+        }
+        $driver.LocalVersion = Get-LocalDriverVersion -Driver $driver -LocalDevices $localDevices -InstalledApps $installedApps -SoftwareSnapshot $softwareSnapshot
+        $driver.CompareStatus = Compare-DriverStatus -Remote $driver.Version -Local $driver.LocalVersion -Vendor $driver.LocalVendor
+        if ($driver.LocalVersion) {
+            if ($driver.CompareStatus -eq 'Local newer' -and $script:AlternateSourceMap -eq $null) {
+                $alternateSourceMap = Initialize-AlternateSourceMap -CategoryId $categoryId -OsList $osList -SysId $sysId -PreferredSource $dataSource
+            } elseif ($script:AlternateSourceMap) {
+                $alternateSourceMap = $script:AlternateSourceMap
+            }
+            $driver.SourceAudit = Get-LocalDriverSourceAudit -Driver $driver -LocalDevices $localDevices -History $driverHistory -CurrentSourceMap $currentSourceMap -AlternateSourceMap $alternateSourceMap
+            if ($driver.CompareStatus -eq 'Local newer') {
+                $driver.CompareSource = Resolve-DriverSourceLabel -Driver $driver -History $driverHistory -AlternateSourceMap $alternateSourceMap -SourceAudit $driver.SourceAudit
+                Write-Log ("[{0}] {1}" -f $driver.DriverCode, $driver.CompareSource) 'WARN'
+            }
+        }
+    }
+    try {
+        Write-PlanFile -Drivers $selected -Path $PlanPath | Out-Null
+        Write-Log ("Plan file : {0}" -f $PlanPath)
+    } catch {
+        Write-Log ("Could not write plan file: {0}" -f $_.Exception.Message) 'WARN'
+    }
+    Write-Host ''
+    Write-Host 'Driver version comparison:' -ForegroundColor Cyan
+    Show-DriverTable -Drivers $selected
+    Show-StatusSummary -Drivers $selected
+    $allApplicable = @($selected | Where-Object { $_.CompareStatus -ne 'Not applicable' })
+    $updateDrivers = @($allApplicable | Where-Object { $_.CompareStatus -eq 'Update' })
+    Write-Log ("Applicable candidates : {0}; update-only drivers : {1}" -f $allApplicable.Count, $updateDrivers.Count)
+    if ($GuiExportPath) {
+        $guiView = [pscustomobject]@{
+            Selected   = $selected
+            Applicable = $allApplicable
+            Updates    = $updateDrivers
+            Source     = $dataSource
+            OsId       = $listOsId
+        }
+        Export-LenovoDriverViewJson -View $guiView -Path $GuiExportPath -OsList $osList -CurrentSystemOsId $sysId -Machine $machine -OsInfo $osInfo
+        Write-Log ("GUI export : {0}" -f $GuiExportPath)
+        exit 0
+    }
+    if ($allApplicable.Count -eq 0) {
+        Write-Log 'No installable drivers found.'
+        exit 0
+    }
+    if ($DryRun) {
+        Write-Log 'Dry run finished. No files were downloaded or installed.'
+        exit 0
+    }
+    if ($GuiInstallCodes) {
+        $selected = @(Select-DriversByCode -Drivers $selected -Codes $GuiInstallCodes)
+        if ($selected.Count -eq 0) {
+            Write-Log 'None of the GUI-selected driver codes matched the current list.'
+            exit 3
+        }
+    } else {
+        $selectionResult = Select-InteractiveDrivers -AllSelected $selected -UpdateDrivers $updateDrivers -AllApplicable $allApplicable
+        if ($null -eq $selectionResult) {
+            Write-Log 'No drivers were selected.'
+            exit 0
+        }
+        $selected = @($selectionResult)
+        if ($selected.Count -eq 0) {
+            Write-Log 'No drivers selected for installation.'
+            exit 0
+        }
+    }
 } else {
-    Write-Log 'Current OS mode enabled (default). Use -LatestAcrossOS to compare newer drivers from other OS entries.'
-}
+    $viewOsId = $listOsId
+    $osIds = @($osList | ForEach-Object { [string]$_.OSID })
+    $viewIndex = [Array]::IndexOf($osIds, $viewOsId)
+    if ($viewIndex -lt 0) { $viewIndex = 0 }
+    $allowToggle = -not $CurrentOSOnly -and -not $TargetOS -and $osIds.Count -gt 1
+    $localDevices = @(Get-LocalDeviceSnapshot)
+    $installedApps = @(Get-InstalledApps)
+    $softwareSnapshot = Get-LocalSoftwareSnapshot -InstalledApps $installedApps
+    $driverHistory = @(Read-DriverHistory)
 
-$drivers = @($drivers | Where-Object {
-    ($_.Status -eq '' -or $_.Status -ne '0') -and
-    ($_.IsEnable -eq '' -or $_.IsEnable -ne '0')
-})
+    while ($true) {
+        $view = Compare-OsDriverView -ListOsId $viewOsId -CategoryId $categoryId -OsList $osList -CurrentSystemOsId $sysId -LocalDevices $localDevices -InstalledApps $installedApps -SoftwareSnapshot $softwareSnapshot -DriverHistory $driverHistory -IncludeBios $IncludeBios
+        $allSelected = @($view.Selected)
+        $allApplicable = @($view.Applicable)
+        $updateDrivers = @($view.Updates)
+        $dataSource = $view.Source
+        $listOsId = $view.OsId
 
-if (-not $IncludeBios) {
-    $beforeBios = $drivers.Count
-    $drivers = @($drivers | Where-Object { $_.DriverName -notmatch 'BIOS|EC Version' })
-    if ($drivers.Count -lt $beforeBios) {
-        Write-Log 'BIOS/EC package skipped by default. Use -IncludeBios to install it.' 'WARN'
+        if ($GuiExportPath) {
+            Export-LenovoDriverViewJson -View $view -Path $GuiExportPath -OsList $osList -CurrentSystemOsId $sysId -Machine $machine -OsInfo $osInfo
+            Write-Log ("GUI export : {0}" -f $GuiExportPath)
+            exit 0
+        }
+
+        if ($DryRun) {
+            Write-Log 'Dry run finished. No files were downloaded or installed.'
+            exit 0
+        }
+
+        $nextIndex = ($viewIndex + 1) % $osIds.Count
+        $nextOs = $osList[$nextIndex]
+        $nextLabel = "{0} ({1})" -f $nextOs.OSName, $nextOs.OSID
+
+        if ($allApplicable.Count -eq 0) {
+            if (-not $allowToggle) {
+                Write-Log 'No installable drivers found.'
+                exit 0
+            }
+            $answer = Read-Host ("No installable drivers for this OS. Type t to switch to $nextLabel, n to cancel")
+            $choice = $answer.Trim().ToLowerInvariant()
+            if ($choice -eq 't') {
+                $viewIndex = $nextIndex
+                $viewOsId = [string]$osList[$viewIndex].OSID
+                continue
+            }
+            Write-Log 'No drivers were selected.'
+            exit 0
+        }
+
+        if ($GuiInstallCodes) {
+            $selected = @(Select-DriversByCode -Drivers $allSelected -Codes $GuiInstallCodes)
+            if ($selected.Count -eq 0) {
+                Write-Log 'None of the GUI-selected driver codes matched the current list.'
+                exit 3
+            }
+            break
+        }
+
+        $selectionResult = Select-InteractiveDrivers -AllSelected $allSelected -UpdateDrivers $updateDrivers -AllApplicable $allApplicable -AllowToggle $allowToggle -NextOsLabel $nextLabel
+        if ($null -eq $selectionResult) {
+            Write-Log 'No drivers were selected.'
+            exit 0
+        }
+        if ($selectionResult.PSObject.Properties.Name -contains 'Toggle') {
+            $viewIndex = $nextIndex
+            $viewOsId = [string]$osList[$viewIndex].OSID
+            continue
+        }
+        $selected = @($selectionResult)
+        if ($selected.Count -eq 0) {
+            Write-Log 'No drivers selected for installation.'
+            exit 0
+        }
+        break
     }
-}
-
-$installableExts = @('.exe', '.msi', '.zip', '.inf', '.cab')
-$beforeExt = $drivers.Count
-$drivers = @($drivers | Where-Object {
-    $installableExts -contains ([System.IO.Path]::GetExtension($_.FileName).ToLowerInvariant())
-})
-if ($drivers.Count -lt $beforeExt) {
-    Write-Log 'Non-installable files (readme/text/etc.) skipped.' 'WARN'
-}
-
-$selected = @(Select-LatestDrivers -Drivers $drivers -CurrentOsId $sysId)
-Write-Log ("Drivers selected : {0}" -f $selected.Count)
-Write-Log 'Comparing with locally installed versions...'
-
-$localDevices = @(Get-LocalDeviceSnapshot)
-$installedApps = @(Get-InstalledApps)
-$softwareSnapshot = Get-LocalSoftwareSnapshot -InstalledApps $installedApps
-$driverHistory = @(Read-DriverHistory)
-foreach ($driver in $selected) {
-    if (-not (Test-DriverApplicable -Driver $driver -LocalDevices $localDevices)) {
-        $driver.CompareStatus = 'Not applicable'
-        continue
-    }
-    $driver.LocalVersion = Get-LocalDriverVersion -Driver $driver -LocalDevices $localDevices -InstalledApps $installedApps -SoftwareSnapshot $softwareSnapshot
-    $driver.CompareStatus = Compare-DriverStatus -Remote $driver.Version -Local $driver.LocalVersion -Vendor $driver.LocalVendor
-    if ($driver.CompareStatus -eq 'Local newer') {
-        $driver.CompareSource = Get-DriverSourceLabel -Driver $driver -History $driverHistory -CategoryId $categoryId -OsList $osList -SysId $sysId -PreferredSource $dataSource
-        Write-Log ("[{0}] {1}" -f $driver.DriverCode, $driver.CompareSource) 'WARN'
-    }
-}
-
-$allSelected = $selected
-try {
-    Write-PlanFile -Drivers $allSelected -Path $PlanPath | Out-Null
-    Write-Log ("Plan file : {0}" -f $PlanPath)
-} catch {
-    Write-Log ("Could not write plan file: {0}" -f $_.Exception.Message) 'WARN'
-}
-Write-Host ''
-Write-Host 'Driver version comparison:' -ForegroundColor Cyan
-Show-DriverTable -Drivers $allSelected
-Show-StatusSummary -Drivers $allSelected
-
-$allApplicable = @($allSelected | Where-Object { $_.CompareStatus -ne 'Not applicable' })
-$updateDrivers = @($allApplicable | Where-Object { $_.CompareStatus -eq 'Update' })
-Write-Log ("Applicable candidates : {0}; update-only drivers : {1}" -f $allApplicable.Count, $updateDrivers.Count)
-if ($updateDrivers.Count -eq 0 -and -not $LatestAcrossOS) {
-    Write-Log 'No current-OS updates detected. Use -LatestAcrossOS on a new run to compare newer drivers from other OS entries.' 'WARN'
-}
-
-if ($allApplicable.Count -eq 0) {
-    Write-Log 'No installable drivers found.'
-    exit 0
-}
-
-if ($DryRun) {
-    Write-Log 'Dry run finished. No files were downloaded or installed.'
-    exit 0
-}
-
-$selectionResult = Select-InteractiveDrivers -AllSelected $allSelected -UpdateDrivers $updateDrivers -AllApplicable $allApplicable
-if ($null -eq $selectionResult) {
-    Write-Log 'No drivers were selected.'
-    exit 0
-}
-$selected = @($selectionResult)
-if ($selected.Count -eq 0) {
-    Write-Log 'No drivers selected for installation.'
-    exit 0
 }
 Write-Log ("Selected for installation : {0}" -f $selected.Count)
 
@@ -1318,11 +1758,18 @@ if ($success.Count -gt 0 -and -not $DownloadOnly) {
             $beforeLocal = $driver.LocalVersion
             $afterLocal = Get-LocalDriverVersion -Driver $driver -LocalDevices $localDevices -InstalledApps $installedApps -SoftwareSnapshot $softwareSnapshot
             if ($afterLocal) {
+                $beforeLabel = $(if ($beforeLocal) { $beforeLocal } else { 'not detected' })
                 if ($afterLocal -eq $beforeLocal) {
-                    Write-Log ("[{0}] Recheck: unchanged ({1}); reboot may be needed." -f $driver.DriverCode, $afterLocal) 'WARN'
+                    $packageVersion = [string](Get-MatchingRemoteComponent -Driver $driver -VersionText $driver.Version)
+                    if ($packageVersion -and $packageVersion -ne [string]$afterLocal) {
+                        Write-Log ("[{0}] Recheck: package installed but local driver unchanged ({1}); package version {2} did not replace it." -f $driver.DriverCode, $afterLocal, $packageVersion) 'WARN'
+                    } else {
+                        Write-Log ("[{0}] Recheck: unchanged ({1}); reboot may be needed." -f $driver.DriverCode, $afterLocal) 'WARN'
+                    }
                 } else {
-                    Write-Log ("[{0}] Recheck: {1} -> {2}" -f $driver.DriverCode, $(if ($beforeLocal) { $beforeLocal } else { 'not detected' }), $afterLocal)
+                    Write-Log ("[{0}] Recheck: {1} -> {2}" -f $driver.DriverCode, $beforeLabel, $afterLocal)
                 }
+                Write-DriverHistoryRecord -Driver $driver -Result 'Verified' -Message ("local={0}; before={1}" -f $afterLocal, $beforeLabel) -VerifiedVersion $afterLocal -BeforeVersion $beforeLocal
             } else {
                 Write-Log ("[{0}] Recheck: version not detectable yet." -f $driver.DriverCode) 'WARN'
             }

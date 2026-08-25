@@ -25,6 +25,18 @@ contracts, offline pure-core tests, and repeatable smoke checks.
 - Extract small helpers when the same non-trivial logic appears more than once.
   Examples: `Test-RebootExitCode`, `Test-FileSizeMatch`, and
   `Get-SizeTolerance` in `lenovo_driver_core.ps1`.
+- Resolve software-only driver versions from installed application/service
+  evidence; do not treat a same-vendor PnP device as proof for a software
+  package.
+- Lenovo packages can contain multiple vendor/INF driver sets. An installer
+  exit code of 0 means the package ran, not that the package's listed version
+  replaced the active local driver. Record the real before/after local version
+  and never attribute an unchanged local version to that package.
+- Source attribution must use only real evidence: install history,
+  `setupapi.*.log` import records, current/alternate official maps, and active
+  device/DriverStore properties. Keep `setupapi` parsing as a pure core
+  function; the shell only reads logs and supplies device evidence. Do not
+  guess a source OS when evidence is missing.
 - Keep comments for non-obvious Lenovo API or Windows behavior, not for every
   line.
 
@@ -57,12 +69,19 @@ $tokens = $null; $errors = $null
 if ($errors) { $errors | Format-List; exit 1 } else { 'PARSE OK' }
 ```
 
-Run the same parse for `lenovo_driver_core.ps1`.
+Run the same parse for `lenovo_driver_core.ps1` and `lenovo_driver_wpf.ps1`.
 
 Offline core tests:
 
 ```powershell
 .\lenovo_driver_core.tests.ps1
+```
+
+WPF smoke checks:
+
+```powershell
+.\lenovo_driver_wpf.ps1 -SelfTest -NoElevation
+.\lenovo_driver_wpf.ps1 -WorkerSmoke -NoElevation
 ```
 
 Static analysis when PSScriptAnalyzer is installed:
@@ -86,6 +105,10 @@ Smoke checks:
 ```powershell
 & '.\install_lenovo_drivers.ps1' -Help
 & '.\install_lenovo_drivers.ps1' -CurrentOSOnly -LatestAcrossOS  # expect EXIT=2
+& '.\install_lenovo_drivers.ps1' -CurrentOSOnly -TargetOS 248      # expect EXIT=2
+& '.\install_lenovo_drivers.ps1' -LatestAcrossOS -TargetOS 248     # expect EXIT=2
+& '.\install_lenovo_drivers.ps1' -Elevated              # interactive t toggle, then cancel
+& '.\install_lenovo_drivers.ps1' -Elevated -TargetOS 248 # verify y/a preview lists, then cancel
 ```
 
 ---

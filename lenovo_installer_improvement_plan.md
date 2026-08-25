@@ -23,8 +23,12 @@ keeping the factual source authoritative:
 - `y` installs update-only drivers.
 - `a` installs all applicable drivers.
 - `s` installs manually selected driver numbers.
+- `t` switches to another supported OS list in the interactive menu.
 - `n` cancels.
+- Before the input prompt, the exact `y` and `a` driver sets are printed with
+  driver code, name, remote version, local version, and status.
 - `-DryRun` writes a plan and never downloads or installs.
+- `-TargetOS <OSID|OSName>` shows the official driver list for one supported OS.
 - `-LatestAcrossOS` is explicit and logs that it is experimental.
 
 ## Implementation Scope
@@ -44,7 +48,9 @@ keeping the factual source authoritative:
 
 - Default to current OS only.
 - `-LatestAcrossOS` is the explicit cross-OS opt-in.
-- `-CurrentOSOnly` and `-LatestAcrossOS` are mutually exclusive.
+- `-TargetOS <OSID|OSName>` is the explicit single-OS list switch; it resolves
+  from the same Lenovo OS list and does not merge versions.
+- `-CurrentOSOnly`, `-LatestAcrossOS`, and `-TargetOS` are mutually exclusive.
 - A missing current OS entry fails with a clear diagnostic.
 - OS resolution tries the official webpage OS list first and falls back to the
   QuickFix backend OS list.
@@ -67,16 +73,42 @@ keeping the factual source authoritative:
 - Write `%TEMP%\lenovo_driver_history.csv` after successful downloads and
   after install attempts.
 - Each record contains timestamp, `DriverCode`, `OSID`, `OSName`,
-  `DriverName`, `Version`, `FileName`, `MD5`, `Source`, `Result`, and message.
+  `DriverName`, `Version`, `VerifiedVersion`, `BeforeVersion`, `FileName`,
+  `MD5`, `Source`, `Result`, and message.
+- Post-install verification records the real detected local version in
+  `VerifiedVersion` and the pre-install version in `BeforeVersion`, so a later
+  run can attribute the version that actually ended up on the machine without
+  guessing.
+- If a Lenovo package exits successfully but the local driver version remains
+  unchanged, history keeps both versions. A later run must not treat that
+  package as the source of an unchanged local version.
 - `Local newer` is not treated as an error. The script labels it as:
+  - `Local newer (source offline image integration)` when `setupapi.offline.log`
+    proves an offline DISM/NTLite image import.
+  - `Local newer (source online package installation)` when
+    `setupapi.dev.log` proves an online driver package import.
+  - `Local newer (source pre-existing DriverStore package)` when the active
+    package exists but no import log can be attributed.
   - `Local newer (source Windows 11 64-bit)` when the local version matches an
     alternate official OS entry.
   - `Local newer (same current OS source)` when local history proves the
     current OS source installed it.
-  - `Local newer (source unknown)` when no official source or history can be
-    attributed.
+  - `Local newer (source unknown)` when no official source, history, or import
+    evidence can be attributed.
+- `setupapi.dev.log` parser keeps the `cmd:` from `>>> [Driver Install ...]`
+  and `>>> [Device Install ...]` section headers, so Fn's `pnputil.exe` and
+  NVIDIA's `RunDll32.exe` command lines appear in plan evidence rather than
+  being dropped as unlabeled sections.
+- Every applicable driver gets a `SourceAudit` result: install history,
+  current/alternate official maps, and DriverStore import evidence parsed from
+  `setupapi.*.log`. The plan file records category, summary, and evidence lines.
 - Alternate OS matching normalizes version strings and extracts component
   versions from multi-vendor packages before comparing.
+- Software-only packages such as Intel Connectivity Performance Suite resolve
+  their local version from the installed application, not from an unrelated
+  PnP device that happens to share a vendor name.
+- Cross-OS driver selection compares actual parsed versions first and only
+  falls back to issue date/edition as tie-breakers.
 
 ### C4. Download Integrity
 
@@ -113,8 +145,8 @@ keeping the factual source authoritative:
 
 ### C8. Version Detail
 
-- Keep full versions, URLs, OSID, data source, MD5, and source notes in the
-  plan file.
+- Keep full versions, URLs, OSID, data source, MD5, source notes, and source
+  audit evidence in the plan file.
 - Keep the console table compact.
 
 ## Explicitly Out Of Scope
@@ -132,7 +164,8 @@ keeping the factual source authoritative:
 
 ## Verification
 
-- `-DryRun` resolves the expected update/status summary and plan fields.
+- `-DryRun` resolves the expected update/status summary, source audit fields,
+  and plan fields.
 - `-CurrentOSOnly` and `-LatestAcrossOS` together fail fast.
 - Help documents current-OS default, mutual exclusion, QuickFix-first data
   source, MD5 validation, and history file.

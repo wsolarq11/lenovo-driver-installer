@@ -17,8 +17,9 @@ The factual standard for Lenovo driver decisions is documented in
 - The official QuickFix tool is good for one-click current-OS matching, but it
   is not a dry-run/audit tool.
 - This script remains a current-OS-first dry-run, selection, logging, and
-  integrity-checking tool; `-LatestAcrossOS` is an explicit experimental
-  exception, not the standard update path.
+  integrity-checking tool; `-TargetOS` is the explicit way to inspect another
+  supported OS list, while `-LatestAcrossOS` is an experimental merge mode that
+  is not the standard update path.
 
 ## Quick Start
 
@@ -34,12 +35,49 @@ normal run, the installer prompts you to choose what to install:
 - `y` installs update-only drivers.
 - `a` installs all applicable drivers.
 - `s` selects driver numbers manually, for example `1,3,5`.
+- `t` switches to another supported OS list when the machine has multiple OS entries.
 - `n` cancels.
+
+Before the input prompt, the installer prints the exact driver set for `y`
+and for `a`, including driver code, name, remote version, local version, and
+status, so the choice is visible before anything is downloaded.
+
+## Desktop UI (WPF)
+
+A WPF front end is available for the same engine:
+
+```bat
+install_lenovo_drivers_wpf.bat
+```
+
+The WPF window loads the official driver list through the installer engine,
+shows the same `Update` / `Up to date` / `Not installed` / `Local newer`
+statuses, preserves the source audit labels, and lets you choose which OS list
+to display. The buttons mirror the CLI choices:
+
+- `刷新驱动列表` loads the current machine list, or the selected supported OS list.
+- `安装更新项 (y)` installs only drivers marked `Update`.
+- `安装全部可安装 (a)` installs every applicable driver.
+- `安装选中项` installs only the rows checked in the table.
+- `仅下载选中项` downloads the checked rows without installing them.
+
+The WPF script does not duplicate driver decision logic. It starts the existing
+PowerShell installer in a child process with JSON export or install arguments,
+then renders the same deterministic comparison results in the desktop UI.
+
 
 A dry run never downloads or installs anything:
 
 ```bat
 install_lenovo_drivers.bat -DryRun
+```
+
+To inspect the official driver list for another supported OS without merging
+lists, pass its OSID or OS name:
+
+```bat
+install_lenovo_drivers.bat -DryRun -TargetOS 248
+install_lenovo_drivers.bat -DryRun -TargetOS "Windows 11"
 ```
 
 To compare newer driver versions from other Lenovo OS entries:
@@ -64,14 +102,23 @@ install_lenovo_drivers.bat -LatestAcrossOS
    - `Local newer`
    - `Unknown`
    - `Not applicable`
-8. For `Local newer`, use the local install history or the alternate OS list to
-   label the likely source OS instead of treating it as an error.
-9. Write a detailed plan file and show a compact console table.
-10. Ask which drivers to download and install.
-11. Validate cached or downloaded files with size, official MD5 when provided,
+8. For every applicable driver, audit local source evidence: install history,
+   DriverStore import records from `setupapi.*.log`, current OS match, and
+   alternate OS match. `Local newer` is labeled from this audit plus the
+   alternate OS list instead of treating it as an error. The import parser
+   preserves the setupapi `cmd:` from `Driver Install`/`Device Install`
+   sections, so real `pnputil.exe` or installer command lines are printed in
+   the plan instead of hidden.
+9. Software-only packages compare against their installed application version;
+   a PnP device that merely shares a vendor name is not treated as evidence.
+10. Cross-OS mode selects the actual newest parsed version, not simply the
+    newest published row.
+11. Write a detailed plan file and show a compact console table.
+12. Ask which drivers to download and install.
+13. Validate cached or downloaded files with size, official MD5 when provided,
     and a local SHA-256 companion file.
-12. Install them, write a CSV history record, and run one post-install
-    verification pass.
+14. Install them, write a CSV history record, and run one post-install
+    verification pass that records the actual before/after local versions.
 
 ## Options
 
@@ -80,6 +127,7 @@ install_lenovo_drivers.bat -LatestAcrossOS
 | `-DryRun` | Compare versions without downloading or installing. |
 | `-CurrentOSOnly` | Use only the current OS driver list. This is the default. |
 | `-LatestAcrossOS` | Allow newer drivers from other OS entries. Cannot be used with `-CurrentOSOnly`. |
+| `-TargetOS <OSID\|OSName>` | Show and compare against one supported OS list, for example `248` or `Windows 11`. Cannot be used with `-CurrentOSOnly` or `-LatestAcrossOS`. |
 | `-SkipHashCheck` | Skip local SHA-256 companion-file validation. |
 | `-IncludeBios` | Include BIOS/EC packages. They are skipped by default. |
 | `-DownloadOnly` | Download applicable files without installing. |
@@ -88,7 +136,9 @@ install_lenovo_drivers.bat -LatestAcrossOS
 | `-Elevated` | Skip elevation. Used internally by the batch wrapper. |
 | `-Help` | Show usage help. |
 
-`-CurrentOSOnly` and `-LatestAcrossOS` are mutually exclusive; passing both
+`-CurrentOSOnly`, `-LatestAcrossOS`, and `-TargetOS` are mutually exclusive:
+`-TargetOS` selects one explicit supported OS list, while `-LatestAcrossOS`
+merges newer versions from other OS entries. Passing incompatible options
 fails fast with exit code `2`.
 
 ## Safety And Integrity
@@ -129,6 +179,8 @@ fails fast with exit code `2`.
 - Log file: `%TEMP%\lenovo_driver_install.log`
 - Plan file: `%TEMP%\lenovo_driver_plan.txt`
 - Driver history: `%TEMP%\lenovo_driver_history.csv`
+- Source audit evidence: `C:\Windows\INF\setupapi.offline.log`,
+  `C:\Windows\INF\setupapi.dev.log`, and `C:\Windows\INF\setupapi.setup.log`
 - Download directory: `%TEMP%\LenovoDrivers` unless `-DownloadDir` is used.
 
 ## Exit Codes
@@ -156,17 +208,23 @@ fails fast with exit code `2`.
 
 ## Architecture
 
-The runtime is deliberately split into two PowerShell files:
+The runtime is deliberately split into a deterministic core and side-effect
+shells:
 
 - `lenovo_driver_core.ps1` contains deterministic decision logic only:
-  driver-list parsing, hardware matching, version comparison, source
-  attribution, selection, plan/table formatting, and token parsing. It must
-  not call network, registry, PnP, file, console, or process APIs.
+  driver-list parsing, hardware matching, version comparison, setupapi
+  import-log parsing, source attribution, selection, plan/table formatting, and
+  token parsing. It must not call network, registry, PnP, file, console, or
+  process APIs.
 - `install_lenovo_drivers.ps1` is the side-effect shell. It dot-sources the
   core and owns API calls, system snapshots, history files, downloads,
   installers, logging, prompts, and orchestration.
-- `install_lenovo_drivers.bat` stays thin and remains the recommended entry
-  point.
+- `lenovo_driver_wpf.ps1` is the desktop presentation layer. It launches the
+  shell in a child PowerShell process, renders the JSON driver view in a WPF
+  table, and forwards user-selected driver codes back to the same shell for
+  download/install.
+- `install_lenovo_drivers.bat` and `install_lenovo_drivers_wpf.bat` stay thin
+  and remain the recommended entry points.
 
 The shell gathers all inputs (driver objects, local devices, installed apps,
 history, and source maps), passes them into core functions, and performs only
@@ -182,7 +240,7 @@ is kept side-effect-free so it can be tested without a real machine or network.
 Validate syntax with:
 
 ```powershell
-$files = @('install_lenovo_drivers.ps1', 'lenovo_driver_core.ps1')
+$files = @('install_lenovo_drivers.ps1', 'lenovo_driver_core.ps1', 'lenovo_driver_wpf.ps1')
 foreach ($file in $files) {
   $tokens = $null; $errors = $null
   [System.Management.Automation.Language.Parser]::ParseFile(
@@ -198,6 +256,13 @@ Run the offline core tests with:
 
 ```powershell
 .\lenovo_driver_core.tests.ps1
+```
+
+Smoke-check the WPF render and the real API bridge with:
+
+```powershell
+.\lenovo_driver_wpf.ps1 -SelfTest -NoElevation
+.\lenovo_driver_wpf.ps1 -WorkerSmoke -NoElevation
 ```
 
 The v5 scope and non-goals are documented in
