@@ -26,3 +26,24 @@ Initialized lenovo-driver-installer under D:\AI\projects, created private GitHub
 ### Status
 
 [OK] **Completed**
+
+
+## Session 2: Accept deterministic core / side-effect shell refactor
+
+**Date**: 2026-08-25
+**Task**: Accept deterministic core / side-effect shell refactor
+**Branch**: `main`
+
+### Summary
+
+Split installer into deterministic core, side-effect shell, offline core tests; updated README, v5 plan, and Trellis backend specs; verified parse, 38 core tests, help/mutex, real dry run, PSSA, and delivery gates.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f3c40b1` | (see git log) |
+
+### Status
+
+[OK] **Completed**
