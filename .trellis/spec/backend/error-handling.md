@@ -11,6 +11,11 @@ stop execution instead of silently continuing. Fallback paths are explicit
 and narrow: for example, CIM calls fall back to WMI, and failed installers use
 the documented fallback only when an extracted INF or inner installer exists.
 
+The deterministic core does not perform fallible I/O, so it does not throw
+environment errors; the side-effect shell owns API, system, file, download,
+and process failures and converts them into logs, result objects, or exit
+codes at the shell boundary.
+
 ---
 
 ## Error Types

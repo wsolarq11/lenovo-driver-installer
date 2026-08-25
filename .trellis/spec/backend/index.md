@@ -6,9 +6,10 @@
 
 ## Overview
 
-This is a single-repo Lenovo driver installer. The runtime layer is one
-PowerShell script, `install_lenovo_drivers.ps1`, with a thin `.bat` wrapper.
-There is no web backend, no frontend application, and no database.
+This is a single-repo Lenovo driver installer. The runtime is split into a
+side-effect shell, `install_lenovo_drivers.ps1`, and a deterministic core,
+`lenovo_driver_core.ps1`, with a thin `.bat` wrapper. There is no web backend,
+no frontend application, and no database.
 
 ---
 
@@ -27,8 +28,10 @@ There is no web backend, no frontend application, and no database.
 
 - [ ] Read `README.md` and `lenovo_installer_improvement_plan.md` before
       changing CLI behavior.
-- [ ] Preserve the single-file PowerShell deployment shape unless a task
+- [ ] Preserve the core/shell PowerShell deployment shape unless a task
       explicitly changes it.
+- [ ] Keep deterministic logic in `lenovo_driver_core.ps1` and side effects in
+      `install_lenovo_drivers.ps1`.
 - [ ] Keep new code inside the matching `#region` in
       `install_lenovo_drivers.ps1`.
 - [ ] Keep every public parameter, interactive choice, exit code, cache rule,

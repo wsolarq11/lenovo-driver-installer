@@ -1,9 +1,10 @@
 # Lenovo Driver Installer
 
-A single-file PowerShell installer for Lenovo machines. It detects the current
+A PowerShell installer for Lenovo machines. It detects the current
 machine model at runtime, queries the official Lenovo driver API, compares
 available drivers with locally installed versions, and installs only the
-selected applicable drivers.
+selected applicable drivers. The code is split into a deterministic core and a
+side-effect shell; the `.bat` wrapper remains the only user entry point.
 
 ## Fact Standard
 
@@ -153,23 +154,50 @@ fails fast with exit code `2`.
 - **Download returns `403`**: the script refreshes the URL from the current
   driver list and retries once.
 
+## Architecture
+
+The runtime is deliberately split into two PowerShell files:
+
+- `lenovo_driver_core.ps1` contains deterministic decision logic only:
+  driver-list parsing, hardware matching, version comparison, source
+  attribution, selection, plan/table formatting, and token parsing. It must
+  not call network, registry, PnP, file, console, or process APIs.
+- `install_lenovo_drivers.ps1` is the side-effect shell. It dot-sources the
+  core and owns API calls, system snapshots, history files, downloads,
+  installers, logging, prompts, and orchestration.
+- `install_lenovo_drivers.bat` stays thin and remains the recommended entry
+  point.
+
+The shell gathers all inputs (driver objects, local devices, installed apps,
+history, and source maps), passes them into core functions, and performs only
+the side effects the core results require.
+
 ## Development
 
-The installer is intentionally kept as one `.ps1` file for easy deployment.
-The file is organized into regions for configuration, logging, system info,
-Lenovo API access, local inventory, version comparison, console output,
-selection, download integrity, installer dispatch, and main orchestration.
+The shell is organized into regions for configuration, logging, system info,
+Lenovo API access, local inventory, console output, selection, download
+integrity, installer dispatch, and main orchestration. The deterministic core
+is kept side-effect-free so it can be tested without a real machine or network.
 
 Validate syntax with:
 
 ```powershell
-$tokens = $null; $errors = $null
-[System.Management.Automation.Language.Parser]::ParseFile(
-  'install_lenovo_drivers.ps1',
-  [ref]$tokens,
-  [ref]$errors
-) | Out-Null
-if ($errors) { $errors | Format-List; exit 1 } else { 'PARSE OK' }
+$files = @('install_lenovo_drivers.ps1', 'lenovo_driver_core.ps1')
+foreach ($file in $files) {
+  $tokens = $null; $errors = $null
+  [System.Management.Automation.Language.Parser]::ParseFile(
+    $file,
+    [ref]$tokens,
+    [ref]$errors
+  ) | Out-Null
+  if ($errors) { $errors | Format-List; exit 1 } else { "PARSE OK $file" }
+}
+```
+
+Run the offline core tests with:
+
+```powershell
+.\lenovo_driver_core.tests.ps1
 ```
 
 The v5 scope and non-goals are documented in

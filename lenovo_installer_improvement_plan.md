@@ -6,7 +6,7 @@
 
 ## Objective
 
-Make the script the single usable entry point for Lenovo driver work while
+Keep the CLI as the single usable entry point for Lenovo driver work while
 keeping the factual source authoritative:
 
 - Official Lenovo data only; QuickFix backend first, webpage API as fallback.
@@ -31,10 +31,14 @@ keeping the factual source authoritative:
 
 ### C0. Deliverable Shape
 
-- Keep the installer as one `.ps1` file plus the thin `.bat` wrapper.
+- Keep the user entry point as `install_lenovo_drivers.bat` plus the shell
+  `install_lenovo_drivers.ps1`.
+- Keep deterministic decision logic in `lenovo_driver_core.ps1`; keep API,
+  system inventory, file, console, process, and orchestration side effects in
+  the shell.
 - Keep the public CLI contract defined by this plan.
-- Organize the script into clear regions; do not introduce a module split
-  unless a later task explicitly changes the deployment shape.
+- Do not add PowerShell modules beyond the existing core/shell split; if the
+  deployment shape changes again, update this plan first.
 
 ### C1. OS Mode And CLI
 
@@ -116,7 +120,9 @@ keeping the factual source authoritative:
 ## Explicitly Out Of Scope
 
 - Runspace-based parallel API requests.
-- Full deterministic test suite.
+- A full deterministic test suite for the side-effect shell; core offline tests
+  are included, but installer/API integration remains covered by dry runs and
+  manual verification.
 - BIOS/EC install unless `-IncludeBios` is passed.
 - Third-party driver sources.
 - Automatic reboot.
@@ -130,5 +136,7 @@ keeping the factual source authoritative:
 - `-CurrentOSOnly` and `-LatestAcrossOS` together fail fast.
 - Help documents current-OS default, mutual exclusion, QuickFix-first data
   source, MD5 validation, and history file.
+- `lenovo_driver_core.tests.ps1` passes without network, registry, PnP, file,
+  console, or process access.
 - A dry-run and a helper-level syntax check pass without code regressions.
 - QuickFix and webpage fallback paths are exercised by dry runs where possible.
