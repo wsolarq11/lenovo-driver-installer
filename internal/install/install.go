@@ -23,6 +23,10 @@ type ProcessResult struct {
 	Stderr   string
 }
 
+type processRunner func(filePath string, args []string, timeoutSeconds int, workingDirectory string) ProcessResult
+
+type exeFallback func(driver *model.Driver, workingDir string) (int, bool)
+
 // RunProcessWithTimeout mirrors Invoke-ProcessWithTimeout.
 func RunProcessWithTimeout(filePath string, args []string, timeoutSeconds int, workingDirectory string) ProcessResult {
 	cmd := exec.Command(filePath, args...)
@@ -143,23 +147,7 @@ func InstallDriverFile(filePath string, driver *model.Driver, workingDir string)
 		}
 		return installINFs(extract, workingDir)
 	case ".exe":
-		logPath := filepath.Join(workingDir, driver.DriverCode+".log")
-		args := silentInstallerArgs(driver, logPath)
-		result := RunProcessWithTimeout(filePath, args, 900, workingDir)
-		if result.TimedOut {
-			return -1, fmt.Errorf("EXE timed out")
-		}
-		if result.ExitCode == 3010 || result.ExitCode == 1641 {
-			return 0, nil
-		}
-		if result.ExitCode == 0 {
-			return 0, nil
-		}
-		fallback, used := ExtractedDriverFallback(driver, workingDir)
-		if used && fallback == 0 {
-			return 0, nil
-		}
-		return result.ExitCode, fmt.Errorf("silent install exit %d", result.ExitCode)
+		return installEXE(filePath, driver, workingDir, RunProcessWithTimeout, ExtractedDriverFallback)
 	default:
 		result := RunProcessWithTimeout(filePath, nil, 1800, workingDir)
 		if result.TimedOut {
@@ -167,6 +155,30 @@ func InstallDriverFile(filePath string, driver *model.Driver, workingDir string)
 		}
 		return result.ExitCode, nil
 	}
+}
+
+func installEXE(filePath string, driver *model.Driver, workingDir string, run processRunner, fallback exeFallback) (int, error) {
+	logPath := filepath.Join(workingDir, driver.DriverCode+".log")
+	args := silentInstallerArgs(driver, logPath)
+	result := run(filePath, args, 900, workingDir)
+	if result.TimedOut {
+		return finishEXEFallback(driver, workingDir, fallback, "EXE timed out", -1)
+	}
+	if result.ExitCode == 3010 || result.ExitCode == 1641 || result.ExitCode == 0 {
+		return 0, nil
+	}
+	return finishEXEFallback(driver, workingDir, fallback, fmt.Sprintf("silent install exit %d", result.ExitCode), result.ExitCode)
+}
+
+func finishEXEFallback(driver *model.Driver, workingDir string, fallback exeFallback, silentErr string, silentCode int) (int, error) {
+	fallbackCode, used := fallback(driver, workingDir)
+	if used && fallbackCode == 0 {
+		return 0, nil
+	}
+	if used {
+		return fallbackCode, fmt.Errorf("%s; extracted fallback exit %d", silentErr, fallbackCode)
+	}
+	return silentCode, fmt.Errorf("%s", silentErr)
 }
 
 func silentInstallerArgs(driver *model.Driver, logPath string) []string {
@@ -259,7 +271,7 @@ func ExtractZip(zipPath, destination string) error {
 
 var reLogTempDir = regexp.MustCompile(`[A-Za-z]:\\[^"\r\n]*is-[A-Za-z0-9]+\.tmp`)
 
-// ExtractedDriverFallback scans recent Inno temp roots and known log evidence.
+// ExtractedDriverFallback uses log evidence first, then NVIDIA Display.Driver only.
 func ExtractedDriverFallback(driver *model.Driver, workingDir string) (int, bool) {
 	candidates := extractedTempDirs(driver, workingDir)
 	for _, dir := range candidates {
@@ -287,30 +299,30 @@ func extractedTempDirs(driver *model.Driver, workingDir string) []string {
 	}
 	var rootCandidates []string
 	isNvidia := strings.Contains(strings.ToLower(driver.DriverName), "nvidia")
-	for _, root := range roots {
-		if root == "" {
-			continue
-		}
-		entries, err := os.ReadDir(root)
-		if err != nil {
-			continue
-		}
-		for _, entry := range entries {
-			if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "is-") || !strings.HasSuffix(entry.Name(), ".tmp") {
+	if logDir == "" && isNvidia {
+		for _, root := range roots {
+			if root == "" {
 				continue
 			}
-			info, err := entry.Info()
-			if err != nil || info.ModTime().Before(cutoff) {
+			entries, err := os.ReadDir(root)
+			if err != nil {
 				continue
 			}
-			dir := filepath.Join(root, entry.Name())
-			if isNvidia {
+			for _, entry := range entries {
+				if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "is-") || !strings.HasSuffix(entry.Name(), ".tmp") {
+					continue
+				}
+				info, err := entry.Info()
+				if err != nil || info.ModTime().Before(cutoff) {
+					continue
+				}
+				dir := filepath.Join(root, entry.Name())
 				displayInfo, displayErr := os.Stat(filepath.Join(dir, "Display.Driver"))
 				if displayErr != nil || !displayInfo.IsDir() {
 					continue
 				}
+				rootCandidates = append(rootCandidates, dir)
 			}
-			rootCandidates = append(rootCandidates, dir)
 		}
 	}
 	sortNewestFirst(uniqueStrings(rootCandidates))

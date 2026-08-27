@@ -30,8 +30,7 @@ scripts/verify.ps1                Offline acceptance gate
 lenovo_driver_wpf.ps1             WPF presentation layer
 install_lenovo_drivers.bat        Thin elevated CLI entry point
 install_lenovo_drivers_wpf.bat    Thin elevated WPF entry point
-install_lenovo_drivers.ps1        Frozen legacy PowerShell shell
-lenovo_driver_core.ps1            Frozen legacy deterministic core
+docs/TECHNICAL.md                 Technical and reproduction documentation
 README.md                         Operational guide and troubleshooting
 .trellis/                         Trellis workflow, tasks, specs, journals
 ```
@@ -60,8 +59,8 @@ checked driver codes back with `-GuiInstallCodes`.
   grows near 500 lines.
 - Keep `install_lenovo_drivers.bat` thin: it builds the Go engine when needed,
   invokes it, and forwards exit codes.
-- Do not create more PowerShell runtime entry points. The legacy files stay
-  frozen as a behavioral reference only.
+- Do not create another PowerShell runtime entry point. The WPF file remains
+  the only PowerShell runtime shell.
 
 ---
 

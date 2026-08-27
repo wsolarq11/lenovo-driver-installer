@@ -18,7 +18,7 @@ import (
 	"lenovo-driver/internal/model"
 )
 
-// Options mirrors the public CLI contract of install_lenovo_drivers.ps1.
+// Options mirrors the public CLI contract.
 type Options struct {
 	DryRun          bool
 	IncludeBios     bool

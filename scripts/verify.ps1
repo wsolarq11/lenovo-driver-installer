@@ -3,7 +3,7 @@
 Offline verification gate for the Lenovo driver installer Go migration.
 
 .DESCRIPTION
-Runs Go build/test/vet/gofmt, PowerShell syntax checks, PS core tests, CLI
+Runs Go build/test/vet/gofmt, PowerShell syntax checks for the WPF layer, CLI
 smoke tests, and workspace hygiene checks. It never calls the real Lenovo API,
 downloads drivers, or installs anything.
 #>
@@ -73,8 +73,6 @@ Assert-Step 'gofmt' {
 }
 
 $psFiles = @(
-    'install_lenovo_drivers.ps1',
-    'lenovo_driver_core.ps1',
     'lenovo_driver_wpf.ps1'
 )
 Assert-Step 'PowerShell parse' {
@@ -98,18 +96,27 @@ Assert-Step 'PowerShell parse' {
     }
 }
 
-Assert-Step 'PS core tests' {
-    & (Join-Path $repoRoot 'lenovo_driver_core.tests.ps1')
-    if ($LASTEXITCODE -ne 0) { throw "PS core tests exited $LASTEXITCODE" }
+Assert-Step 'Legacy PowerShell files removed' {
+    $legacyFiles = @(
+        'install_lenovo_drivers.ps1',
+        'lenovo_driver_core.ps1',
+        'lenovo_driver_core.tests.ps1',
+        'lenovo_installer_improvement_plan.md'
+    )
+    foreach ($file in $legacyFiles) {
+        if (Test-Path -LiteralPath (Join-Path $repoRoot $file)) {
+            throw "legacy file remains: $file"
+        }
+    }
 }
 
 Assert-Step 'CLI build to temp' {
-    $smokeDir = Join-Path $env:TEMP 'lenovo-driver-verify'
-    if (Test-Path -LiteralPath $smokeDir) { Remove-Item -LiteralPath $smokeDir -Recurse -Force }
-    New-Item -ItemType Directory -Path $smokeDir | Out-Null
-    & $GoExe build -o (Join-Path $smokeDir 'lenovo-driver.exe') ./cmd/lenovo-driver
+    $script:SmokeDir = Join-Path $env:TEMP 'lenovo-driver-verify'
+    if (Test-Path -LiteralPath $script:SmokeDir) { Remove-Item -LiteralPath $script:SmokeDir -Recurse -Force }
+    New-Item -ItemType Directory -Path $script:SmokeDir | Out-Null
+    & $GoExe build -o (Join-Path $script:SmokeDir 'lenovo-driver.exe') ./cmd/lenovo-driver
     if ($LASTEXITCODE -ne 0) { throw "go build smoke exited $LASTEXITCODE" }
-    $script:SmokeExe = Join-Path $smokeDir 'lenovo-driver.exe'
+    $script:SmokeExe = Join-Path $script:SmokeDir 'lenovo-driver.exe'
 }
 
 Assert-Step 'CLI help' {
@@ -125,8 +132,16 @@ $invalidCombinations = @(
 for ($i = 0; $i -lt $invalidCombinations.Count; $i++) {
     $name = "CLI invalid combination $($i + 1)"
     Assert-Step $name {
-        & $script:SmokeExe @($invalidCombinations[$i]) 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 2) { throw "expected exit 2, got $LASTEXITCODE" }
+        $stdoutPath = Join-Path $script:SmokeDir "invalid-$($i + 1).out"
+        $stderrPath = Join-Path $script:SmokeDir "invalid-$($i + 1).err"
+        $process = Start-Process -FilePath $script:SmokeExe `
+            -ArgumentList $invalidCombinations[$i] `
+            -NoNewWindow -Wait -PassThru `
+            -RedirectStandardOutput $stdoutPath `
+            -RedirectStandardError $stderrPath
+        if ($process.ExitCode -ne 2) { throw "expected exit 2, got $($process.ExitCode)" }
+        $stdout = Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction SilentlyContinue
+        if ($stdout -match 'Error:') { throw "CLI error text leaked to stdout: $stdout" }
     }
 }
 

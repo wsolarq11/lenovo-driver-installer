@@ -2,7 +2,7 @@
 
 > 版本：v1  
 > 适用对象：联想中国大陆销售机型，重点以 `82JQ` / `PF2SBWJA` / Windows 10 19045 为验证样本。  
-> 本文是“驱动应不应该更新、要不要跨 OS 安装、以谁为准”的事实标准，不等同于对 `install_lenovo_drivers.ps1` 当前实现的承诺。
+> 本文是“驱动应不应该更新、要不要跨 OS 安装、以谁为准”的事实标准，不等同于对当前实现细节的承诺。
 
 ## 1. 事实结论
 
@@ -177,7 +177,7 @@
 
 ## 7. 后续落地项
 
-以下项目已在 `install_lenovo_drivers.ps1` v5 落地：
+以下项目已由当前 Go 实现落地：
 
 1. 优先使用官方 QuickFix 数据源 `SearchForXbb`（含 `MD5`、`Parameter`、`Bootfile`），失败时回退官网 `drive_listnew`；OS 列表也支持 QuickFix 回退。
 2. 下载后校验官方 `MD5`，缓存文件复用前同样校验；本地 SHA-256 缓存继续保留。

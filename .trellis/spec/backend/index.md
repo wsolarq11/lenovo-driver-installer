@@ -8,8 +8,8 @@
 
 This is a single-repo Lenovo driver installer. The runtime is a Go CLI under
 `cmd/` and `internal/`, a WPF presentation layer, `lenovo_driver_wpf.ps1`, and
-thin `.bat` wrappers. The legacy PowerShell core and shell remain as a frozen
-behavioral baseline.
+thin `.bat` wrappers. The former PowerShell core and shell have been removed
+after the Go migration was verified.
 
 ---
 

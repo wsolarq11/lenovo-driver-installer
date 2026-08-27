@@ -90,7 +90,7 @@ func (a *App) CompareOSDriverView(
 		driver.LocalVendor = localVendor
 		driver.CompareStatus = compare.CompareDriverStatus(driver.Version, localVersion, localVendor)
 		if localVersion != "" {
-			if alternateSourceMap == nil {
+			if driver.CompareStatus == "Local newer" && alternateSourceMap == nil {
 				alternateSourceMap = a.initAlternateSourceMap(ctx, categoryID, osList, currentSystemOsID, driverResult.Source)
 			}
 			driver.SourceAudit = a.resolveDriverSourceAudit(ctx, driver, matchedDevices, history, currentSourceMap, alternateSourceMap)

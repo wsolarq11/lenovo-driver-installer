@@ -4,8 +4,10 @@ A Go installer for Lenovo machines. It detects the current machine model at
 runtime, queries the official Lenovo driver API, compares available drivers
 with locally installed versions, and installs only the selected applicable
 drivers. The Go CLI is the deterministic engine; WPF remains the desktop
-presentation layer, and the legacy PowerShell files are kept as a frozen
-behavioral baseline.
+presentation layer.
+
+Full reproduction and development details are in
+[docs/TECHNICAL.md](docs/TECHNICAL.md).
 
 ## Fact Standard
 
@@ -229,11 +231,8 @@ The runtime is a functional core with an imperative shell:
   CLI in a child process, renders the JSON driver view in a WPF table, and
   forwards user-selected driver codes back to the same CLI for
   download/install.
-- `install_lenovo_drivers.ps1` and `lenovo_driver_core.ps1` are the frozen
-  legacy PowerShell implementation. They remain as the behavioral baseline but
-  are no longer the runtime entry point.
 - `install_lenovo_drivers.bat` and `install_lenovo_drivers_wpf.bat` stay thin
-  and remain the recommended entry points. The CLI wrapper builds the Go
+  and are the recommended entry points. The CLI wrapper builds the Go
   engine when needed; the WPF wrapper expects `bin\lenovo-driver.exe`.
 
 The Go packages are small and focused. Files stay under 500 lines, public
@@ -271,5 +270,5 @@ engine:
 .\lenovo_driver_wpf.ps1 -WorkerSmoke -NoElevation
 ```
 
-The v5 scope and non-goals are documented in
-`lenovo_installer_improvement_plan.md`.
+The architecture, API contract, installer behavior, and clean-checkout
+reproduction steps are documented in [docs/TECHNICAL.md](docs/TECHNICAL.md).

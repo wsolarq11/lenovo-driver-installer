@@ -127,3 +127,14 @@ func TestSelectByCodes(t *testing.T) {
 		t.Fatalf("unexpected GUI selection: %#v", selected)
 	}
 }
+
+func TestNextOSLabelIncludesOSID(t *testing.T) {
+	osList := []model.OSListEntry{
+		{OSID: "42", OSName: "Windows 10 64-bit"},
+		{OSID: "248", OSName: "Windows 11 64-bit"},
+	}
+	got := nextOSLabel(osList, "42")
+	if got != "Windows 11 64-bit (OSID 248)" {
+		t.Fatalf("nextOSLabel = %q", got)
+	}
+}

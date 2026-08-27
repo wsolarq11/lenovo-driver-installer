@@ -44,13 +44,13 @@ func (a *App) SelectInteractive(
 				a.Log(ctx, "No alternate OS list available.", "WARN")
 				continue
 			}
-			currentListOsID = osList[nextIndex].OSID
-			nextView, err := a.CompareOSDriverView(ctx, opts, categoryID, currentListOsID, sysID, osList, localDevices, installedApps, softwareSnapshot, history)
+			nextListOsID := osList[nextIndex].OSID
+			nextView, err := a.CompareOSDriverView(ctx, opts, categoryID, nextListOsID, sysID, osList, localDevices, installedApps, softwareSnapshot, history)
 			if err != nil {
 				a.Log(ctx, "Could not load alternate OS list: "+err.Error(), "WARN")
-				currentListOsID = osList[nextIndex].OSID
 				continue
 			}
+			currentListOsID = nextListOsID
 			currentView = nextView
 			continue
 		}
@@ -161,7 +161,7 @@ func nextOSLabel(osList []model.OSListEntry, currentID string) string {
 	if idx < 0 || idx >= len(osList) {
 		return ""
 	}
-	return osList[idx].OSName
+	return osList[idx].OSName + " (OSID " + osList[idx].OSID + ")"
 }
 
 func readDriverSelection(reader *bufio.Reader, writer io.Writer, view *DriverView) []*model.Driver {

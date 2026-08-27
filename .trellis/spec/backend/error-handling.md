@@ -9,8 +9,8 @@
 Go functions return explicit errors instead of silently continuing. Fallback
 paths are narrow and documented: for example, QuickFix falls back to the
 webpage API, and a 403 CDN URL is refreshed from the current official list
-once. The legacy PowerShell files remain as the behavioral baseline but do not
-own runtime errors.
+once. The former PowerShell implementation has been removed after the Go
+migration was verified.
 
 ---
 

@@ -62,8 +62,7 @@ and a repeatable offline verification script.
 ```
 
 The script runs Go build/test/vet/gofmt, PowerShell parser checks for the WPF
-and legacy files, PS core tests, CLI contract checks, `git diff --check`, and
-untracked artifact hygiene.
+layer, CLI contract checks, `git diff --check`, and untracked artifact hygiene.
 
 WPF smoke checks after building `bin\lenovo-driver.exe`:
 
