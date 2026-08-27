@@ -6,9 +6,9 @@
 
 ## Overview
 
-All console output is routed through `Write-Log` in
-`install_lenovo_drivers.ps1`. Each line is written to
-`%TEMP%\lenovo_driver_install.log` and mirrored to the console.
+`App.Log` writes each line to `%TEMP%\lenovo_driver_install.log` and mirrors it
+to the console. GUI child processes redirect stdout/stderr into temporary files
+that the WPF layer polls and displays.
 
 ---
 

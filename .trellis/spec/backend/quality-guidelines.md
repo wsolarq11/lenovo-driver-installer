@@ -6,25 +6,25 @@
 
 ## Overview
 
-This repository has no package manager or automated test suite. Quality is
-maintained through a small core/shell PowerShell runtime, explicit CLI
-contracts, offline pure-core tests, and repeatable smoke checks.
+This repository uses Go as the runtime language. Quality is maintained through
+small packages, explicit error propagation, offline tests, `go vet`, `gofmt`,
+and a repeatable offline verification script.
 
 ---
 
 ## Required Patterns
 
-- Keep deterministic logic in `lenovo_driver_core.ps1`; keep side effects in
-  `install_lenovo_drivers.ps1` and keep the `.bat` wrapper thin.
-- Use PowerShell approved verbs and the existing `#region` structure.
+- Keep deterministic logic in `internal/compare`, `internal/audit`,
+  `internal/plan`, and `internal/api`; keep side effects in `internal/app` and
+  `internal/install`.
 - Preserve all public parameters, interactive choices, exit codes, download
   cache rules, and installer fallbacks.
-- Log through `Write-Log` instead of printing directly from the shell.
-- Keep core functions free of network, registry, PnP, file, console,
-  `Read-Host`, and process APIs.
+- Log through `App.Log` instead of printing directly from orchestration code.
+- Keep core packages free of network, registry, PnP, file, console, and process
+  APIs.
 - Extract small helpers when the same non-trivial logic appears more than once.
-  Examples: `Test-RebootExitCode`, `Test-FileSizeMatch`, and
-  `Get-SizeTolerance` in `lenovo_driver_core.ps1`.
+  Examples: `download.IsHTTPStatus`, `install.TestRebootExitCode`, and
+  `pathutil.Base`.
 - Resolve software-only driver versions from installed application/service
   evidence; do not treat a same-vendor PnP device as proof for a software
   package.
@@ -34,9 +34,9 @@ contracts, offline pure-core tests, and repeatable smoke checks.
   and never attribute an unchanged local version to that package.
 - Source attribution must use only real evidence: install history,
   `setupapi.*.log` import records, current/alternate official maps, and active
-  device/DriverStore properties. Keep `setupapi` parsing as a pure core
-  function; the shell only reads logs and supplies device evidence. Do not
-  guess a source OS when evidence is missing.
+  device/DriverStore properties. Keep `setupapi` parsing pure; orchestration
+  only reads logs and supplies evidence. Do not guess a source OS when evidence
+  is missing.
 - Keep comments for non-obvious Lenovo API or Windows behavior, not for every
   line.
 
@@ -44,71 +44,32 @@ contracts, offline pure-core tests, and repeatable smoke checks.
 
 ## Forbidden Patterns
 
-- Adding network, registry, PnP, file, console, `Read-Host`, or process access
-  to `lenovo_driver_core.ps1`.
-- Adding a PowerShell module or another runtime file without updating the
-  deployment contract.
-- Adding new external tooling or dependencies.
+- Adding network, registry, PnP, file, console, or process access to
+  deterministic packages.
+- Adding another runtime language entry point without updating the deployment
+  contract.
+- Adding new external dependencies without review.
 - Silently retrying unknown installer families with generic flags.
-- Swallowing exceptions without a log message.
+- Swallowing errors without a log message.
 - Changing exit code semantics or the default current-OS-only behavior.
 
 ---
 
 ## Verification
 
-PowerShell syntax parse:
-
 ```powershell
-$tokens = $null; $errors = $null
-[System.Management.Automation.Language.Parser]::ParseFile(
-  'install_lenovo_drivers.ps1',
-  [ref]$tokens,
-  [ref]$errors
-) | Out-Null
-if ($errors) { $errors | Format-List; exit 1 } else { 'PARSE OK' }
+.\scripts\verify.ps1
 ```
 
-Run the same parse for `lenovo_driver_core.ps1` and `lenovo_driver_wpf.ps1`.
+The script runs Go build/test/vet/gofmt, PowerShell parser checks for the WPF
+and legacy files, PS core tests, CLI contract checks, `git diff --check`, and
+untracked artifact hygiene.
 
-Offline core tests:
-
-```powershell
-.\lenovo_driver_core.tests.ps1
-```
-
-WPF smoke checks:
+WPF smoke checks after building `bin\lenovo-driver.exe`:
 
 ```powershell
 .\lenovo_driver_wpf.ps1 -SelfTest -NoElevation
 .\lenovo_driver_wpf.ps1 -WorkerSmoke -NoElevation
-```
-
-Static analysis when PSScriptAnalyzer is installed:
-
-```powershell
-$issues = @()
-foreach ($file in @('lenovo_driver_core.ps1', 'install_lenovo_drivers.ps1')) {
-  $issues += Invoke-ScriptAnalyzer -Path $file -Severity Warning, Error
-}
-$issues | Format-Table RuleName, Line, Message -AutoSize
-```
-
-Expected remaining warnings are limited to the intentional legacy surface:
-existing public function names, interactive `Write-Host`, WMI fallback, official
-MD5 hashing, intentionally silent fallback catches, the `Write-Log` name, and
-the nested-scope `OsInfo` false positive in `Resolve-LenovoOsEntry`. Fix new
-warnings such as automatic-variable shadowing.
-
-Smoke checks:
-
-```powershell
-& '.\install_lenovo_drivers.ps1' -Help
-& '.\install_lenovo_drivers.ps1' -CurrentOSOnly -LatestAcrossOS  # expect EXIT=2
-& '.\install_lenovo_drivers.ps1' -CurrentOSOnly -TargetOS 248      # expect EXIT=2
-& '.\install_lenovo_drivers.ps1' -LatestAcrossOS -TargetOS 248     # expect EXIT=2
-& '.\install_lenovo_drivers.ps1' -Elevated              # interactive t toggle, then cancel
-& '.\install_lenovo_drivers.ps1' -Elevated -TargetOS 248 # verify y/a preview lists, then cancel
 ```
 
 ---
@@ -116,8 +77,9 @@ Smoke checks:
 ## Code Review Checklist
 
 - [ ] CLI parameters and help text match `README.md`.
-- [ ] New code follows the existing region layout.
-- [ ] No repeated size/timeout/reboot logic was copied.
+- [ ] New code follows the existing package responsibilities.
+- [ ] No repeated size/timeout/reboot/path logic was copied.
 - [ ] No generic silent retry or behavior expansion was added.
-- [ ] PowerShell parser validation passes.
+- [ ] New public functions have tests when they change behavior.
+- [ ] `go vet ./...` and `gofmt` are clean.
 - [ ] `git diff --check` is clean.

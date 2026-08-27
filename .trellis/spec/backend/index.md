@@ -1,4 +1,4 @@
-# Backend / PowerShell Runtime Guidelines
+# Backend / Go Runtime Guidelines
 
 > Best practices for the non-UI runtime code in this repository.
 
@@ -6,10 +6,10 @@
 
 ## Overview
 
-This is a single-repo Lenovo driver installer. The runtime is split into a
-side-effect shell, `install_lenovo_drivers.ps1`, a deterministic core,
-`lenovo_driver_core.ps1`, and a WPF presentation layer,
-`lenovo_driver_wpf.ps1`, with thin `.bat` wrappers.
+This is a single-repo Lenovo driver installer. The runtime is a Go CLI under
+`cmd/` and `internal/`, a WPF presentation layer, `lenovo_driver_wpf.ps1`, and
+thin `.bat` wrappers. The legacy PowerShell core and shell remain as a frozen
+behavioral baseline.
 
 ---
 
@@ -17,27 +17,23 @@ side-effect shell, `install_lenovo_drivers.ps1`, a deterministic core,
 
 | Guide | Description |
 |-------|-------------|
-| [Directory Structure](./directory-structure.md) | Repository layout and script organization |
+| [Directory Structure](./directory-structure.md) | Repository layout and package organization |
 | [Error Handling](./error-handling.md) | Failure propagation, exit codes, and fallbacks |
 | [Logging Guidelines](./logging-guidelines.md) | Log format, levels, and artifacts |
-| [Quality Guidelines](./quality-guidelines.md) | Script structure, naming, and verification |
+| [Quality Guidelines](./quality-guidelines.md) | Package structure, naming, and verification |
 
 ---
 
 ## Pre-Development Checklist
 
-- [ ] Read `README.md` and `lenovo_installer_improvement_plan.md` before
-      changing CLI behavior.
-- [ ] Preserve the core/shell PowerShell deployment shape unless a task
-      explicitly changes it.
-- [ ] Keep deterministic logic in `lenovo_driver_core.ps1` and side effects in
-      `install_lenovo_drivers.ps1`.
-- [ ] Keep new code inside the matching `#region` in
-      `install_lenovo_drivers.ps1`.
-- [ ] Keep every public parameter, interactive choice, exit code, cache rule,
-      and installer fallback intact unless the task changes that contract.
-- [ ] Run the PowerShell parser validation from
-      [Quality Guidelines](./quality-guidelines.md).
+- [ ] Read `README.md`, `DRIVER_FACT_STANDARD.md`, and the active Trellis task
+      before changing CLI behavior.
+- [ ] Keep deterministic decision logic in `internal/compare`, `internal/audit`,
+      `internal/plan`, and `internal/api` where practical.
+- [ ] Keep system side effects in `internal/app` and `internal/install`.
+- [ ] Preserve public parameters, interactive choices, exit codes, cache rules,
+      and installer fallbacks unless the task changes that contract.
+- [ ] Run `scripts/verify.ps1` before declaring a Go backend change complete.
 
 ---
 
@@ -45,6 +41,6 @@ side-effect shell, `install_lenovo_drivers.ps1`, a deterministic core,
 
 - [ ] No template placeholders remain.
 - [ ] Claims reference real files in this repository.
-- [ ] New helpers are backed by repeated code or a clear local pattern.
-- [ ] No new external dependencies were added.
+- [ ] New helpers are backed by tests or a clear local pattern.
+- [ ] No new external dependencies were added without review.
 - [ ] `git diff --check` is clean.

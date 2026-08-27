@@ -3,9 +3,9 @@
 WPF front end for the Lenovo driver installer.
 
 .DESCRIPTION
-Launches a desktop UI that queries the existing installer engine through JSON
+Launches a desktop UI that queries the Go installer engine through JSON
 export jobs and runs selected driver downloads/installations in background
-PowerShell jobs. The CLI remains the deterministic engine; this script only
+child processes. The CLI remains the deterministic engine; this script only
 provides the interactive presentation layer.
 
 .PARAMETER SelfTest
@@ -35,11 +35,12 @@ Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
 
-$script:InstallerPath = Join-Path $PSScriptRoot 'install_lenovo_drivers.ps1'
+$script:InstallerPath = Join-Path $PSScriptRoot 'bin\lenovo-driver.exe'
 $script:WorkerProcess = $null
 $script:WorkerMode = ''
 $script:WorkerExportPath = ''
 $script:WorkerStdoutPath = ''
+$script:WorkerStderrPath = ''
 $script:Timer = $null
 $script:DriverRows = $null
 $script:LastExport = $null
@@ -207,12 +208,21 @@ function Update-WorkerStatus {
     $mode = $script:WorkerMode
     $exportPath = $script:WorkerExportPath
     $outFile = $script:WorkerStdoutPath
+    $stderrFile = $script:WorkerStderrPath
     $script:WorkerProcess = $null
     $script:WorkerMode = ''
     $script:WorkerExportPath = ''
     $script:WorkerStdoutPath = ''
+    $script:WorkerStderrPath = ''
     $script:WorkerStdoutRead = 0
     Set-GuiBusy -Busy $false
+
+    if ($stderrFile -and (Test-Path -LiteralPath $stderrFile)) {
+        $stderrLines = @(Get-Content -LiteralPath $stderrFile -Encoding UTF8 -ErrorAction SilentlyContinue)
+        foreach ($line in $stderrLines) {
+            if ($line) { Add-GuiLog -Message ("STDERR: {0}" -f [string]$line) }
+        }
+    }
 
     if ($exitCode -ne 0) {
         Add-GuiLog -Message ("后台任务结束，退出码 {0}" -f $exitCode)
@@ -313,9 +323,16 @@ function Start-LenovoDriverJob {
 
     $script:WorkerMode = if ($Export) { 'Export' } else { 'Install' }
     $script:WorkerStdoutPath = Join-Path $env:TEMP ('lenovo_gui_out_{0}.txt' -f ([guid]::NewGuid().ToString('N')))
+    $script:WorkerStderrPath = Join-Path $env:TEMP ('lenovo_gui_err_{0}.txt' -f ([guid]::NewGuid().ToString('N')))
     $script:WorkerStdoutRead = 0
     Add-GuiLog -Message ("启动后台任务：{0}" -f (($argsList | Where-Object { $_ -notmatch '^-(GuiExportPath|GuiInstallCodes)$' } | ForEach-Object { $_ }) -join ' '))
     Set-GuiBusy -Busy $true
+
+    if (-not (Test-Path -LiteralPath $script:InstallerPath)) {
+        Add-GuiLog -Message ("Go 引擎不存在，请先构建：{0}" -f $script:InstallerPath)
+        Set-GuiBusy -Busy $false
+        return
+    }
 
     $valueParams = @('-Model', '-DownloadDir', '-GuiExportPath', '-TargetOS', '-GuiInstallCodes')
     $tokens = @()
@@ -325,20 +342,16 @@ function Start-LenovoDriverJob {
             $tokens += $token
             $i++
             $value = [string]$argsList[$i]
-            $tokens += ("'" + $value.Replace("'", "''") + "'")
+            $tokens += ('"' + $value.Replace('"', '\"') + '"')
         } else {
             $tokens += $token
         }
     }
-    $escapedScript = $script:InstallerPath.Replace("'", "''")
-    $escapedOut = $script:WorkerStdoutPath.Replace("'", "''")
-    $command = "& '$escapedScript' $($tokens -join ' ') *> '$escapedOut'"
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = 'powershell.exe'
-    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -Command `"$command`""
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $true
-    $script:WorkerProcess = [System.Diagnostics.Process]::Start($psi)
+    $script:WorkerProcess = Start-Process -FilePath $script:InstallerPath `
+        -ArgumentList $tokens `
+        -RedirectStandardOutput $script:WorkerStdoutPath `
+        -RedirectStandardError $script:WorkerStderrPath `
+        -PassThru -WindowStyle Hidden
     Start-WorkerPolling
 }
 
@@ -524,6 +537,10 @@ if ($SelfTest) {
 }
 
 if ($WorkerSmoke) {
+    if (-not (Test-Path -LiteralPath $script:InstallerPath)) {
+        Write-Host "WORKER_SMOKE_NO_GO_ENGINE=$script:InstallerPath"
+        exit 1
+    }
     $window = New-LenovoDriverWindow
     $window.Hide()
     Start-LenovoDriverJob -Export -TargetOsId '248'

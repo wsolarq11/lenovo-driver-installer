@@ -9,7 +9,14 @@
 .trellis/workspace/*/journal-*.md merge=union
 
 # Installer quality gates keep line endings explicit.
+.gitattributes text eol=lf
+.gitignore text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
 *.bat text eol=crlf
 *.ps1 text eol=lf
-.githooks/* text eol=lf
-menu.txt text eol=crlf
+*.go text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf

@@ -1,10 +1,11 @@
 # Lenovo Driver Installer
 
-A PowerShell installer for Lenovo machines. It detects the current
-machine model at runtime, queries the official Lenovo driver API, compares
-available drivers with locally installed versions, and installs only the
-selected applicable drivers. The code is split into a deterministic core and a
-side-effect shell; the `.bat` wrapper remains the only user entry point.
+A Go installer for Lenovo machines. It detects the current machine model at
+runtime, queries the official Lenovo driver API, compares available drivers
+with locally installed versions, and installs only the selected applicable
+drivers. The Go CLI is the deterministic engine; WPF remains the desktop
+presentation layer, and the legacy PowerShell files are kept as a frozen
+behavioral baseline.
 
 ## Fact Standard
 
@@ -16,14 +17,15 @@ The factual standard for Lenovo driver decisions is documented in
   downgrade or switch OS lists.
 - The official QuickFix tool is good for one-click current-OS matching, but it
   is not a dry-run/audit tool.
-- This script remains a current-OS-first dry-run, selection, logging, and
+- The installer remains a current-OS-first dry-run, selection, logging, and
   integrity-checking tool; `-TargetOS` is the explicit way to inspect another
   supported OS list, while `-LatestAcrossOS` is an experimental merge mode that
   is not the standard update path.
 
 ## Quick Start
 
-Run the batch file from an elevated PowerShell or Command Prompt:
+The first run builds `bin\lenovo-driver.exe` when Go is available, then invokes
+the Go CLI from an elevated PowerShell or Command Prompt:
 
 ```bat
 install_lenovo_drivers.bat
@@ -61,9 +63,11 @@ to display. The buttons mirror the CLI choices:
 - `安装选中项` installs only the rows checked in the table.
 - `仅下载选中项` downloads the checked rows without installing them.
 
-The WPF script does not duplicate driver decision logic. It starts the existing
-PowerShell installer in a child process with JSON export or install arguments,
-then renders the same deterministic comparison results in the desktop UI.
+The WPF script does not duplicate driver decision logic. It starts the Go CLI
+in a child process with JSON export or install arguments, then renders the same
+deterministic comparison results in the desktop UI. Build the engine once with
+`go build -o bin\lenovo-driver.exe ./cmd/lenovo-driver` before launching the
+WPF wrapper.
 
 
 A dry run never downloads or installs anything:
@@ -133,7 +137,9 @@ install_lenovo_drivers.bat -LatestAcrossOS
 | `-DownloadOnly` | Download applicable files without installing. |
 | `-DownloadDir <path>` | Override the download directory. Defaults to `%TEMP%\LenovoDrivers`. |
 | `-Model <model>` | Override automatic machine model lookup, for example `82JQ`. |
-| `-Elevated` | Skip elevation. Used internally by the batch wrapper. |
+| `-Elevated` | Skip elevation. Used internally by the WPF wrapper. |
+| `-GuiExportPath <path>` | Write the WPF-compatible JSON driver view and exit. |
+| `-GuiInstallCodes <codes>` | Install only the comma-separated driver codes from a GUI export. |
 | `-Help` | Show usage help. |
 
 `-CurrentOSOnly`, `-LatestAcrossOS`, and `-TargetOS` are mutually exclusive:
@@ -161,8 +167,10 @@ fails fast with exit code `2`.
   tree when a run stalls.
 - Installer exit codes `3010` and `1641` are treated as success with reboot
   required.
-- If an Inno-style wrapper stalls or fails, the script attempts extracted INF
-  installation through `pnputil` or an inner installer where available.
+- If an Inno-style wrapper stalls or fails, the installer attempts extracted
+  INF installation through `pnputil` or an inner installer where available.
+- If that fallback also fails for an EXE, the console asks whether to run the
+  downloaded EXE interactively before marking the driver failed.
 
 ## Installer Handling
 
@@ -190,6 +198,7 @@ fails fast with exit code `2`.
 | `0` | Completed successfully, or no drivers were selected. |
 | `1` | One or more downloads or installs failed. |
 | `2` | Invalid flag combination. |
+| `3` | A `-GuiInstallCodes` driver code was not found in the export. |
 
 ## Troubleshooting
 
@@ -208,57 +217,54 @@ fails fast with exit code `2`.
 
 ## Architecture
 
-The runtime is deliberately split into a deterministic core and side-effect
-shells:
+The runtime is a functional core with an imperative shell:
 
-- `lenovo_driver_core.ps1` contains deterministic decision logic only:
-  driver-list parsing, hardware matching, version comparison, setupapi
-  import-log parsing, source attribution, selection, plan/table formatting, and
-  token parsing. It must not call network, registry, PnP, file, console, or
-  process APIs.
-- `install_lenovo_drivers.ps1` is the side-effect shell. It dot-sources the
-  core and owns API calls, system snapshots, history files, downloads,
-  installers, logging, prompts, and orchestration.
-- `lenovo_driver_wpf.ps1` is the desktop presentation layer. It launches the
-  shell in a child PowerShell process, renders the JSON driver view in a WPF
-  table, and forwards user-selected driver codes back to the same shell for
+- `internal/` contains the Go deterministic core: API parsing, inventory,
+  comparison, audit, plan formatting, download integrity, installer dispatch,
+  and path utilities.
+- `cmd/lenovo-driver` is the CLI orchestration shell. It owns flag parsing,
+  elevation, API calls, system snapshots, history files, logging, prompts, and
+  download/install side effects.
+- `lenovo_driver_wpf.ps1` is the desktop presentation layer. It launches the Go
+  CLI in a child process, renders the JSON driver view in a WPF table, and
+  forwards user-selected driver codes back to the same CLI for
   download/install.
+- `install_lenovo_drivers.ps1` and `lenovo_driver_core.ps1` are the frozen
+  legacy PowerShell implementation. They remain as the behavioral baseline but
+  are no longer the runtime entry point.
 - `install_lenovo_drivers.bat` and `install_lenovo_drivers_wpf.bat` stay thin
-  and remain the recommended entry points.
+  and remain the recommended entry points. The CLI wrapper builds the Go
+  engine when needed; the WPF wrapper expects `bin\lenovo-driver.exe`.
 
-The shell gathers all inputs (driver objects, local devices, installed apps,
-history, and source maps), passes them into core functions, and performs only
-the side effects the core results require.
+The Go packages are small and focused. Files stay under 500 lines, public
+functions use explicit error returns, and offline tests cover parsing,
+matching, comparison, history, download integrity, and path handling.
 
 ## Development
 
-The shell is organized into regions for configuration, logging, system info,
-Lenovo API access, local inventory, console output, selection, download
-integrity, installer dispatch, and main orchestration. The deterministic core
-is kept side-effect-free so it can be tested without a real machine or network.
+The Go engine is organized by package: API, inventory, comparison, audit,
+plan, download, install, and app orchestration. The deterministic core is
+side-effect-free where practical so it can be tested without a real machine or
+network.
 
-Validate syntax with:
-
-```powershell
-$files = @('install_lenovo_drivers.ps1', 'lenovo_driver_core.ps1', 'lenovo_driver_wpf.ps1')
-foreach ($file in $files) {
-  $tokens = $null; $errors = $null
-  [System.Management.Automation.Language.Parser]::ParseFile(
-    $file,
-    [ref]$tokens,
-    [ref]$errors
-  ) | Out-Null
-  if ($errors) { $errors | Format-List; exit 1 } else { "PARSE OK $file" }
-}
-```
-
-Run the offline core tests with:
+Build and verify the Go engine with:
 
 ```powershell
-.\lenovo_driver_core.tests.ps1
+go build ./...
+go test ./...
+go vet ./...
+gofmt -w internal cmd
+go build -o bin\lenovo-driver.exe .\cmd\lenovo-driver
 ```
 
-Smoke-check the WPF render and the real API bridge with:
+Run the full offline acceptance gate with:
+
+```powershell
+.\scripts\verify.ps1
+```
+
+Smoke-check the WPF render and the real API bridge after building the Go
+engine:
 
 ```powershell
 .\lenovo_driver_wpf.ps1 -SelfTest -NoElevation

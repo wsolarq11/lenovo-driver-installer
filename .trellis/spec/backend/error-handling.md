@@ -6,51 +6,47 @@
 
 ## Overview
 
-The installer uses `$ErrorActionPreference = 'Stop'` so unexpected failures
-stop execution instead of silently continuing. Fallback paths are explicit
-and narrow: for example, CIM calls fall back to WMI, and failed installers use
-the documented fallback only when an extracted INF or inner installer exists.
-
-The deterministic core does not perform fallible I/O, so it does not throw
-environment errors; the side-effect shell owns API, system, file, download,
-and process failures and converts them into logs, result objects, or exit
-codes at the shell boundary.
+Go functions return explicit errors instead of silently continuing. Fallback
+paths are narrow and documented: for example, QuickFix falls back to the
+webpage API, and a 403 CDN URL is refreshed from the current official list
+once. The legacy PowerShell files remain as the behavioral baseline but do not
+own runtime errors.
 
 ---
 
 ## Error Types
 
 - **CLI contract errors**: invalid flag combinations return `2`.
-- **Runtime failures**: download or install failures are accumulated in
-  `$failed` and produce exit code `1`.
-- **Success with reboot required**: installer exit codes `3010` and `1641`
-  are treated as success with a reboot warning.
-- **Timeout**: process helpers return a result object with `TimedOut = $true`;
-  the process tree is killed with `taskkill /T /F`.
+- **Runtime failures**: download or install failures are accumulated and
+  produce exit code `1`.
+- **HTTP status**: `download.HTTPStatusError` preserves the status code so the
+  orchestration layer can make a narrow retry decision.
+- **Success with reboot required**: installer exit codes `3010` and `1641` are
+  treated as success with a reboot warning.
+- **Timeout**: `install.ProcessResult.TimedOut` is set when a process tree is
+  killed after the configured timeout.
+- **GUI code mismatch**: `-GuiInstallCodes` values that are not present in the
+  export return exit code `3`.
 
 ---
 
 ## Error Handling Patterns
 
-- Throw early with an actionable message for machine/API failures:
-  `install_lenovo_drivers.ps1` throws when the Lenovo category or current OS
-  entry cannot be resolved.
-- Use `try/catch` only for a real fallback or a controlled boundary, not as a
-  blanket error suppressor.
-- Log failures with `Write-Log -Level ERROR` before returning or accumulating
-  them.
-- Keep installer and download outcomes in `$success` / `$failed` arrays and
-  decide the process exit code from those arrays.
-- Do not silently retry a generic EXE failure. The script asks the user whether
-  to run it interactively instead.
+- Fail early with an actionable message for machine/API failures.
+- Use typed errors only where the caller needs the type to choose a fallback.
+- Log failures with `ERROR` before returning or accumulating them.
+- Keep download and installer outcomes in `success` / `failed` collections and
+  decide the process exit code from those collections.
+- Do not silently retry a generic EXE failure. Ask the user whether to run it
+  interactively before marking the driver failed.
 
 ---
 
 ## Common Mistakes
 
-- Catching an error and continuing without logging; the failure disappears
-  from both the console and `%TEMP%\lenovo_driver_install.log`.
+- Returning an empty value without an error when the caller cannot distinguish
+  a valid empty result from a failure.
 - Changing exit code semantics: `0` success, `1` one or more failures, `2`
-  invalid flag combination.
+  invalid flag combination, `3` GUI driver code mismatch.
 - Adding a generic silent retry for unknown installer families; this hides the
   failure and can leave the user with no actionable path.
