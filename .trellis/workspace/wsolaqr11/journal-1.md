@@ -47,3 +47,24 @@ Split installer into deterministic core, side-effect shell, offline core tests; 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 3: Complete Go migration and WPF switch
+
+**Date**: 2026-08-27
+**Task**: Complete Go migration and WPF switch
+**Branch**: `main`
+
+### Summary
+
+Finished Go engine migration, updated docs/specs, ran verify.ps1 PASS, WPF SelfTest and WorkerSmoke PASS, committed Go migration, archived task.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ac73db0` | (see git log) |
+
+### Status
+
+[OK] **Completed**

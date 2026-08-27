@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 2
-- **Last Active**: 2026-08-25
+- **Total Sessions**: 3
+- **Last Active**: 2026-08-27
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~49 | Active |
+| `journal-1.md` | ~70 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 3 | 2026-08-27 | Complete Go migration and WPF switch | `ac73db0` | `main` |
 | 2 | 2026-08-25 | Accept deterministic core / side-effect shell refactor | `f3c40b1` | `main` |
 | 1 | 2026-08-24 | Create and push Lenovo driver installer repo | `deb8e78` | `main` |
 <!-- @@@/auto:session-history -->
