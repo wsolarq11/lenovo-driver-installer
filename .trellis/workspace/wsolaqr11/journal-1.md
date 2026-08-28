@@ -68,3 +68,39 @@ Finished Go engine migration, updated docs/specs, ran verify.ps1 PASS, WPF SelfT
 ### Status
 
 [OK] **Completed**
+
+
+## Session 4: Clean repo and finalize GitHub delivery
+
+**Date**: 2026-08-28
+**Task**: Clean repo and finalize GitHub delivery
+**Branch**: `main`
+
+### Summary
+
+Cleaned the git worktree, finalized the Go-only installer documentation, fixed the Steamcommunity_302 hosts rule that blocked GitHub, restored gh auth with workflow scope, and verified the remote main branch.
+
+### Main Changes
+
+- Removed generated build and Python cache artifacts from the workspace.
+- Finalized Go-only installer with reproduction docs in docs/TECHNICAL.md and README.md.
+- Fixed S302 GitHub hosts blocking and re-authenticated GitHub CLI with repo and workflow scopes.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a6ea0ef` | (see git log) |
+
+### Testing
+
+- [OK] Ran scripts/verify.ps1: 13 steps, 0 failed, VERIFY_OK.
+- [OK] Confirmed git pull and push; remote refs/heads/main is a6ea0ef12fca06928c55269f5575aae36724424a.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Rotate any PAT previously pasted in chat if it has not been revoked.
