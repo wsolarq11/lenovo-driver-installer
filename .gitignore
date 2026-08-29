@@ -17,3 +17,8 @@ install-state.json.*
 # Editor/OS noise
 .DS_Store
 Thumbs.db
+
+# Trellis is maintained by its own package and kept local-only
+/.trellis/
+/.agents/
+/.dsh/
