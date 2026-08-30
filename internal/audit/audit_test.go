@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"strings"
 	"testing"
 
 	"lenovo-driver/internal/model"
@@ -61,7 +62,56 @@ func TestResolveDriverSourceEvidence(t *testing.T) {
 	driver := &model.Driver{DriverCode: "d1", DriverName: "Audio", LocalVersion: "2.0.0.1", OSID: "42"}
 	device := model.Device{Name: "Audio", DriverVersion: "2.0.0.1", InfName: "oem1.inf"}
 	auditResult := ResolveDriverSourceEvidence(driver, []model.Device{device}, nil, nil, nil)
-	if auditResult.Category != "Pre-existing DriverStore package" {
+	if auditResult.Category != model.AuditCategoryPreExistingStore {
 		t.Fatalf("unexpected audit category: %q", auditResult.Category)
+	}
+}
+
+func TestSourceEvidenceHistoryOutranksDevice(t *testing.T) {
+	driver := &model.Driver{DriverCode: "d1", DriverName: "Audio", LocalVersion: "2.0.0.1", OSID: "42"}
+	history := []model.HistoryRecord{{
+		Timestamp: "2026-01-01 00:00:00", DriverCode: "d1", DriverName: "Audio",
+		Version: "2.0.0.1", Result: "Installed", OSID: "42",
+	}}
+	device := model.Device{Name: "Audio", DriverVersion: "2.0.0.1", InfName: "oem1.inf"}
+	auditResult := ResolveDriverSourceEvidence(driver, []model.Device{device}, history, nil, nil)
+	if auditResult.Category != model.AuditCategoryInstallHistory {
+		t.Fatalf("history should outrank device evidence, got %q", auditResult.Category)
+	}
+	if auditResult.Summary != "Installed by this script from the current OS source" {
+		t.Fatalf("unexpected history summary: %q", auditResult.Summary)
+	}
+}
+
+func TestSourceEvidenceOfflineImageAvailable(t *testing.T) {
+	driver := &model.Driver{DriverCode: "d1", DriverName: "Audio", LocalVersion: "2.0.0.1", OSID: "42"}
+	device := model.Device{Name: "Audio", DriverVersion: "2.0.0.1", ImportSource: "SW_DVD5", ImportKind: "Offline"}
+	auditResult := ResolveDriverSourceEvidence(driver, []model.Device{device}, nil, nil, nil)
+	if auditResult.Category != model.AuditCategoryOfflineImage {
+		t.Fatalf("offline image should win, got %q", auditResult.Category)
+	}
+	if !strings.Contains(auditResult.Summary, "SW_DVD5") {
+		t.Fatalf("offline summary missing source: %q", auditResult.Summary)
+	}
+}
+
+func TestSourceEvidenceDeviceOutranksCurrentOS(t *testing.T) {
+	driver := &model.Driver{DriverCode: "d1", DriverName: "Audio", LocalVersion: "2.0.0.1", OSID: "42"}
+	device := model.Device{Name: "Audio", DriverVersion: "2.0.0.1", InfName: "oem1.inf"}
+	current := map[string]model.SourceMapEntry{"Audio|2.0.0.1": {OSID: "42", OSName: "Windows 10 64-bit"}}
+	auditResult := ResolveDriverSourceEvidence(driver, []model.Device{device}, nil, current, nil)
+	if auditResult.Category != model.AuditCategoryPreExistingStore {
+		t.Fatalf("device evidence should outrank current OS list, got %q", auditResult.Category)
+	}
+}
+
+func TestSourceEvidenceNoMatchFallsBackToUnknown(t *testing.T) {
+	driver := &model.Driver{DriverCode: "d1", DriverName: "Audio", LocalVersion: "2.0.0.1", OSID: "42"}
+	auditResult := ResolveDriverSourceEvidence(driver, nil, nil, nil, nil)
+	if auditResult.Category != model.AuditCategoryUnknown {
+		t.Fatalf("no evidence should be Unknown, got %q", auditResult.Category)
+	}
+	if auditResult.Summary != "No install history, DriverStore import evidence, or official Lenovo version match" {
+		t.Fatalf("unexpected fallback summary: %q", auditResult.Summary)
 	}
 }

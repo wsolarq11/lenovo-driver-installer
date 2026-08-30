@@ -1,10 +1,13 @@
 package install
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"lenovo-driver/internal/model"
 )
@@ -68,7 +71,7 @@ func TestInstallEXETimeoutAttemptsFallback(t *testing.T) {
 	}
 }
 
-func TestInstallEXEReturnsSilentExitWhenFallbackUnused(t *testing.T) {
+func TestInstallEXESurfacesCleanExitWhenFallbackUnused(t *testing.T) {
 	code, err := installEXE(
 		"d1.exe",
 		&model.Driver{DriverCode: "d1"},
@@ -80,11 +83,31 @@ func TestInstallEXEReturnsSilentExitWhenFallbackUnused(t *testing.T) {
 			return 0, false
 		},
 	)
-	if err == nil || !strings.Contains(err.Error(), "silent install exit 1603") {
-		t.Fatalf("unexpected silent install error: %v", err)
+	if err != nil {
+		t.Fatalf("unexpected error for clean non-zero exit: %v", err)
 	}
 	if code != 1603 {
 		t.Fatalf("installEXE failure code = %d, want 1603", code)
+	}
+}
+
+func TestInstallEXETimeoutWithoutFallbackIsHardError(t *testing.T) {
+	code, err := installEXE(
+		"d1.exe",
+		&model.Driver{DriverCode: "d1"},
+		t.TempDir(),
+		func(filePath string, args []string, timeoutSeconds int, workingDirectory string) ProcessResult {
+			return ProcessResult{ExitCode: -1, TimedOut: true}
+		},
+		func(driver *model.Driver, workingDir string) (int, bool) {
+			return 0, false
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("timeout with no usable fallback should be a terminal error: %v", err)
+	}
+	if code != -1 {
+		t.Fatalf("installEXE timeout code = %d, want -1", code)
 	}
 }
 
@@ -109,5 +132,48 @@ func TestExtractedTempDirsScansRecentRootsOnlyForNvidia(t *testing.T) {
 	got := extractedTempDirs(&model.Driver{DriverCode: "d2", DriverName: "NVIDIA Graphics"}, work)
 	if len(got) != 1 || filepath.Clean(got[0]) != filepath.Clean(recentDir) {
 		t.Fatalf("NVIDIA fallback candidates = %#v, want %q", got, recentDir)
+	}
+}
+
+func TestRunProcessTimeoutKillsTree(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("kill-tree path uses taskkill.exe and requires Windows")
+	}
+	start := time.Now()
+	result := runProcess(context.Background(), "powershell.exe",
+		[]string{"-NoProfile", "-Command", "Start-Sleep -Seconds 30"},
+		500*time.Millisecond, "")
+	if !result.TimedOut {
+		t.Fatalf("expected timeout, got %#v", result)
+	}
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Fatalf("kill after timeout took too long: %v", elapsed)
+	}
+}
+
+// TestInstallDriverFileStartFailureIsTerminal guards the InstallDriverFile
+// contract: a sub-process that cannot be started at all has no usable exit
+// code, so it must surface as err != nil (not as a concrete "exit code -2").
+func TestInstallDriverFileStartFailureIsTerminal(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("start-failure path exercises Windows process-start semantics")
+	}
+	missing := filepath.Join(t.TempDir(), "launcher.bin")
+	code, err := InstallDriverFile(missing, &model.Driver{DriverCode: "d1"}, t.TempDir())
+	if err == nil {
+		t.Fatalf("start failure must surface a terminal error, got code=%d err=nil", code)
+	}
+}
+
+// TestRunProcessStartFailureCarriesError checks that runProcess records the
+// start error instead of collapsing it into a bare "-2".
+func TestRunProcessStartFailureCarriesError(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("start-failure path exercises Windows process-start semantics")
+	}
+	missing := filepath.Join(t.TempDir(), "missing.exe")
+	result := runProcess(context.Background(), missing, nil, 0, "")
+	if result.StartErr == nil {
+		t.Fatal("runProcess should surface a start error for a missing executable")
 	}
 }

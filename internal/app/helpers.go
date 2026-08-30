@@ -5,22 +5,29 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"lenovo-driver/internal/compare"
 	"lenovo-driver/internal/inventory"
 	"lenovo-driver/internal/model"
 )
 
 var logMu sync.Mutex
 
+// formatTimestamp renders a time in UTC as RFC3339 (with seconds). Using the
+// RFC3339 wire format keeps every timestamp self-describing and lexically
+// sortable, matching the AGENTS.md time-unification rule (UTC+0, RFC3339).
+func formatTimestamp(t time.Time) string {
+	return t.UTC().Format(time.RFC3339)
+}
+
 // Log writes one line to TEMP log and mirrors it to stdout.
 func (a *App) Log(ctx context.Context, message, level string) {
 	logMu.Lock()
 	defer logMu.Unlock()
-	ts := time.Now().Format("2006-01-02 15:04:05")
+	ts := formatTimestamp(time.Now())
 	line := fmt.Sprintf("[%s] [%s] %s", ts, level, message)
 	fmt.Fprintln(a.Stdout, line)
 	if err := appendLine(a.LogPath, line); err != nil && a.Stderr != nil {
@@ -50,23 +57,75 @@ func execPowershell(script string) *exec.Cmd {
 	return cmd
 }
 
-func resolveTarget(osList []model.OSListEntry, targetOS string) *model.OSListEntry {
-	return compare.ResolveTargetOsEntry(osList, targetOS)
+type codeSelection struct {
+	Selected      []*model.Driver
+	Missing       []string
+	NotApplicable []string
 }
 
-func selectByCodes(drivers []*model.Driver, codes string) []*model.Driver {
-	codeSet := map[string]bool{}
-	for _, code := range strings.Split(codes, ",") {
-		code = strings.TrimSpace(code)
+func quoteWindowsArgument(arg string) string {
+	if arg == "" {
+		return `""`
+	}
+	if !strings.ContainsAny(arg, " \t\n\v\"") {
+		return arg
+	}
+	var b strings.Builder
+	b.WriteByte('"')
+	backslashes := 0
+	for _, r := range arg {
+		if r == '\\' {
+			backslashes++
+			continue
+		}
+		if r == '"' {
+			b.WriteString(strings.Repeat(`\`, backslashes*2))
+			backslashes = 0
+			b.WriteString(`\"`)
+			continue
+		}
+		b.WriteString(strings.Repeat(`\`, backslashes))
+		backslashes = 0
+		b.WriteRune(r)
+	}
+	b.WriteString(strings.Repeat(`\`, backslashes*2))
+	b.WriteByte('"')
+	return b.String()
+}
+
+func singleQuotePowerShell(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
+func selectByCodes(drivers []*model.Driver, codes string) codeSelection {
+	requested := map[string]bool{}
+	for _, token := range strings.Split(codes, ",") {
+		code := strings.TrimSpace(token)
 		if code != "" {
-			codeSet[code] = true
+			requested[code] = true
 		}
 	}
-	var selected []*model.Driver
+	var selection codeSelection
+	// One pass over drivers in list order keeps Selected in the same order as
+	// the caller sees them, while a requested set gives O(1) membership and
+	// missing lookups (no nested rescans).
 	for _, driver := range drivers {
-		if driver != nil && codeSet[driver.DriverCode] {
-			selected = append(selected, driver)
+		if driver == nil || !requested[driver.DriverCode] {
+			continue
+		}
+		requested[driver.DriverCode] = false // consumed
+		if driver.CompareStatus == model.StatusNotApplicable {
+			selection.NotApplicable = append(selection.NotApplicable, driver.DriverCode)
+			continue
+		}
+		selection.Selected = append(selection.Selected, driver)
+	}
+	for code, wanted := range requested {
+		if wanted {
+			selection.Missing = append(selection.Missing, code)
 		}
 	}
-	return selected
+	sort.Strings(selection.Missing)
+	sort.Strings(selection.NotApplicable)
+	return selection
 }

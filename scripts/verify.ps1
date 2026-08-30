@@ -56,9 +56,33 @@ Assert-Step 'Go build' {
     if ($LASTEXITCODE -ne 0) { throw "go build exited $LASTEXITCODE" }
 }
 
-Assert-Step 'Go test' {
-    & $GoExe test ./...
-    if ($LASTEXITCODE -ne 0) { throw "go test exited $LASTEXITCODE" }
+Assert-Step 'Go test + coverage floor (side-effect packages)' {
+    $coverageOutput = (& $GoExe test -cover ./... 2>&1)
+    if ($LASTEXITCODE -ne 0) { throw "go test -cover exited $LASTEXITCODE" }
+    $floors = @{
+        'lenovo-driver/internal/inventory' = 8
+        'lenovo-driver/internal/app'       = 22
+        'lenovo-driver/internal/install'   = 45
+        'lenovo-driver/internal/compare'   = 50
+        'lenovo-driver/internal/audit'     = 50
+        'lenovo-driver/internal/download'  = 35
+        'lenovo-driver/internal/plan'      = 65
+        'lenovo-driver/internal/api'       = 55
+    }
+    $below = @()
+    foreach ($line in @($coverageOutput)) {
+        $text = [string]$line
+        if ($text -notmatch '^ok\s+(\S+)\s+.*coverage: (\d+(?:\.\d+)?)% of statements') { continue }
+        $pkg = $Matches[1]
+        if (-not $floors.ContainsKey($pkg)) { continue }
+        $cov = [double]$Matches[2]
+        if ($cov -lt $floors[$pkg]) {
+            $below += ("{0}={1}% (floor {2}%)" -f $pkg, $cov, $floors[$pkg])
+        }
+    }
+    if ($below.Count -gt 0) {
+        throw "side-effect package coverage below floor: $($below -join ', ')"
+    }
 }
 
 Assert-Step 'Go vet' {
@@ -73,19 +97,22 @@ Assert-Step 'gofmt' {
 }
 
 $psFiles = @(
-    'lenovo_driver_wpf.ps1'
+    'lenovo_driver_wpf.ps1',
+    'wpf\ui.ps1',
+    'wpf\worker.ps1',
+    'wpf\actions.ps1'
 )
 Assert-Step 'PowerShell parse' {
-    $wpfPath = Join-Path $repoRoot 'lenovo_driver_wpf.ps1'
-    $wpfBytes = [System.IO.File]::ReadAllBytes($wpfPath)
-    if (-not ($wpfBytes.Length -ge 3 -and $wpfBytes[0] -eq 0xEF -and $wpfBytes[1] -eq 0xBB -and $wpfBytes[2] -eq 0xBF)) {
-        throw "lenovo_driver_wpf.ps1 must keep a UTF-8 BOM for Windows PowerShell 5.1"
-    }
     foreach ($file in $psFiles) {
+        $filePath = Join-Path $repoRoot $file
+        $fileBytes = [System.IO.File]::ReadAllBytes($filePath)
+        if (-not ($fileBytes.Length -ge 3 -and $fileBytes[0] -eq 0xEF -and $fileBytes[1] -eq 0xBB -and $fileBytes[2] -eq 0xBF)) {
+            throw "$file must keep a UTF-8 BOM for Windows PowerShell 5.1"
+        }
         $tokens = $null
         $errors = $null
         [System.Management.Automation.Language.Parser]::ParseFile(
-            (Join-Path $repoRoot $file),
+            $filePath,
             [ref]$tokens,
             [ref]$errors
         ) | Out-Null
@@ -94,6 +121,14 @@ Assert-Step 'PowerShell parse' {
             throw "parse failed: $file"
         }
     }
+}
+
+Assert-Step 'WPF argument quoting' {
+    . (Join-Path $repoRoot 'wpf\worker.ps1')
+    $tokens = ConvertTo-ProcessArgumentList -Arguments @('-Model', '82 JQ', '-GuiInstallCodes', 'a"b', '-GuiExportPath')
+    if ($tokens[0] -ne '-Model') { throw "unexpected flag token: $($tokens[0])" }
+    if ($tokens[1] -ne '"82 JQ"') { throw "unexpected space token: $($tokens[1])" }
+    if ($tokens[3] -ne '"a\"b"') { throw "unexpected quote token: $($tokens[3])" }
 }
 
 Assert-Step 'Legacy PowerShell files removed' {

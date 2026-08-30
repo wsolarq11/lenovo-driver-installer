@@ -1,9 +1,10 @@
 package compare
 
 import (
+	"fmt"
+	"math/big"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 
 	"lenovo-driver/internal/model"
@@ -22,9 +23,8 @@ func ResolveTargetOsEntry(osList []model.OSListEntry, targetOS string) *model.OS
 			return &osList[i]
 		}
 	}
-	re := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(target))
 	for i := range osList {
-		if re.MatchString(osList[i].OSName) {
+		if strings.Contains(strings.ToLower(osList[i].OSName), strings.ToLower(target)) {
 			return &osList[i]
 		}
 	}
@@ -83,38 +83,35 @@ func driverNewer(a, b *model.Driver) bool {
 }
 
 // ConvertToBytes mirrors ConvertTo-Bytes.
-func ConvertToBytes(sizeText string) int64 {
+func ConvertToBytes(sizeText string) (int64, error) {
 	sizeText = strings.TrimSpace(sizeText)
 	if sizeText == "" {
-		return 0
+		return 0, nil
 	}
 	m := reSize.FindStringSubmatch(sizeText)
 	if m == nil {
-		plain := int64(0)
-		digits := regexp.MustCompile(`[0-9]`).ReplaceAllString(sizeText, "")
-		if n, err := strconv.ParseInt(digits, 10, 64); err == nil {
-			plain = n
-		}
-		return plain
+		return 0, fmt.Errorf("invalid file size %q: expected bytes or a B/KB/MB/GB suffix", sizeText)
 	}
-	value, err := strconv.ParseFloat(m[1], 64)
-	if err != nil {
-		return 0
+	value, ok := new(big.Rat).SetString(m[1])
+	if !ok {
+		return 0, fmt.Errorf("invalid file size %q", sizeText)
 	}
+	multiplier := int64(1)
 	switch strings.ToUpper(m[2]) {
 	case "KB":
-		value *= 1024
+		multiplier = 1024
 	case "MB":
-		value *= 1024 * 1024
+		multiplier = 1024 * 1024
 	case "GB":
-		value *= 1024 * 1024 * 1024
+		multiplier = 1024 * 1024 * 1024
 	}
-	return int64(value)
+	value.Mul(value, big.NewRat(multiplier, 1))
+	return new(big.Int).Quo(value.Num(), value.Denom()).Int64(), nil
 }
 
 // GetSizeTolerance mirrors Get-SizeTolerance.
 func GetSizeTolerance(expectedBytes int64) int64 {
-	tolerance := int64(float64(expectedBytes) * 0.02)
+	tolerance := expectedBytes / 50
 	if tolerance < 1024 {
 		return 1024
 	}
@@ -136,4 +133,12 @@ func TestFileSizeMatch(expectedBytes, actualBytes int64) bool {
 // TestRebootExitCode mirrors Test-RebootExitCode.
 func TestRebootExitCode(exitCode int) bool {
 	return exitCode == 3010 || exitCode == 1641
+}
+
+// InstallSucceeded is the single installer-success predicate. Windows installers
+// report success as 0 or a reboot-required code (3010 for WU reboot, 1641 for a
+// reboot-then-retry). Owning the policy in one place keeps every installer path
+// (MSI, EXE, extracted, interactive) on the same definition.
+func InstallSucceeded(exitCode int) bool {
+	return exitCode == 0 || TestRebootExitCode(exitCode)
 }

@@ -8,47 +8,114 @@ import (
 	"lenovo-driver/internal/model"
 )
 
-var reHardwarePair = regexp.MustCompile(`^([0-9A-F]{4})_([0-9A-F]{4})$`)
+var (
+	reHardwarePair   = regexp.MustCompile(`^([0-9A-F]{4})_([0-9A-F]{4})$`)
+	reListSplit      = regexp.MustCompile(`,|;`)
+	reComponentSplit = regexp.MustCompile(`/|,`)
+	reVirtual        = regexp.MustCompile(`(?i)Direct|Virtual`)
 
-// GetNamePatterns mirrors Get-NamePatterns.
-func GetNamePatterns(driverName string) []string {
-	var patterns []string
-	switch {
-	case strings.Contains(driverName, "Realtek Audio"):
-		patterns = append(patterns, `Realtek.*Audio|High Definition Audio`)
-	case strings.Contains(driverName, "AMD VGA"):
-		patterns = append(patterns, `AMD Radeon|Radeon.*Graphics|AMD.*Display`)
-	case strings.Contains(driverName, "NVIDIA VGA"):
-		patterns = append(patterns, `NVIDIA GeForce|NVIDIA.*Display`)
-	case strings.Contains(driverName, "Realtek Lan"):
-		patterns = append(patterns, `Realtek.*Ethernet|Realtek.*PCIe|Realtek.*Gbe`)
-	case strings.Contains(driverName, "Wlan"):
-		patterns = append(patterns, `Wireless-AC|Wireless LAN|Wi-Fi|WLAN|AX20|8852AE|8822CE|MT7921|MediaTek.*Wi`)
-	case strings.Contains(driverName, "BlueTooth"):
-		patterns = append(patterns, `Bluetooth`)
-	case strings.Contains(driverName, "Cardreader"):
-		patterns = append(patterns, `Card Reader|Cardreader`)
-	case strings.Contains(driverName, "Camera"):
-		patterns = append(patterns, `Camera|Integrated Webcam`)
-	case strings.Contains(driverName, "Serial-IO"):
-		patterns = append(patterns, `Serial IO|Serial-IO|AMD.*IO`)
-	case strings.Contains(driverName, "AMD Power"):
-		patterns = append(patterns, `AMD Power|Power Processor`)
-	case strings.Contains(driverName, "Lenovo Fn"):
-		patterns = append(patterns, `Lenovo Fn|LHK2019`)
-	case strings.Contains(driverName, "Lenovo Energy"):
-		patterns = append(patterns, `Lenovo Energy|Lenovo Utility`)
-	case regexp.MustCompile(`(?i)Intel.*连接性|Intel.*Connectivity|Connectivity Performance`).MatchString(driverName):
-		patterns = append(patterns, `Intel.*连接性|Intel.*Connectivity|Connectivity Performance`)
-	}
-	if len(patterns) == 0 {
-		head := driverName
-		if idx := strings.Index(head, " "); idx >= 0 {
-			head = head[:idx]
+	reSoftwareVersioned = regexp.MustCompile(`(?i)Lenovo Fn|Energy Management|X-Rite|AMD Power|Intel.*连接性|Intel.*Connectivity|Connectivity Performance`)
+	reAmdPowerProcessor = regexp.MustCompile(`(?i)AMD Power Processor`)
+	reLenovoFn          = regexp.MustCompile(`(?i)Lenovo Fn`)
+)
+
+type vendorRule struct {
+	pattern *regexp.Regexp
+	vendor  string
+}
+
+var vendorRules = []vendorRule{
+	{regexp.MustCompile(`(?i)Intel|英特尔`), "Intel"},
+	{regexp.MustCompile(`(?i)Realtek`), "Realtek"},
+	{regexp.MustCompile(`(?i)MediaTek|MTK|MT79`), "MediaTek"},
+	{regexp.MustCompile(`(?i)AMD|Radeon`), "AMD"},
+	{regexp.MustCompile(`(?i)NVIDIA`), "NVIDIA"},
+	{regexp.MustCompile(`(?i)Sonix`), "Sonix"},
+	{regexp.MustCompile(`(?i)Sunplus`), "Sunplus"},
+}
+
+func matchVendor(value string) string {
+	for _, rule := range vendorRules {
+		if rule.pattern.MatchString(value) {
+			return rule.vendor
 		}
-		patterns = append(patterns, regexp.QuoteMeta(head))
 	}
-	return patterns
+	return ""
+}
+
+type driverMatchRule struct {
+	driver      *regexp.Regexp
+	class       *regexp.Regexp
+	device      *regexp.Regexp
+	name        *regexp.Regexp
+	exclude     *regexp.Regexp
+	classOrName bool
+	always      bool
+}
+
+func (r *driverMatchRule) matches(driverName string) bool {
+	return r.driver.MatchString(driverName)
+}
+
+func (r *driverMatchRule) namePattern() *regexp.Regexp {
+	if r.name != nil {
+		return r.name
+	}
+	return r.device
+}
+
+func (r *driverMatchRule) applicable(driver *model.Driver, localDevices []model.Device) bool {
+	if r.always {
+		return true
+	}
+	for _, dev := range localDevices {
+		if r.exclude != nil && r.exclude.MatchString(dev.Name) {
+			continue
+		}
+		classMatch := r.class != nil && r.class.MatchString(dev.Class)
+		deviceMatch := r.device != nil && r.device.MatchString(dev.Name)
+		if r.classOrName {
+			if classMatch || deviceMatch {
+				return true
+			}
+			continue
+		}
+		if (r.class == nil || classMatch) && (r.device == nil || deviceMatch) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *driverMatchRule) matchingDevices(localDevices []model.Device) []model.Device {
+	pattern := r.namePattern()
+	if pattern == nil {
+		return nil
+	}
+	var matched []model.Device
+	for _, dev := range localDevices {
+		if pattern.MatchString(dev.Name) &&
+			!reVirtual.MatchString(dev.Name) &&
+			!strings.EqualFold(dev.Class, "SoftwareDevice") {
+			matched = append(matched, dev)
+		}
+	}
+	return matched
+}
+
+var driverMatchRules = []driverMatchRule{
+	{driver: regexp.MustCompile(`(?i)BlueTooth.*8852AE`), class: regexp.MustCompile(`(?i)Bluetooth`), device: regexp.MustCompile(`(?i)Realtek`), name: regexp.MustCompile(`(?i)Realtek.*Bluetooth|Bluetooth.*Realtek`)},
+	{driver: regexp.MustCompile(`(?i)Camera`), class: regexp.MustCompile(`(?i)Camera|Image`), device: regexp.MustCompile(`(?i)Camera|Webcam`), name: regexp.MustCompile(`(?i)Camera|Integrated Webcam`), classOrName: true},
+	{driver: regexp.MustCompile(`(?i)Cardreader`), device: regexp.MustCompile(`(?i)Card Reader|Cardreader|SD|MMC`), name: regexp.MustCompile(`(?i)Card Reader|Cardreader`)},
+	{driver: regexp.MustCompile(`(?i)Wlan`), class: regexp.MustCompile(`(?i)Net`), device: regexp.MustCompile(`(?i)Intel|Realtek|MediaTek|MTK|Wireless|Wi-Fi|WLAN`), name: regexp.MustCompile(`(?i)Wireless-AC|Wireless LAN|Wi-Fi|WLAN|AX20|8852AE|8822CE|MT7921|MediaTek.*Wi`), exclude: reVirtual},
+	{driver: regexp.MustCompile(`(?i)BlueTooth`), class: regexp.MustCompile(`(?i)Bluetooth`), device: regexp.MustCompile(`(?i)Intel|Realtek|MediaTek|MTK|Bluetooth`), name: regexp.MustCompile(`(?i)Bluetooth`)},
+	{driver: regexp.MustCompile(`(?i)Realtek Audio`), class: regexp.MustCompile(`(?i)MEDIA|AudioEndpoint`), device: regexp.MustCompile(`(?i)Realtek|Audio`), name: regexp.MustCompile(`(?i)Realtek.*Audio|High Definition Audio`), classOrName: true},
+	{driver: regexp.MustCompile(`(?i)AMD VGA`), class: regexp.MustCompile(`(?i)Display`), device: regexp.MustCompile(`(?i)AMD|Radeon`), name: regexp.MustCompile(`(?i)AMD Radeon|Radeon.*Graphics|AMD.*Display`)},
+	{driver: regexp.MustCompile(`(?i)NVIDIA VGA`), class: regexp.MustCompile(`(?i)Display`), device: regexp.MustCompile(`(?i)NVIDIA`), name: regexp.MustCompile(`(?i)NVIDIA GeForce|NVIDIA.*Display`)},
+	{driver: regexp.MustCompile(`(?i)Realtek Lan`), class: regexp.MustCompile(`(?i)Net`), device: regexp.MustCompile(`(?i)Realtek`), name: regexp.MustCompile(`(?i)Realtek.*Ethernet|Realtek.*PCIe|Realtek.*Gbe`)},
+	{driver: regexp.MustCompile(`(?i)Serial-IO`), device: regexp.MustCompile(`(?i)Serial IO|Serial-IO|I2C|AMD.*IO`), name: regexp.MustCompile(`(?i)Serial IO|Serial-IO|AMD.*IO`)},
+	{driver: regexp.MustCompile(`(?i)AMD Power`), device: regexp.MustCompile(`(?i)AMD`), name: regexp.MustCompile(`(?i)AMD Power|Power Processor`)},
+	{driver: regexp.MustCompile(`(?i)Lenovo Energy|Lenovo Fn|X-Rite`), always: true, name: regexp.MustCompile(`(?i)Lenovo Fn|LHK2019|Lenovo Energy|Lenovo Utility|X-Rite`)},
 }
 
 // TestHardwareMatch mirrors Test-HardwareMatch.
@@ -58,20 +125,32 @@ func TestHardwareMatch(remoteIDs, localPnpID, localDeviceID string) bool {
 	}
 	localRaw := strings.ToUpper(localPnpID + " " + localDeviceID)
 	localCompact := stripNonAlphaNumeric(localRaw)
-	for _, raw := range regexp.MustCompile(`,|;`).Split(remoteIDs, -1) {
+	for _, raw := range reListSplit.Split(remoteIDs, -1) {
 		token := strings.ToUpper(strings.TrimSpace(raw))
 		if token == "" {
 			continue
 		}
 		if m := reHardwarePair.FindStringSubmatch(token); len(m) == 3 {
-			pattern := `VEN[_]?` + m[1] + `[&_/]DEV[_]?` + m[2]
-			if regexp.MustCompile(pattern).MatchString(localRaw) {
+			if hardwarePairMatches(localRaw, m[1], m[2]) {
 				return true
 			}
 		}
 		compact := stripNonAlphaNumeric(token)
 		if len(compact) >= 4 && (strings.Contains(localRaw, token) || strings.Contains(localCompact, compact)) {
 			return true
+		}
+	}
+	return false
+}
+
+func hardwarePairMatches(localRaw, vendorID, deviceID string) bool {
+	for _, separator := range []string{"&", "_", "/"} {
+		for _, vendorPrefix := range []string{"VEN_", "VEN"} {
+			for _, devicePrefix := range []string{"DEV_", "DEV"} {
+				if strings.Contains(localRaw, vendorPrefix+vendorID+separator+devicePrefix+deviceID) {
+					return true
+				}
+			}
 		}
 	}
 	return false
@@ -101,88 +180,11 @@ func TestDriverApplicable(driver *model.Driver, localDevices []model.Device) boo
 		return false
 	}
 
-	name := driver.DriverName
-	switch {
-	case regexp.MustCompile(`(?i)Camera`).MatchString(name):
-		for _, dev := range localDevices {
-			if (strings.EqualFold(dev.Class, "Camera") || strings.EqualFold(dev.Class, "Image")) ||
-				regexp.MustCompile(`(?i)Camera|Webcam`).MatchString(dev.Name) {
-				return true
-			}
+	for _, rule := range driverMatchRules {
+		if !rule.matches(driver.DriverName) {
+			continue
 		}
-		return false
-	case regexp.MustCompile(`(?i)Cardreader`).MatchString(name):
-		for _, dev := range localDevices {
-			if regexp.MustCompile(`(?i)Card Reader|Cardreader|SD|MMC`).MatchString(dev.Name) {
-				return true
-			}
-		}
-		return false
-	case regexp.MustCompile(`(?i)Wlan`).MatchString(name):
-		for _, dev := range localDevices {
-			if strings.EqualFold(dev.Class, "Net") &&
-				!regexp.MustCompile(`(?i)Direct|Virtual`).MatchString(dev.Name) &&
-				regexp.MustCompile(`(?i)Intel|Realtek|MediaTek|MTK|Wireless|Wi-Fi|WLAN`).MatchString(dev.Name) {
-				return true
-			}
-		}
-		return false
-	case regexp.MustCompile(`(?i)BlueTooth`).MatchString(name):
-		re := regexp.MustCompile(`(?i)Intel|Realtek|MediaTek|MTK|Bluetooth`)
-		if regexp.MustCompile(`(?i)8852AE`).MatchString(name) {
-			re = regexp.MustCompile(`(?i)Realtek`)
-		}
-		for _, dev := range localDevices {
-			if strings.EqualFold(dev.Class, "Bluetooth") && re.MatchString(dev.Name) {
-				return true
-			}
-		}
-		return false
-	case regexp.MustCompile(`(?i)Realtek Audio`).MatchString(name):
-		for _, dev := range localDevices {
-			if (strings.EqualFold(dev.Class, "MEDIA") || strings.EqualFold(dev.Class, "AudioEndpoint")) &&
-				regexp.MustCompile(`(?i)Realtek|Audio`).MatchString(dev.Name) {
-				return true
-			}
-		}
-		return false
-	case regexp.MustCompile(`(?i)AMD VGA`).MatchString(name):
-		for _, dev := range localDevices {
-			if strings.EqualFold(dev.Class, "Display") && regexp.MustCompile(`(?i)AMD|Radeon`).MatchString(dev.Name) {
-				return true
-			}
-		}
-		return false
-	case regexp.MustCompile(`(?i)NVIDIA VGA`).MatchString(name):
-		for _, dev := range localDevices {
-			if strings.EqualFold(dev.Class, "Display") && regexp.MustCompile(`(?i)NVIDIA`).MatchString(dev.Name) {
-				return true
-			}
-		}
-		return false
-	case regexp.MustCompile(`(?i)Realtek Lan`).MatchString(name):
-		for _, dev := range localDevices {
-			if strings.EqualFold(dev.Class, "Net") && regexp.MustCompile(`(?i)Realtek`).MatchString(dev.Name) {
-				return true
-			}
-		}
-		return false
-	case regexp.MustCompile(`(?i)Serial-IO`).MatchString(name):
-		for _, dev := range localDevices {
-			if regexp.MustCompile(`(?i)Serial IO|Serial-IO|I2C|AMD.*IO`).MatchString(dev.Name) {
-				return true
-			}
-		}
-		return false
-	case regexp.MustCompile(`(?i)AMD Power`).MatchString(name):
-		for _, dev := range localDevices {
-			if regexp.MustCompile(`(?i)AMD`).MatchString(dev.Name) {
-				return true
-			}
-		}
-		return false
-	case regexp.MustCompile(`(?i)Lenovo Energy|Lenovo Fn|X-Rite`).MatchString(name):
-		return true
+		return rule.applicable(driver, localDevices)
 	}
 	return false
 }
@@ -190,43 +192,9 @@ func TestDriverApplicable(driver *model.Driver, localDevices []model.Device) boo
 // GetDeviceVendor mirrors Get-DeviceVendor.
 func GetDeviceVendor(names []string) string {
 	for _, name := range names {
-		switch {
-		case regexp.MustCompile(`(?i)Intel|英特尔`).MatchString(name):
-			return "Intel"
-		case regexp.MustCompile(`(?i)Realtek`).MatchString(name):
-			return "Realtek"
-		case regexp.MustCompile(`(?i)MediaTek|MTK|MT79`).MatchString(name):
-			return "MediaTek"
-		case regexp.MustCompile(`(?i)AMD|Radeon`).MatchString(name):
-			return "AMD"
-		case regexp.MustCompile(`(?i)NVIDIA`).MatchString(name):
-			return "NVIDIA"
-		case regexp.MustCompile(`(?i)Sonix`).MatchString(name):
-			return "Sonix"
-		case regexp.MustCompile(`(?i)Sunplus`).MatchString(name):
-			return "Sunplus"
+		if vendor := matchVendor(name); vendor != "" {
+			return vendor
 		}
-	}
-	return ""
-}
-
-// GetRemoteComponentVendor mirrors Get-RemoteComponentVendor.
-func GetRemoteComponentVendor(component string) string {
-	switch {
-	case regexp.MustCompile(`(?i)Intel`).MatchString(component):
-		return "Intel"
-	case regexp.MustCompile(`(?i)Realtek`).MatchString(component):
-		return "Realtek"
-	case regexp.MustCompile(`(?i)MediaTek|MTK|MT79`).MatchString(component):
-		return "MediaTek"
-	case regexp.MustCompile(`(?i)AMD|Radeon`).MatchString(component):
-		return "AMD"
-	case regexp.MustCompile(`(?i)NVIDIA`).MatchString(component):
-		return "NVIDIA"
-	case regexp.MustCompile(`(?i)Sonix`).MatchString(component):
-		return "Sonix"
-	case regexp.MustCompile(`(?i)Sunplus`).MatchString(component):
-		return "Sunplus"
 	}
 	return ""
 }
@@ -236,8 +204,8 @@ func GetMatchingRemoteComponent(remote, vendor string) *Version {
 	if vendor == "" {
 		return nil
 	}
-	for _, part := range regexp.MustCompile(`/|,`).Split(remote, -1) {
-		if GetRemoteComponentVendor(part) == vendor {
+	for _, part := range reComponentSplit.Split(remote, -1) {
+		if matchVendor(part) == vendor {
 			if v := ParseVersionString(part); v != nil {
 				return v
 			}
@@ -247,15 +215,15 @@ func GetMatchingRemoteComponent(remote, vendor string) *Version {
 }
 
 // CompareDriverStatus mirrors Compare-DriverStatus.
-func CompareDriverStatus(remote, local, vendor string) string {
+func CompareDriverStatus(remote, local, vendor string) model.CompareStatus {
 	if local == "" {
-		return "Not installed"
+		return model.StatusNotInstalled
 	}
 	if remote == "" {
-		return "Unknown"
+		return model.StatusUnknown
 	}
 	if local == "Provisioned" {
-		return "Up to date"
+		return model.StatusUpToDate
 	}
 	remoteVersion := GetMatchingRemoteComponent(remote, vendor)
 	if remoteVersion == nil {
@@ -264,13 +232,26 @@ func CompareDriverStatus(remote, local, vendor string) string {
 	localVersion := ParseVersionString(local)
 	if remoteVersion != nil && localVersion != nil {
 		if c := localVersion.Compare(remoteVersion); c > 0 {
-			return "Local newer"
+			return model.StatusLocalNewer
 		} else if c == 0 {
-			return "Up to date"
+			return model.StatusUpToDate
 		}
-		return "Update"
+		return model.StatusUpdate
 	}
-	return "Unknown"
+	return model.StatusUnknown
+}
+
+type softwareRule struct {
+	driver *regexp.Regexp
+	app    *regexp.Regexp
+}
+
+var softwareRules = []softwareRule{
+	{regexp.MustCompile(`(?i)Lenovo Fn`), regexp.MustCompile(`(?i)Lenovo.*Fn|Lenovo.*Hotkey|Lenovo Utility|Hotkeys`)},
+	{regexp.MustCompile(`(?i)Energy Management`), regexp.MustCompile(`(?i)Lenovo Energy|Lenovo.*Power|Energy Management`)},
+	{regexp.MustCompile(`(?i)X-Rite`), regexp.MustCompile(`(?i)X-Rite|Color Assistant`)},
+	{regexp.MustCompile(`(?i)AMD Power Processor`), regexp.MustCompile(`(?i)AMD Power Processor|AMD Power`)},
+	{regexp.MustCompile(`(?i)Intel.*连接性|Intel.*Connectivity|Connectivity Performance`), regexp.MustCompile(`(?i)Intel.*连接性|Intel.*Connectivity|Connectivity Performance|ICPS`)},
 }
 
 // ResolveInstalledSoftwareVersion mirrors Resolve-InstalledSoftwareVersion.
@@ -278,31 +259,19 @@ func ResolveInstalledSoftwareVersion(driverName string, snapshot *model.Software
 	if snapshot == nil {
 		return ""
 	}
-	var patterns []string
-	switch {
-	case regexp.MustCompile(`(?i)Lenovo Fn`).MatchString(driverName):
-		patterns = append(patterns, `Lenovo.*Fn|Lenovo.*Hotkey|Lenovo Utility|Hotkeys`)
-	case regexp.MustCompile(`(?i)Energy Management`).MatchString(driverName):
-		patterns = append(patterns, `Lenovo Energy|Lenovo.*Power|Energy Management`)
-	case regexp.MustCompile(`(?i)X-Rite`).MatchString(driverName):
-		patterns = append(patterns, `X-Rite|Color Assistant`)
-	case regexp.MustCompile(`(?i)AMD Power Processor`).MatchString(driverName):
-		patterns = append(patterns, `AMD Power Processor|AMD Power`)
-	case regexp.MustCompile(`(?i)Intel.*连接性|Intel.*Connectivity|Connectivity Performance`).MatchString(driverName):
-		patterns = append(patterns, `Intel.*连接性|Intel.*Connectivity|Connectivity Performance|ICPS`)
-	}
-	for _, pattern := range patterns {
-		re := regexp.MustCompile(`(?i)` + pattern)
-		for _, app := range snapshot.InstalledApps {
-			if re.MatchString(app.DisplayName) && app.DisplayVersion != "" {
-				return app.DisplayVersion
+	for _, rule := range softwareRules {
+		if rule.driver.MatchString(driverName) {
+			for _, app := range snapshot.InstalledApps {
+				if rule.app.MatchString(app.DisplayName) && app.DisplayVersion != "" {
+					return app.DisplayVersion
+				}
 			}
 		}
 	}
-	if regexp.MustCompile(`(?i)AMD Power Processor`).MatchString(driverName) && snapshot.ProvisionedAmdPower == "Provisioned" {
+	if reAmdPowerProcessor.MatchString(driverName) && snapshot.ProvisionedAmdPower == "Provisioned" {
 		return "Provisioned"
 	}
-	if regexp.MustCompile(`(?i)Lenovo Fn`).MatchString(driverName) && snapshot.LenovoFnServiceVersion != "" {
+	if reLenovoFn.MatchString(driverName) && snapshot.LenovoFnServiceVersion != "" {
 		return snapshot.LenovoFnServiceVersion
 	}
 	return ""
@@ -319,28 +288,38 @@ func GetMatchingLocalDevices(driver *model.Driver, localDevices []model.Device) 
 		}
 	}
 	if len(matched) == 0 && driver != nil {
-		patterns := GetNamePatterns(driver.DriverName)
-		for _, pattern := range patterns {
-			re := regexp.MustCompile(`(?i)` + pattern)
-			matched = nil
-			for _, dev := range localDevices {
-				if re.MatchString(dev.Name) &&
-					!regexp.MustCompile(`(?i)Direct|Virtual`).MatchString(dev.Name) &&
-					!strings.EqualFold(dev.Class, "SoftwareDevice") {
-					matched = append(matched, dev)
-				}
+		for _, rule := range driverMatchRules {
+			if !rule.matches(driver.DriverName) {
+				continue
 			}
+			matched = rule.matchingDevices(localDevices)
 			if len(matched) > 0 {
-				break
+				return matched
+			}
+		}
+		head := defaultNamePattern(driver.DriverName)
+		for _, dev := range localDevices {
+			if strings.Contains(strings.ToLower(dev.Name), head) &&
+				!reVirtual.MatchString(dev.Name) &&
+				!strings.EqualFold(dev.Class, "SoftwareDevice") {
+				matched = append(matched, dev)
 			}
 		}
 	}
 	return matched
 }
 
+func defaultNamePattern(driverName string) string {
+	head := driverName
+	if idx := strings.Index(head, " "); idx >= 0 {
+		head = head[:idx]
+	}
+	return strings.ToLower(head)
+}
+
 // TestSoftwareVersionedDriver mirrors Test-SoftwareVersionedDriver.
 func TestSoftwareVersionedDriver(driverName string) bool {
-	return regexp.MustCompile(`(?i)Lenovo Fn|Energy Management|X-Rite|AMD Power|Intel.*连接性|Intel.*Connectivity|Connectivity Performance`).MatchString(driverName)
+	return reSoftwareVersioned.MatchString(driverName)
 }
 
 // ResolveLocalDriverVersion mirrors Resolve-LocalDriverVersion.

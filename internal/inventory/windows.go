@@ -1,12 +1,12 @@
 package inventory
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
-	"time"
 
 	"lenovo-driver/internal/model"
 )
@@ -28,10 +28,21 @@ type OSInfo struct {
 	Arch    string
 }
 
+type osInfoRow struct {
+	Caption        string `json:"Caption"`
+	OSArchitecture string `json:"OSArchitecture"`
+}
+
 func runJSON(ctx context.Context, script string, target any) error {
 	cmd := exec.CommandContext(ctx, PowerShellExe, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if detail != "" {
+			return fmt.Errorf("powerShell inventory failed: %w: %s", err, detail)
+		}
 		return fmt.Errorf("powerShell inventory failed: %w", err)
 	}
 	if len(strings.TrimSpace(string(out))) == 0 {
@@ -52,14 +63,15 @@ func GetMachineInfo(ctx context.Context) (MachineInfo, error) {
 
 // GetOSInfo resolves caption, kind, architecture, and the Lenovo OS match key.
 func GetOSInfo(ctx context.Context) (OSInfo, error) {
-	var raw struct {
-		Caption        string `json:"Caption"`
-		OSArchitecture string `json:"OSArchitecture"`
-	}
+	var raw osInfoRow
 	script := `$os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue; if (-not $os) { $os = Get-WmiObject Win32_OperatingSystem }; $os | Select-Object Caption,OSArchitecture | ConvertTo-Json -Compress`
 	if err := runJSON(ctx, script, &raw); err != nil {
 		return OSInfo{}, err
 	}
+	return normalizeOSInfo(raw), nil
+}
+
+func normalizeOSInfo(raw osInfoRow) OSInfo {
 	kind := "Windows"
 	caption := raw.Caption
 	switch {
@@ -81,7 +93,7 @@ func GetOSInfo(ctx context.Context) (OSInfo, error) {
 		Kind:    kind,
 		OSName:  kind + " " + bits,
 		Arch:    bits,
-	}, nil
+	}
 }
 
 // GetLocalDeviceSnapshot returns present PnP devices.
@@ -134,12 +146,21 @@ func GetSoftwareSnapshot(ctx context.Context, installedApps []model.InstalledApp
 	}
 	script := `$provisioned = ''; try { $provisioned = @(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Provisioning\Results' -ErrorAction Stop | ForEach-Object { Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue } | Where-Object { $_.PackageFileName -eq 'AMD.Power.Processor.ppkg' }).Count; if ($provisioned -gt 0) { $provisioned = 'Provisioned' } else { $provisioned = '' } } catch {}; $fnServiceVersion = ''; try { $svc = Get-CimInstance Win32_Service -Filter "Name='LenovoFnAndFunctionKeys'" -ErrorAction SilentlyContinue; if ($svc) { $exePath = ([string]$svc.PathName).Trim('"'); if ($exePath -and (Test-Path -LiteralPath $exePath)) { $fnServiceVersion = [string](Get-Item -LiteralPath $exePath).VersionInfo.FileVersion } } } catch {}; [pscustomobject]@{ ProvisionedAmdPower = $provisioned; FnServiceVersion = $fnServiceVersion } | ConvertTo-Json -Compress`
 	if err := runJSON(ctx, script, &raw); err != nil {
-		// Software snapshot is best effort; installed apps remain usable.
-		return snapshot, nil
+		return snapshot, err
 	}
 	snapshot.ProvisionedAmdPower = raw.ProvisionedAmdPower
 	snapshot.LenovoFnServiceVersion = raw.FnServiceVersion
 	return snapshot, nil
+}
+
+// quotePnpIDs returns the ids as an SQL-style single-quoted CSV list for
+// embedding in a PowerShell array literal, doubling embedded single quotes.
+func quotePnpIDs(ids []string) []string {
+	quoted := make([]string, 0, len(ids))
+	for _, id := range ids {
+		quoted = append(quoted, "'"+strings.ReplaceAll(id, "'", "''")+"'")
+	}
+	return quoted
 }
 
 // GetDeviceDriverVersions reads DEVPKEY_Device_DriverVersion for matching PnP devices.
@@ -147,12 +168,8 @@ func GetDeviceDriverVersions(ctx context.Context, pnpIDs []string) ([]string, er
 	if len(pnpIDs) == 0 {
 		return nil, nil
 	}
-	var quoted []string
-	for _, id := range pnpIDs {
-		quoted = append(quoted, "'"+strings.ReplaceAll(id, "'", "''")+"'")
-	}
 	var versions []string
-	script := `$ids = @(` + strings.Join(quoted, ",") + `); $result = @(); foreach ($id in $ids) { try { $p = Get-PnpDeviceProperty -InstanceId $id -KeyName 'DEVPKEY_Device_DriverVersion' -ErrorAction Stop; if ($p.Data) { $result += [string]$p.Data } } catch {} }; $result | ConvertTo-Json -Compress`
+	script := `$ids = @(` + strings.Join(quotePnpIDs(pnpIDs), ",") + `); $result = @(); foreach ($id in $ids) { try { $p = Get-PnpDeviceProperty -InstanceId $id -KeyName 'DEVPKEY_Device_DriverVersion' -ErrorAction Stop; if ($p.Data) { $result += [string]$p.Data } } catch {} }; $result | ConvertTo-Json -Compress`
 	if err := runJSON(ctx, script, &versions); err != nil {
 		return nil, err
 	}
@@ -161,10 +178,11 @@ func GetDeviceDriverVersions(ctx context.Context, pnpIDs []string) ([]string, er
 
 // GetDeviceEvidence reads PnP driver properties for matched devices.
 func GetDeviceEvidence(ctx context.Context, devices []model.Device) ([]model.Device, error) {
-	var quoted []string
+	ids := make([]string, 0, len(devices))
 	for _, dev := range devices {
-		quoted = append(quoted, "'"+strings.ReplaceAll(dev.PnpDeviceID, "'", "''")+"'")
+		ids = append(ids, dev.PnpDeviceID)
 	}
+	quoted := quotePnpIDs(ids)
 	if len(quoted) == 0 {
 		return nil, nil
 	}
@@ -211,6 +229,3 @@ func IsAdministrator() (bool, error) {
 	}
 	return strings.Contains(string(out), "1"), nil
 }
-
-// Timeout is exported for callers that want a bounded inventory context.
-var Timeout = 45 * time.Second

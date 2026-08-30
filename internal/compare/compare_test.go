@@ -41,7 +41,8 @@ func TestVersionCompare(t *testing.T) {
 
 func TestCompareDriverStatus(t *testing.T) {
 	cases := []struct {
-		remote, local, vendor, want string
+		remote, local, vendor string
+		want                  model.CompareStatus
 	}{
 		{"2.0.0.5", "1.0.0.1", "", "Update"},
 		{"2.0.0.5", "2.0.0.5", "", "Up to date"},
@@ -81,11 +82,21 @@ func TestDriverApplicableFunction(t *testing.T) {
 }
 
 func TestConvertToBytes(t *testing.T) {
-	if got := ConvertToBytes("1 MB"); got != 1024*1024 {
-		t.Fatalf("1 MB = %d", got)
+	got, err := ConvertToBytes("1 MB")
+	if err != nil || got != 1024*1024 {
+		t.Fatalf("1 MB = %d, err=%v", got, err)
 	}
-	if got := ConvertToBytes("100 MB"); got != 100*1024*1024 {
-		t.Fatalf("100 MB = %d", got)
+	got, err = ConvertToBytes("100 MB")
+	if err != nil || got != 100*1024*1024 {
+		t.Fatalf("100 MB = %d, err=%v", got, err)
+	}
+}
+
+func TestConvertToBytesRejectsMalformedSize(t *testing.T) {
+	for _, input := range []string{"1,234 MB", "unknown 123", "12 MB/s"} {
+		if _, err := ConvertToBytes(input); err == nil {
+			t.Fatalf("ConvertToBytes(%q) should fail", input)
+		}
 	}
 }
 
@@ -121,5 +132,62 @@ func TestGetVersionMatchKeys(t *testing.T) {
 	keys := GetVersionMatchKeys("1.0.0.1/2.0.0.1")
 	if len(keys) != 2 || keys[0] != "1.0.0.1" || keys[1] != "2.0.0.1" {
 		t.Fatalf("unexpected keys: %v", keys)
+	}
+}
+
+func TestVendorLookupIsShared(t *testing.T) {
+	if got := GetDeviceVendor([]string{"Intel Wireless", "Realtek Ethernet"}); got != "Intel" {
+		t.Fatalf("GetDeviceVendor = %q", got)
+	}
+	if got := matchVendor("MediaTek Wi-Fi 6E"); got != "MediaTek" {
+		t.Fatalf("matchVendor = %q", got)
+	}
+	if got := GetMatchingRemoteComponent("1.0.0.1/MediaTek Wi-Fi 6E 2.0.0.1", "MediaTek"); got == nil || got.String() != "2.0.0.1" {
+		t.Fatalf("GetMatchingRemoteComponent = %v", got)
+	}
+}
+
+func TestDriverApplicableBluetoothVendorSpecific(t *testing.T) {
+	realtek := []model.Device{{Name: "Realtek Bluetooth Adapter", Class: "Bluetooth"}}
+	intel := []model.Device{{Name: "Intel Wireless Bluetooth", Class: "Bluetooth"}}
+	driver := &model.Driver{DriverName: "BlueTooth 8852AE"}
+	if !TestDriverApplicable(driver, realtek) {
+		t.Fatal("Realtek 8852AE driver should be applicable to Realtek Bluetooth")
+	}
+	if TestDriverApplicable(driver, intel) {
+		t.Fatal("Realtek 8852AE driver should not be applicable to Intel Bluetooth")
+	}
+}
+
+func TestConvertToBytesFractionalUsesExactScaling(t *testing.T) {
+	got, err := ConvertToBytes("1.5 MB")
+	if err != nil || got != 1572864 {
+		t.Fatalf("1.5 MB = %d, err=%v", got, err)
+	}
+}
+
+func TestSizeToleranceUsesIntegerPercent(t *testing.T) {
+	if got := GetSizeTolerance(100 * 1024 * 1024); got != 2097152 {
+		t.Fatalf("100 MB tolerance = %d, want 2097152", got)
+	}
+}
+
+func TestInstallSucceeded(t *testing.T) {
+	cases := []struct {
+		name     string
+		exitCode int
+		want     bool
+	}{
+		{"clean zero", 0, true},
+		{"reboot code 3010", 3010, true},
+		{"reboot code 1641", 1641, true},
+		{"generic failure", 1, false},
+		{"msi generic failure", 1603, false},
+		{"large failure", 9999, false},
+	}
+	for _, tc := range cases {
+		if got := InstallSucceeded(tc.exitCode); got != tc.want {
+			t.Fatalf("InstallSucceeded(%d) = %v, want %v", tc.exitCode, got, tc.want)
+		}
 	}
 }

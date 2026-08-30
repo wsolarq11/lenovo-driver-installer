@@ -21,31 +21,24 @@ type SelectionAnswer struct {
 // SelectInteractive mirrors Select-InteractiveDrivers, reloading the view on t.
 func (a *App) SelectInteractive(
 	ctx context.Context,
-	opts *Options,
+	vc *ViewContext,
 	view *DriverView,
-	categoryID string,
 	listOsID string,
-	sysID string,
-	osList []model.OSListEntry,
-	localDevices []model.Device,
-	installedApps []model.InstalledApp,
-	softwareSnapshot model.SoftwareSnapshot,
-	history []model.HistoryRecord,
 ) []*model.Driver {
 	currentView := view
 	currentListOsID := listOsID
 	for {
-		allowToggle := !opts.CurrentOSOnly && !opts.LatestAcrossOS && !opts.TargetOSActive()
-		nextLabel := nextOSLabel(osList, currentListOsID)
+		allowToggle := !vc.Opts.CurrentOSOnly && !vc.Opts.LatestAcrossOS && !vc.Opts.TargetOSActive()
+		nextLabel := nextOSLabel(vc.OsList, currentListOsID)
 		answer := a.promptSelection(currentView, allowToggle, nextLabel)
 		if answer.Toggle {
-			nextIndex := nextOSIndex(osList, currentListOsID)
+			nextIndex := nextOSIndex(vc.OsList, currentListOsID)
 			if nextIndex < 0 {
 				a.Log(ctx, "No alternate OS list available.", "WARN")
 				continue
 			}
-			nextListOsID := osList[nextIndex].OSID
-			nextView, err := a.CompareOSDriverView(ctx, opts, categoryID, nextListOsID, sysID, osList, localDevices, installedApps, softwareSnapshot, history)
+			nextListOsID := vc.OsList[nextIndex].OSID
+			nextView, err := a.CompareOSDriverView(ctx, vc, nextListOsID)
 			if err != nil {
 				a.Log(ctx, "Could not load alternate OS list: "+err.Error(), "WARN")
 				continue
@@ -67,51 +60,41 @@ func (a *App) SelectInteractive(
 }
 
 func (a *App) promptSelection(view *DriverView, allowToggle bool, nextOSLabel string) SelectionAnswer {
-	updates := view.Updates
-	applicable := view.Applicable
-	if len(updates) > 0 {
-		fmt.Fprintf(a.Stdout, "Ready: %d update-only drivers, %d all applicable drivers.\n", len(updates), len(applicable))
-		showActionPreview(a.Stdout, 'y', "update-only", updates)
-		showActionPreview(a.Stdout, 'a', "all applicable", applicable)
-		toggleText := ""
-		if allowToggle {
-			toggleText = ", t to switch to " + nextOSLabel
-		}
-		fmt.Fprintf(a.Stdout, "Type y to install the update-only set, a to install the all-applicable set, s to select%s, n to cancel: ", toggleText)
-		choice := strings.ToLower(strings.TrimSpace(readLine(a.Stdin)))
-		if choice == "t" && allowToggle {
-			return SelectionAnswer{Toggle: true}
-		}
-		if choice == "y" {
-			return SelectionAnswer{Drivers: updates}
-		}
-		if choice == "a" {
-			return SelectionAnswer{Drivers: applicable}
-		}
-		if choice == "s" {
-			manual := readDriverSelection(a.Stdin, a.Stdout, view)
-			if len(manual) == 0 {
-				a.Log(context.Background(), "No drivers selected.", "INFO")
-				return SelectionAnswer{Cancel: true}
-			}
-			return SelectionAnswer{Drivers: manual}
-		}
-		return SelectionAnswer{Cancel: true}
+	if len(view.Updates) > 0 {
+		fmt.Fprintf(a.Stdout, "Ready: %d update-only drivers, %d all applicable drivers.\n", len(view.Updates), len(view.Applicable))
+		showActionPreview(a.Stdout, 'y', "update-only", view.Updates)
+		showActionPreview(a.Stdout, 'a', "all applicable", view.Applicable)
+		return a.promptChoice(view, allowToggle, nextOSLabel, true)
 	}
 
-	fmt.Fprintf(a.Stdout, "No clear updates detected. %d applicable candidates remain.\n", len(applicable))
-	showActionPreview(a.Stdout, 'a', "all applicable", applicable)
+	fmt.Fprintf(a.Stdout, "No clear updates detected. %d applicable candidates remain.\n", len(view.Applicable))
+	showActionPreview(a.Stdout, 'a', "all applicable", view.Applicable)
+	return a.promptChoice(view, allowToggle, nextOSLabel, false)
+}
+
+func (a *App) promptChoice(view *DriverView, allowToggle bool, nextOSLabel string, hasUpdates bool) SelectionAnswer {
 	toggleText := ""
 	if allowToggle {
 		toggleText = ", t to switch to " + nextOSLabel
 	}
-	fmt.Fprintf(a.Stdout, "Type a to install the all-applicable set, s to select%s, n to cancel: ", toggleText)
-	choice := strings.ToLower(strings.TrimSpace(readLine(a.Stdin)))
+	if hasUpdates {
+		fmt.Fprintf(a.Stdout, "Type y to install the update-only set, a to install the all-applicable set, s to select%s, n to cancel: ", toggleText)
+	} else {
+		fmt.Fprintf(a.Stdout, "Type a to install the all-applicable set, s to select%s, n to cancel: ", toggleText)
+	}
+	line, err := readLine(a.Stdin)
+	if err != nil {
+		return SelectionAnswer{Cancel: true}
+	}
+	choice := strings.ToLower(strings.TrimSpace(line))
 	if choice == "t" && allowToggle {
 		return SelectionAnswer{Toggle: true}
 	}
+	if choice == "y" && hasUpdates {
+		return SelectionAnswer{Drivers: view.Updates}
+	}
 	if choice == "a" {
-		return SelectionAnswer{Drivers: applicable}
+		return SelectionAnswer{Drivers: view.Applicable}
 	}
 	if choice == "s" {
 		manual := readDriverSelection(a.Stdin, a.Stdout, view)
@@ -131,9 +114,12 @@ func showActionPreview(w io.Writer, key rune, label string, drivers []*model.Dri
 	}
 }
 
-func readLine(reader *bufio.Reader) string {
-	line, _ := reader.ReadString('\n')
-	return line
+func readLine(reader *bufio.Reader) (string, error) {
+	line, err := reader.ReadString('\n')
+	if len(line) == 0 && err != nil {
+		return "", err
+	}
+	return strings.TrimRight(line, "\r\n"), nil
 }
 
 func nextOSIndex(osList []model.OSListEntry, currentID string) int {
@@ -169,7 +155,10 @@ func readDriverSelection(reader *bufio.Reader, writer io.Writer, view *DriverVie
 		return nil
 	}
 	fmt.Fprintln(writer, "Enter driver numbers separated by commas (for example: 1,3,5):")
-	tokens := readLine(reader)
+	tokens, err := readLine(reader)
+	if err != nil {
+		return nil
+	}
 	result := plan.ParseDriverSelectionTokens(tokens, view.Selected)
 	for _, token := range result.Invalid {
 		fmt.Fprintf(writer, "Invalid selection: %s\n", token)

@@ -3,6 +3,7 @@ package audit
 import (
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"lenovo-driver/internal/compare"
@@ -29,19 +30,23 @@ var (
 	reSectionEnd           = regexp.MustCompile(`^<<<\s+(?:\[Exit status|Section end)`)
 )
 
+// SourceMapKeys returns the name/code version keys used by source maps.
+func SourceMapKeys(driverName, driverCode, version string) []string {
+	var keys []string
+	for _, versionKey := range compare.GetVersionMatchKeys(version) {
+		keys = append(keys, strings.TrimSpace(driverName)+"|"+versionKey)
+		keys = append(keys, driverCode+"|"+versionKey)
+	}
+	return keys
+}
+
 // GetSourceMapMatch mirrors Get-SourceMapMatch.
 func GetSourceMapMatch(driver *model.Driver, sourceMap map[string]model.SourceMapEntry, localVersion string) *model.SourceMapEntry {
 	if len(sourceMap) == 0 || localVersion == "" {
 		return nil
 	}
-	for _, versionKey := range compare.GetVersionMatchKeys(localVersion) {
-		nameKey := strings.TrimSpace(driver.DriverName) + "|" + versionKey
-		codeKey := driver.DriverCode + "|" + versionKey
-		if match, ok := sourceMap[nameKey]; ok {
-			entry := match
-			return &entry
-		}
-		if match, ok := sourceMap[codeKey]; ok {
+	for _, key := range SourceMapKeys(driver.DriverName, driver.DriverCode, localVersion) {
+		if match, ok := sourceMap[key]; ok {
 			entry := match
 			return &entry
 		}
@@ -58,6 +63,88 @@ func ResolveExternalDriverSourceLabel(driver *model.Driver, alternateSourceMap m
 		return "Local newer (source OSID " + match.OSID + ")"
 	}
 	return "Local newer (source unknown)"
+}
+
+type sectionStartRule struct {
+	re            *regexp.Regexp
+	kind          string
+	updateCurrent bool
+}
+
+var sectionStartRules = []sectionStartRule{
+	{re: reSectionImport, kind: "Import"},
+	{re: reSectionDriverInstall, kind: "DriverInstall"},
+	{re: reSectionDeviceInstall, kind: "DeviceInstall"},
+	{re: reSectionStoDvsImport, kind: "Import", updateCurrent: true},
+}
+
+// fieldExtractRule maps one setupapi log line shape to a field setter. Each
+// setter applies its own first-win guard ("only set if still empty"), so the
+// priority order is explicit in the table instead of a chain of conditionals.
+type fieldExtractRule struct {
+	re    *regexp.Regexp
+	extra func(string) bool // optional additional condition; nil means none
+	set   func(*model.ImportRecord, string)
+}
+
+var fieldExtractRules = []fieldExtractRule{
+	{re: reCommand, set: func(s *model.ImportRecord, line string) {
+		s.Command = strings.TrimSpace(submatch(reCommand, line, "cmd"))
+	}},
+	{re: reVersion, set: func(s *model.ImportRecord, line string) {
+		s.Version = strings.TrimSpace(submatch(reVersion, line, "ver"))
+	}},
+	{re: reTargetPath, set: func(s *model.ImportRecord, line string) {
+		if s.PackageDir == "" {
+			s.PackageDir = strings.TrimSpace(submatch(reTargetPath, line, "path"))
+		}
+	}},
+	{re: rePublished, set: func(s *model.ImportRecord, line string) {
+		published := strings.TrimSpace(submatch(rePublished, line, "published"))
+		if s.PackageDir == "" && strings.Contains(published, `\`) {
+			s.PackageDir = pathutil.Parent(published)
+		}
+		if s.OemInfName == "" {
+			s.OemInfName = pathutil.Base(strings.TrimSpace(submatch(rePublished, line, "oem")))
+		}
+	}},
+	{re: reCreatedPackage, set: func(s *model.ImportRecord, line string) {
+		if s.PackageDir == "" {
+			s.PackageDir = strings.TrimSpace(submatch(reCreatedPackage, line, "dir"))
+		}
+	}},
+	{re: reCreatedInf, set: func(s *model.ImportRecord, line string) {
+		if s.OemInfName == "" {
+			s.OemInfName = pathutil.Base(strings.TrimSpace(submatch(reCreatedInf, line, "oem")))
+		}
+	}},
+	{re: reRegistered, set: func(s *model.ImportRecord, line string) {
+		if s.PackageDir == "" {
+			s.PackageDir = strings.TrimSpace(submatch(reRegistered, line, "dir"))
+		}
+		if s.OemInfName == "" {
+			s.OemInfName = pathutil.Base(strings.TrimSpace(submatch(reRegistered, line, "oem")))
+		}
+	}},
+	{re: reRegisterPkg, set: func(s *model.ImportRecord, line string) {
+		if s.PackageDir == "" {
+			s.PackageDir = pathutil.Parent(strings.TrimSpace(submatch(reRegisterPkg, line, "path")))
+		}
+	}},
+	{re: reCoreImport, extra: func(line string) bool { return !reExitOpen.MatchString(line) }, set: func(s *model.ImportRecord, line string) {
+		if s.PackageDir == "" {
+			s.PackageDir = strings.TrimSpace(submatch(reCoreImport, line, "pkg"))
+		}
+	}},
+	{re: reStoreFilename, set: func(s *model.ImportRecord, line string) {
+		path := strings.TrimSpace(submatch(reStoreFilename, line, "path"))
+		if s.PackageDir == "" {
+			s.PackageDir = pathutil.Parent(path)
+		}
+		if inf := pathutil.Base(path); strings.HasSuffix(strings.ToLower(inf), ".inf") {
+			s.InfName = inf
+		}
+	}},
 }
 
 // ConvertFromImportLogText mirrors ConvertFrom-ImportLogText.
@@ -77,25 +164,20 @@ func ConvertFromImportLogText(lines []string, logPath string) []model.ImportReco
 	for _, line := range lines {
 		lineNo++
 		started := false
-		if reSectionImport.MatchString(line) && !reExitOpen.MatchString(line) {
-			section = newSection(strings.TrimSpace(submatch(reSectionImport, line, "source")), "Import", lineNo)
-			started = true
-		} else if reSectionDriverInstall.MatchString(line) && !reExitOpen.MatchString(line) {
-			section = newSection(strings.TrimSpace(submatch(reSectionDriverInstall, line, "source")), "DriverInstall", lineNo)
-			started = true
-		} else if reSectionDeviceInstall.MatchString(line) && !reExitOpen.MatchString(line) {
-			section = newSection(strings.TrimSpace(submatch(reSectionDeviceInstall, line, "source")), "DeviceInstall", lineNo)
-			started = true
-		} else if reSectionStoDvsImport.MatchString(line) && !reExitOpen.MatchString(line) {
-			importSource := strings.TrimSpace(submatch(reSectionStoDvsImport, line, "source"))
-			if section != nil && (section.HeaderKind == "DriverInstall" || section.HeaderKind == "DeviceInstall") {
-				section.SourcePath = importSource
-				section.InfName = pathutil.Base(importSource)
+		for _, rule := range sectionStartRules {
+			if !rule.re.MatchString(line) || reExitOpen.MatchString(line) {
+				continue
+			}
+			sourcePath := strings.TrimSpace(submatch(rule.re, line, "source"))
+			if rule.updateCurrent && section != nil && (section.HeaderKind == "DriverInstall" || section.HeaderKind == "DeviceInstall") {
+				section.SourcePath = sourcePath
+				section.InfName = pathutil.Base(sourcePath)
 				section.LineNumber = lineNo
 			} else {
-				section = newSection(importSource, "Import", lineNo)
+				section = newSection(sourcePath, rule.kind, lineNo)
 			}
 			started = true
+			break
 		}
 		if started {
 			continue
@@ -104,54 +186,12 @@ func ConvertFromImportLogText(lines []string, logPath string) []model.ImportReco
 			continue
 		}
 
-		switch {
-		case reCommand.MatchString(line):
-			section.Command = strings.TrimSpace(submatch(reCommand, line, "cmd"))
-		case reVersion.MatchString(line):
-			section.Version = strings.TrimSpace(submatch(reVersion, line, "ver"))
-		case reTargetPath.MatchString(line):
-			if section.PackageDir == "" {
-				section.PackageDir = strings.TrimSpace(submatch(reTargetPath, line, "path"))
+		for _, rule := range fieldExtractRules {
+			if !rule.re.MatchString(line) || (rule.extra != nil && !rule.extra(line)) {
+				continue
 			}
-		case rePublished.MatchString(line):
-			published := strings.TrimSpace(submatch(rePublished, line, "published"))
-			if section.PackageDir == "" && strings.Contains(published, `\`) {
-				section.PackageDir = pathutil.Parent(published)
-			}
-			if section.OemInfName == "" {
-				section.OemInfName = pathutil.Base(strings.TrimSpace(submatch(rePublished, line, "oem")))
-			}
-		case reCreatedPackage.MatchString(line):
-			if section.PackageDir == "" {
-				section.PackageDir = strings.TrimSpace(submatch(reCreatedPackage, line, "dir"))
-			}
-		case reCreatedInf.MatchString(line):
-			if section.OemInfName == "" {
-				section.OemInfName = pathutil.Base(strings.TrimSpace(submatch(reCreatedInf, line, "oem")))
-			}
-		case reRegistered.MatchString(line):
-			if section.PackageDir == "" {
-				section.PackageDir = strings.TrimSpace(submatch(reRegistered, line, "dir"))
-			}
-			if section.OemInfName == "" {
-				section.OemInfName = pathutil.Base(strings.TrimSpace(submatch(reRegistered, line, "oem")))
-			}
-		case reRegisterPkg.MatchString(line):
-			if section.PackageDir == "" {
-				section.PackageDir = pathutil.Parent(strings.TrimSpace(submatch(reRegisterPkg, line, "path")))
-			}
-		case reCoreImport.MatchString(line) && !reExitOpen.MatchString(line):
-			if section.PackageDir == "" {
-				section.PackageDir = strings.TrimSpace(submatch(reCoreImport, line, "pkg"))
-			}
-		case reStoreFilename.MatchString(line):
-			path := strings.TrimSpace(submatch(reStoreFilename, line, "path"))
-			if section.PackageDir == "" {
-				section.PackageDir = pathutil.Parent(path)
-			}
-			if inf := pathutil.Base(path); strings.HasSuffix(strings.ToLower(inf), ".inf") {
-				section.InfName = inf
-			}
+			rule.set(section, line)
+			break
 		}
 
 		if reSectionEnd.MatchString(line) || (strings.Contains(line, "Import Driver Package") && reExitOpen.MatchString(line)) {
@@ -166,71 +206,136 @@ func ConvertFromImportLogText(lines []string, logPath string) []model.ImportReco
 	return rows
 }
 
+// sourceCategoryRule is one entry in the source-audit priority table. Rules are
+// evaluated in ascending slice order; the first rule whose match is true claims
+// the category. The priority order is therefore explicit in the table order
+// instead of a chain of conditionals.
+type sourceCategoryRule struct {
+	name     string
+	category model.AuditCategory
+	summary  string
+	match    bool
+}
+
+// sourceEvidenceRules assembles the priority table for one driver in the
+// documented order: install history, matching device, current official OS
+// list, then alternate official OS list.
+func sourceEvidenceRules(
+	driver *model.Driver,
+	history []model.HistoryRecord,
+	deviceEvidence []model.Device,
+	currentOSMap, alternateSourceMap map[string]model.SourceMapEntry,
+) []sourceCategoryRule {
+	localVersion := driver.LocalVersion
+	rules := make([]sourceCategoryRule, 0, 4)
+
+	if latest := latestSourceHistory(history, driver, localVersion); latest != nil {
+		summary := "Installed by this script from OSID " + latest.OSID
+		if latest.OSID == driver.OSID {
+			summary = "Installed by this script from the current OS source"
+		} else if latest.OSName != "" {
+			summary = "Installed by this script from " + latest.OSName
+		}
+		rules = append(rules, sourceCategoryRule{
+			name:     "install-history",
+			category: model.AuditCategoryInstallHistory,
+			summary:  summary,
+			match:    true,
+		})
+	}
+
+	for _, device := range deviceEvidence {
+		if device.DriverVersion != localVersion {
+			continue
+		}
+		rule := sourceCategoryRule{name: "device:" + device.Name, match: true}
+		switch {
+		case device.ImportSource != "" && device.ImportKind == "Offline":
+			rule.category = model.AuditCategoryOfflineImage
+			rule.summary = "Offline image integration source: " + device.ImportSource
+		case device.ImportSource != "":
+			rule.category = model.AuditCategoryOnlinePackage
+			rule.summary = "Online package installation source: " + device.ImportSource
+		default:
+			rule.category = model.AuditCategoryPreExistingStore
+			rule.summary = "Active driver came from a pre-existing DriverStore package, not current install history"
+		}
+		rules = append(rules, rule)
+	}
+
+	if GetSourceMapMatch(driver, currentOSMap, localVersion) != nil {
+		rules = append(rules, sourceCategoryRule{
+			name:     "current-os",
+			category: model.AuditCategoryCurrentOfficialOS,
+			summary:  "Matches the current OS official Lenovo list",
+			match:    true,
+		})
+	}
+
+	if GetSourceMapMatch(driver, alternateSourceMap, localVersion) != nil {
+		rules = append(rules, sourceCategoryRule{
+			name:     "alternate-os",
+			category: model.AuditCategoryAlternateOfficialOS,
+			summary:  "Matches another OS official Lenovo list",
+			match:    true,
+		})
+	}
+	return rules
+}
+
+// driverEvidenceLines gathers the always-on audit lines (install history and
+// every matching device), independent of which source ultimately wins the
+// category. The current/alternate OS lines are attached separately when their
+// rule wins, to preserve the first-match summary contract.
+func driverEvidenceLines(driver *model.Driver, deviceEvidence []model.Device, history []model.HistoryRecord) []string {
+	localVersion := driver.LocalVersion
+	var lines []string
+	if latest := latestSourceHistory(history, driver, localVersion); latest != nil {
+		lines = append(lines, "History: time="+latest.Timestamp+"; version="+latest.Version+"; verified="+latest.VerifiedVersion+"; before="+latest.BeforeVersion+"; result="+latest.Result)
+	}
+	for _, device := range deviceEvidence {
+		if device.DriverVersion != localVersion {
+			continue
+		}
+		lines = append(lines, "Device: "+device.Name+"; version="+device.DriverVersion+"; date="+device.DriverDate+"; INF="+device.InfName+"; provider="+device.ProviderName+"; install-date="+device.InstallDate)
+		if device.PackageDir != "" {
+			lines = append(lines, "DriverStore package: "+device.PackageDir+"; created="+device.PackageCreationTime+"; DriverVer="+device.PackageDriverVer)
+		}
+		if device.ImportSource != "" {
+			lines = append(lines, "Import: source="+device.ImportSource+"; command="+device.ImportCommand+"; log="+device.ImportLog+":"+strconv.Itoa(device.ImportLine))
+		}
+	}
+	return lines
+}
+
 // ResolveDriverSourceEvidence mirrors Resolve-DriverSourceEvidence.
 func ResolveDriverSourceEvidence(driver *model.Driver, deviceEvidence []model.Device, history []model.HistoryRecord, alternateSourceMap, currentOSMap map[string]model.SourceMapEntry) model.SourceAudit {
 	localVersion := driver.LocalVersion
-	category := "Unknown"
-	summary := "No local version evidence"
-	var evidenceLines []string
-
-	if localVersion != "" {
-		latestHistory := latestSourceHistory(history, driver, localVersion)
-		if latestHistory != nil {
-			category = "Install history"
-			if latestHistory.OSID == driver.OSID {
-				summary = "Installed by this script from the current OS source"
-			} else if latestHistory.OSName != "" {
-				summary = "Installed by this script from " + latestHistory.OSName
-			} else {
-				summary = "Installed by this script from OSID " + latestHistory.OSID
-			}
-			evidenceLines = append(evidenceLines, "History: time="+latestHistory.Timestamp+"; version="+latestHistory.Version+"; verified="+latestHistory.VerifiedVersion+"; before="+latestHistory.BeforeVersion+"; result="+latestHistory.Result)
-		}
-
-		for _, device := range deviceEvidence {
-			if device.DriverVersion != localVersion {
-				continue
-			}
-			evidenceLines = append(evidenceLines, "Device: "+device.Name+"; version="+device.DriverVersion+"; date="+device.DriverDate+"; INF="+device.InfName+"; provider="+device.ProviderName+"; install-date="+device.InstallDate)
-			if device.PackageDir != "" {
-				evidenceLines = append(evidenceLines, "DriverStore package: "+device.PackageDir+"; created="+device.PackageCreationTime+"; DriverVer="+device.PackageDriverVer)
-			}
-			if device.ImportSource != "" {
-				if category == "Unknown" {
-					if device.ImportKind == "Offline" {
-						category = "Offline image integration"
-					} else {
-						category = "Online package installation"
-					}
-					summary = category + " source: " + device.ImportSource
-				}
-				evidenceLines = append(evidenceLines, "Import: source="+device.ImportSource+"; command="+device.ImportCommand+"; log="+device.ImportLog+":"+itoa(device.ImportLine))
-			} else if category == "Unknown" {
-				category = "Pre-existing DriverStore package"
-				summary = "Active driver came from a pre-existing DriverStore package, not current install history"
-			}
-		}
-
-		if category == "Unknown" {
-			if match := GetSourceMapMatch(driver, currentOSMap, localVersion); match != nil {
-				category = "Current official OS"
-				summary = "Matches the current OS official Lenovo list"
-				evidenceLines = append(evidenceLines, "Official current OS: "+match.OSName+" (OSID "+match.OSID+"); version="+localVersion)
-			}
-		}
-
-		if category == "Unknown" {
-			if match := GetSourceMapMatch(driver, alternateSourceMap, localVersion); match != nil {
-				category = "Alternate official OS"
-				summary = "Matches another OS official Lenovo list"
-				evidenceLines = append(evidenceLines, "Official alternate OS: "+match.OSName+" (OSID "+match.OSID+"); version="+localVersion)
-			} else {
-				summary = "No install history, DriverStore import evidence, or official Lenovo version match"
-			}
-		}
+	if localVersion == "" {
+		return model.SourceAudit{Category: model.AuditCategoryUnknown, Summary: "No local version evidence"}
 	}
-
-	return model.SourceAudit{Category: category, Summary: summary, EvidenceLines: evidenceLines}
+	evidence := driverEvidenceLines(driver, deviceEvidence, history)
+	for _, rule := range sourceEvidenceRules(driver, history, deviceEvidence, currentOSMap, alternateSourceMap) {
+		if !rule.match {
+			continue
+		}
+		audit := model.SourceAudit{Category: rule.category, Summary: rule.summary, EvidenceLines: evidence}
+		if rule.category == model.AuditCategoryCurrentOfficialOS {
+			if match := GetSourceMapMatch(driver, currentOSMap, localVersion); match != nil {
+				audit.EvidenceLines = append(audit.EvidenceLines, "Official current OS: "+match.OSName+" (OSID "+match.OSID+"); version="+localVersion)
+			}
+		} else if rule.category == model.AuditCategoryAlternateOfficialOS {
+			if match := GetSourceMapMatch(driver, alternateSourceMap, localVersion); match != nil {
+				audit.EvidenceLines = append(audit.EvidenceLines, "Official alternate OS: "+match.OSName+" (OSID "+match.OSID+"); version="+localVersion)
+			}
+		}
+		return audit
+	}
+	return model.SourceAudit{
+		Category:      model.AuditCategoryUnknown,
+		Summary:       "No install history, DriverStore import evidence, or official Lenovo version match",
+		EvidenceLines: evidence,
+	}
 }
 
 // ResolveDriverSourceLabel mirrors Resolve-DriverSourceLabel.
@@ -250,13 +355,13 @@ func ResolveDriverSourceLabel(driver *model.Driver, history []model.HistoryRecor
 	}
 	if sourceAudit != nil {
 		switch sourceAudit.Category {
-		case "Offline image integration":
+		case model.AuditCategoryOfflineImage:
 			return "Local newer (source offline image integration)"
-		case "Online package installation":
+		case model.AuditCategoryOnlinePackage:
 			return "Local newer (source online package installation)"
-		case "Current official OS":
+		case model.AuditCategoryCurrentOfficialOS:
 			return "Local newer (source current OS official list)"
-		case "Pre-existing DriverStore package":
+		case model.AuditCategoryPreExistingStore:
 			return "Local newer (source pre-existing DriverStore package)"
 		}
 	}
@@ -297,26 +402,4 @@ func submatch(re *regexp.Regexp, line, name string) string {
 		return ""
 	}
 	return m[idx]
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var b [20]byte
-	i := len(b)
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		b[i] = '-'
-	}
-	return string(b[i:])
 }

@@ -104,7 +104,7 @@ func GetVersionMatchKeys(text string) []string {
 	}
 	var keys []string
 	if strings.ContainsAny(text, "/,") {
-		for _, part := range regexp.MustCompile(`/|,`).Split(text, -1) {
+		for _, part := range reComponentSplit.Split(text, -1) {
 			if v := ParseVersionString(part); v != nil {
 				keys = append(keys, v.String())
 			}

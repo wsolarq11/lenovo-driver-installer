@@ -2,6 +2,31 @@ package model
 
 import "time"
 
+// CompareStatus is the user-facing driver comparison result.
+type CompareStatus string
+
+const (
+	StatusUpdate        CompareStatus = "Update"
+	StatusUpToDate      CompareStatus = "Up to date"
+	StatusNotInstalled  CompareStatus = "Not installed"
+	StatusLocalNewer    CompareStatus = "Local newer"
+	StatusUnknown       CompareStatus = "Unknown"
+	StatusNotApplicable CompareStatus = "Not applicable"
+)
+
+// AuditCategory is the resolved source-evidence category.
+type AuditCategory string
+
+const (
+	AuditCategoryUnknown             AuditCategory = "Unknown"
+	AuditCategoryInstallHistory      AuditCategory = "Install history"
+	AuditCategoryOfflineImage        AuditCategory = "Offline image integration"
+	AuditCategoryOnlinePackage       AuditCategory = "Online package installation"
+	AuditCategoryCurrentOfficialOS   AuditCategory = "Current official OS"
+	AuditCategoryAlternateOfficialOS AuditCategory = "Alternate official OS"
+	AuditCategoryPreExistingStore    AuditCategory = "Pre-existing DriverStore package"
+)
+
 // Driver is the normalized Lenovo driver row used by all higher layers.
 type Driver struct {
 	PartID           string    `json:"PartId"`
@@ -26,11 +51,21 @@ type Driver struct {
 	OSName           string    `json:"OsName"`
 	SourceAPI        string    `json:"SourceApi"`
 
-	LocalVersion  string       `json:"LocalVersion"`
-	LocalVendor   string       `json:"LocalVendor"`
-	CompareStatus string       `json:"CompareStatus"`
-	CompareSource string       `json:"CompareSource"`
-	SourceAudit   *SourceAudit `json:"SourceAudit,omitempty"`
+	LocalVersion  string        `json:"LocalVersion"`
+	LocalVendor   string        `json:"LocalVendor"`
+	CompareStatus CompareStatus `json:"CompareStatus"`
+	CompareSource string        `json:"CompareSource"`
+	SourceAudit   *SourceAudit  `json:"SourceAudit,omitempty"`
+}
+
+// Disabled reports whether the API marks the driver row as disabled or not
+// enabled (its Status / IsEnable string signals are "0"). Centralizing this
+// names the enable/disable semantic instead of scattering "0" comparisons.
+func (d *Driver) Disabled() bool {
+	if d == nil {
+		return true
+	}
+	return (d.Status != "" && d.Status == "0") || (d.IsEnable != "" && d.IsEnable == "0")
 }
 
 // Device is a normalized PnP device row supplied by inventory.
@@ -74,6 +109,19 @@ type OSListEntry struct {
 	OSName string `json:"OSName"`
 }
 
+// OSNameByID returns the OSName for the entry whose OSID matches, or "" when no
+// such entry exists. It is the single OSID-to-name lookup shared by API
+// normalization, GUI export, and the interactive OS switcher so their idea of
+// "which OS this id means" never drifts.
+func OSNameByID(osList []OSListEntry, osID string) string {
+	for _, entry := range osList {
+		if entry.OSID == osID {
+			return entry.OSName
+		}
+	}
+	return ""
+}
+
 // HistoryRecord is one row in lenovo_driver_history.csv.
 type HistoryRecord struct {
 	Timestamp       string
@@ -93,7 +141,7 @@ type HistoryRecord struct {
 
 // SourceAudit is the resolved source evidence for a local driver version.
 type SourceAudit struct {
-	Category      string
+	Category      AuditCategory
 	Summary       string
 	EvidenceLines []string
 }

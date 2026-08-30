@@ -23,6 +23,8 @@ const (
 	webReferer      = "https://newsupport.lenovo.com.cn/driveDownloads_index.html"
 )
 
+var reSerialPlaceholder = regexp.MustCompile(`(?i)To be filled|None|Default`)
+
 // Client is the Lenovo API client.
 type Client struct {
 	HTTP *http.Client
@@ -85,11 +87,12 @@ func (c *Client) invokeQuickFix(ctx context.Context, searchKey, osID string) ([]
 }
 
 // GetDriverObjects tries QuickFix first, then the official webpage API.
-func (c *Client) GetDriverObjects(ctx context.Context, categoryID, osID, preferredSource string) SourceDrivers {
+func (c *Client) GetDriverObjects(ctx context.Context, categoryID, osID, preferredSource string) (SourceDrivers, error) {
 	attempts := []string{"QuickFix", "Web"}
 	if preferredSource == "Web" {
 		attempts = []string{"Web", "QuickFix"}
 	}
+	var lastErr error
 	for _, source := range attempts {
 		var drivers []*model.Driver
 		var err error
@@ -99,10 +102,15 @@ func (c *Client) GetDriverObjects(ctx context.Context, categoryID, osID, preferr
 			drivers, err = c.fetchWeb(ctx, categoryID, osID)
 		}
 		if err == nil && len(drivers) > 0 {
-			return SourceDrivers{Source: source, Drivers: drivers}
+			return SourceDrivers{Source: source, Drivers: drivers}, nil
+		}
+		if err != nil {
+			lastErr = err
+		} else {
+			lastErr = fmt.Errorf("%s returned no driver rows", source)
 		}
 	}
-	return SourceDrivers{}
+	return SourceDrivers{}, fmt.Errorf("could not load the official driver list from %s or %s: %w", attempts[0], attempts[1], lastErr)
 }
 
 func (c *Client) fetchQuickFix(ctx context.Context, searchKey, osID string) ([]*model.Driver, error) {
@@ -150,7 +158,7 @@ func (c *Client) ResolveCategoryID(ctx context.Context, machineModel, serial str
 	if machineModel != "" {
 		keys = append(keys, machineModel)
 	}
-	if serial != "" && !regexp.MustCompile(`(?i)To be filled|None|Default`).MatchString(serial) {
+	if serial != "" && !reSerialPlaceholder.MatchString(serial) {
 		keys = append(keys, serial)
 	}
 	var lastErr error
@@ -241,44 +249,4 @@ func findOSEntry(osList []model.OSListEntry, osName, osKind string) (model.OSLis
 		}
 	}
 	return model.OSListEntry{}, false
-}
-
-// GetRefreshedDriverURL refreshes a download URL from the current or alternate OS lists.
-func (c *Client) GetRefreshedDriverURL(ctx context.Context, driver *model.Driver, categoryID, sysID string, osList []model.OSListEntry, latestAcrossOS, useQuickFix bool) (string, error) {
-	type queryItem struct {
-		osID string
-	}
-	queries := []queryItem{{osID: sysID}}
-	if latestAcrossOS {
-		for _, entry := range osList {
-			if entry.OSID == sysID {
-				continue
-			}
-			queries = append(queries, queryItem{osID: entry.OSID})
-		}
-	}
-	var lastErr error
-	for _, item := range queries {
-		var drivers []*model.Driver
-		var err error
-		if useQuickFix {
-			drivers, err = c.fetchQuickFix(ctx, categoryID, item.osID)
-		} else {
-			drivers, err = c.fetchWeb(ctx, categoryID, item.osID)
-		}
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		for _, candidate := range drivers {
-			if candidate.DriverCode == driver.DriverCode && candidate.FilePath != "" {
-				return candidate.FilePath, nil
-			}
-		}
-		lastErr = fmt.Errorf("driver %s has no refreshed URL for OSID %s", driver.DriverCode, item.osID)
-	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("driver %s has no refreshed URL", driver.DriverCode)
-	}
-	return "", lastErr
 }

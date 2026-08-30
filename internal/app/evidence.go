@@ -36,6 +36,7 @@ func (a *App) loadDriverImportRecords(ctx context.Context) []model.ImportRecord 
 func (a *App) enrichDeviceEvidence(ctx context.Context, matched []model.Device) []model.Device {
 	detailed, err := inventory.GetDeviceEvidence(ctx, matched)
 	if err != nil {
+		a.Log(ctx, "Device evidence lookup failed: "+err.Error(), "WARN")
 		return matched
 	}
 	imports := a.loadDriverImportRecords(ctx)

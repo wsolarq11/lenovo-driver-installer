@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
+	"lenovo-driver/internal/api"
 	"lenovo-driver/internal/audit"
 	"lenovo-driver/internal/compare"
 	"lenovo-driver/internal/inventory"
@@ -26,81 +28,180 @@ type DriverView struct {
 	OsID       string
 }
 
+var (
+	reBios          = regexp.MustCompile(`(?i)BIOS|EC Version`)
+	installableExts = map[string]bool{".exe": true, ".msi": true, ".zip": true, ".inf": true, ".cab": true}
+)
+
+func (a *App) cachedDriverObjects(ctx context.Context, vc *ViewContext, osID, preferredSource string) (api.SourceDrivers, error) {
+	key := osID + "|" + preferredSource
+	a.osDriverCacheMu.Lock()
+	if a.osDriverCache == nil {
+		a.osDriverCache = map[string]api.SourceDrivers{}
+	} else if result, ok := a.osDriverCache[key]; ok {
+		a.osDriverCacheMu.Unlock()
+		return result, nil
+	}
+	a.osDriverCacheMu.Unlock()
+
+	result, err := a.APIClient.GetDriverObjects(ctx, vc.CategoryID, osID, preferredSource)
+	if err != nil {
+		return api.SourceDrivers{}, err
+	}
+	a.osDriverCacheMu.Lock()
+	a.osDriverCache[key] = result
+	a.osDriverCacheMu.Unlock()
+	return result, nil
+}
+
+// toleratedDriverListMiss reports why a driver list is unusable under the soft-
+// miss policy: a fetch error, or an official list with no rows. A nil return
+// means the list is usable. Both the cross-OS merge and the alternate-OS source
+// map share this single fetch/tolerate policy.
+func toleratedDriverListMiss(err error, result api.SourceDrivers) error {
+	if err != nil {
+		return err
+	}
+	if len(result.Drivers) == 0 {
+		return fmt.Errorf("the official driver list was empty")
+	}
+	return nil
+}
+
+// driverListLoad is one OSID's fetch outcome, kept in input order so that
+// callers can apply their per-OSID policy deterministically after the parallel
+// fetch phase completes.
+type driverListLoad struct {
+	osID   string
+	result api.SourceDrivers
+	err    error
+}
+
+// loadDriverListsForOSIDs fetches the cached driver lists for a group of
+// independent OSIDs in parallel (the reads are unrelated network calls that
+// only benefit from concurrency), preserving the input order in the returned
+// slice. The soft-miss policy is applied by the caller per slot in order.
+func (a *App) loadDriverListsForOSIDs(ctx context.Context, vc *ViewContext, osIDs []string, preferredSource string) []driverListLoad {
+	out := make([]driverListLoad, len(osIDs))
+	for i, osID := range osIDs {
+		out[i].osID = osID
+	}
+	var wg sync.WaitGroup
+	for i, osID := range osIDs {
+		wg.Add(1)
+		go func(i int, osID string) {
+			defer wg.Done()
+			out[i].result, out[i].err = a.cachedDriverObjects(ctx, vc, osID, preferredSource)
+		}(i, osID)
+	}
+	wg.Wait()
+	return out
+}
+
+// loadDriverList returns the cached driver list for an OSID, logging a WARN and
+// returning ok=false when the source is unavailable or empty. Both the
+// cross-OS merge and the alternate-OS source map share this single
+// fetch/tolerate policy.
+func (a *App) loadDriverList(ctx context.Context, vc *ViewContext, osID, preferredSource string) (api.SourceDrivers, bool) {
+	result, err := a.cachedDriverObjects(ctx, vc, osID, preferredSource)
+	if miss := toleratedDriverListMiss(err, result); miss != nil {
+		a.Log(ctx, "Could not load a driver list for OSID "+osID+": "+miss.Error(), "WARN")
+		return api.SourceDrivers{}, false
+	}
+	return result, true
+}
+
+// pnpIDsOf collects the non-empty PnP device ids of a device set.
+func pnpIDsOf(devices []model.Device) []string {
+	ids := make([]string, 0, len(devices))
+	for _, dev := range devices {
+		if dev.PnpDeviceID != "" {
+			ids = append(ids, dev.PnpDeviceID)
+		}
+	}
+	return ids
+}
+
+// localDriverState resolves the current local version and vendor for a driver
+// against a device snapshot. It is the single canonical pipeline shared by the
+// driver-comparison view and post-install verification.
+func (a *App) localDriverState(ctx context.Context, driver *model.Driver, matchedDevices []model.Device, snapshot *model.SoftwareSnapshot) (localVersion, localVendor string, err error) {
+	versions, err := inventory.GetDeviceDriverVersions(ctx, pnpIDsOf(matchedDevices))
+	if err != nil {
+		return "", "", err
+	}
+	localVersion, localVendor = compare.ResolveLocalDriverVersion(driver, matchedDevices, versions, snapshot)
+	return localVersion, localVendor, nil
+}
+
+// mustDriverList is the strict counterpart of loadDriverList: the primary
+// comparison view cannot proceed without the official list, so an empty or
+// failed load is a hard error rather than a tolerated soft miss.
+func (a *App) mustDriverList(ctx context.Context, vc *ViewContext, osID, preferredSource string) (api.SourceDrivers, error) {
+	driverResult, err := a.cachedDriverObjects(ctx, vc, osID, preferredSource)
+	if err != nil || len(driverResult.Drivers) == 0 {
+		if err == nil {
+			err = fmt.Errorf("the official driver list was empty")
+		}
+		return api.SourceDrivers{}, fmt.Errorf("could not load the official driver list from %s or the webpage API: %w", preferredSource, err)
+	}
+	return driverResult, nil
+}
+
 // CompareOSDriverView mirrors Compare-OsDriverView.
-func (a *App) CompareOSDriverView(
-	ctx context.Context,
-	opts *Options,
-	categoryID string,
-	listOsID string,
-	currentSystemOsID string,
-	osList []model.OSListEntry,
-	localDevices []model.Device,
-	installedApps []model.InstalledApp,
-	softwareSnapshot model.SoftwareSnapshot,
-	history []model.HistoryRecord,
-) (*DriverView, error) {
-	driverResult := a.APIClient.GetDriverObjects(ctx, categoryID, listOsID, "QuickFix")
-	if driverResult.Source == "" || len(driverResult.Drivers) == 0 {
-		return nil, fmt.Errorf("could not load the official driver list from QuickFix or the webpage API")
+func (a *App) CompareOSDriverView(ctx context.Context, vc *ViewContext, listOsID string) (*DriverView, error) {
+	driverResult, err := a.mustDriverList(ctx, vc, listOsID, "QuickFix")
+	if err != nil {
+		return nil, err
 	}
 	viewDrivers := append([]*model.Driver(nil), driverResult.Drivers...)
 	a.Log(ctx, "Driver source : "+driverResult.Source+" (OSID "+listOsID+")", "INFO")
 
-	if opts.LatestAcrossOS {
-		for _, entry := range osList {
-			if entry.OSID == listOsID {
+	if vc.Opts.LatestAcrossOS {
+		alternateIDs := otherOSIDs(vc.OsList, listOsID)
+		// The alternate OS lists are independent reads; fetch them in parallel,
+		// then merge and log in deterministic OSID order.
+		for _, load := range a.loadDriverListsForOSIDs(ctx, vc, alternateIDs, driverResult.Source) {
+			if miss := toleratedDriverListMiss(load.err, load.result); miss != nil {
+				a.Log(ctx, "Could not load a driver list for OSID "+load.osID+": "+miss.Error(), "WARN")
 				continue
 			}
-			alternate := a.APIClient.GetDriverObjects(ctx, categoryID, entry.OSID, driverResult.Source)
-			if alternate.Source == "" || len(alternate.Drivers) == 0 {
-				a.Log(ctx, "Could not merge OSID "+entry.OSID+" ("+entry.OSName+"): "+alternate.Source, "WARN")
-				continue
-			}
-			viewDrivers = append(viewDrivers, alternate.Drivers...)
-			a.Log(ctx, "Merged driver source : "+alternate.Source+" (OSID "+entry.OSID+")", "INFO")
+			viewDrivers = append(viewDrivers, load.result.Drivers...)
+			a.Log(ctx, "Merged driver source : "+load.result.Source+" (OSID "+load.osID+")", "INFO")
 		}
 	}
 
-	viewDrivers = filterDriverRows(viewDrivers, opts.IncludeBios)
+	// Own each row before filtering/selecting/assessing: assessment writes
+	// (compare status, source audit, ...) must never reach the shared driver
+	// list cache or API rows, so the transport/API DTOs stay immutable.
+	viewDrivers = cloneDrivers(viewDrivers)
+
+	viewDrivers = filterDriverRows(viewDrivers, vc.Opts.IncludeBios)
 	selected := compare.SelectLatestDrivers(viewDrivers, listOsID)
 	a.Log(ctx, fmt.Sprintf("Drivers selected : %d", len(selected)), "INFO")
 	a.Log(ctx, "Comparing with locally installed versions...", "INFO")
 
-	currentSourceMap := initCurrentSourceMap(selected)
-	var alternateSourceMap map[string]model.SourceMapEntry
+	currentSourceMap := buildDriverSourceMap(selected)
+	a.assessSelectedDrivers(ctx, vc, selected, currentSourceMap, driverResult.Source)
 
-	for _, driver := range selected {
-		if driver == nil {
-			continue
-		}
-		if !compare.TestDriverApplicable(driver, localDevices) {
-			driver.CompareStatus = "Not applicable"
-			continue
-		}
-		matchedDevices := compare.GetMatchingLocalDevices(driver, localDevices)
-		var pnpIDs []string
-		for _, dev := range matchedDevices {
-			if dev.PnpDeviceID != "" {
-				pnpIDs = append(pnpIDs, dev.PnpDeviceID)
-			}
-		}
-		driverVersions, _ := inventory.GetDeviceDriverVersions(ctx, pnpIDs)
-		localVersion, localVendor := compare.ResolveLocalDriverVersion(driver, matchedDevices, driverVersions, &softwareSnapshot)
-		driver.LocalVersion = localVersion
-		driver.LocalVendor = localVendor
-		driver.CompareStatus = compare.CompareDriverStatus(driver.Version, localVersion, localVendor)
-		if localVersion != "" {
-			if driver.CompareStatus == "Local newer" && alternateSourceMap == nil {
-				alternateSourceMap = a.initAlternateSourceMap(ctx, categoryID, osList, currentSystemOsID, driverResult.Source)
-			}
-			driver.SourceAudit = a.resolveDriverSourceAudit(ctx, driver, matchedDevices, history, currentSourceMap, alternateSourceMap)
-			if driver.CompareStatus == "Local newer" {
-				driver.CompareSource = audit.ResolveDriverSourceLabel(driver, history, alternateSourceMap, driver.SourceAudit)
-				a.Log(ctx, "["+driver.DriverCode+"] "+driver.CompareSource, "WARN")
-			}
-		}
-	}
+	a.presentDriverView(ctx, selected)
 
+	applicable, updates := partitionViewDrivers(selected)
+	a.Log(ctx, fmt.Sprintf("Applicable candidates : %d; update-only drivers : %d", len(applicable), len(updates)), "INFO")
+	return &DriverView{
+		Selected:   selected,
+		Applicable: applicable,
+		Updates:    updates,
+		Source:     driverResult.Source,
+		OsID:       listOsID,
+	}, nil
+}
+
+// presentDriverView writes the plan artifact and prints the comparison table
+// and status summary for an assessed driver set. It is the presentation
+// counterpart of the pure comparison/build pipeline and is the single place
+// that couples the decision result to stdout and the plan file.
+func (a *App) presentDriverView(ctx context.Context, selected []*model.Driver) {
 	if err := a.WritePlanFile(selected); err != nil {
 		a.Log(ctx, "Could not write plan file: "+err.Error(), "WARN")
 	} else {
@@ -114,38 +215,95 @@ func (a *App) CompareOSDriverView(
 	for _, line := range plan.FormatStatusSummaryLines(selected) {
 		fmt.Fprintln(a.Stdout, line)
 	}
+}
 
-	var applicable []*model.Driver
-	var updates []*model.Driver
+// assessSelectedDrivers resolves the local version, compare status and
+// source-evidence audit for each driver, mutating only that driver's
+// comparison fields. Any alternate-source map needed for source auditing is
+// built lazily and reused across the remaining drivers in the pass.
+func (a *App) assessSelectedDrivers(ctx context.Context, vc *ViewContext, selected []*model.Driver, currentSourceMap map[string]model.SourceMapEntry, preferredSource string) {
+	var alternateSourceMap map[string]model.SourceMapEntry
 	for _, driver := range selected {
-		if driver.CompareStatus != "Not applicable" {
+		if driver == nil {
+			continue
+		}
+		if !compare.TestDriverApplicable(driver, vc.LocalDevices) {
+			driver.CompareStatus = model.StatusNotApplicable
+			continue
+		}
+		matchedDevices := compare.GetMatchingLocalDevices(driver, vc.LocalDevices)
+		localVersion, localVendor, err := a.localDriverState(ctx, driver, matchedDevices, &vc.SoftwareSnapshot)
+		if err != nil {
+			a.Log(ctx, "["+driver.DriverCode+"] Could not read local driver version: "+err.Error(), "WARN")
+			continue
+		}
+		driver.LocalVersion = localVersion
+		driver.LocalVendor = localVendor
+		driver.CompareStatus = compare.CompareDriverStatus(driver.Version, localVersion, localVendor)
+		if localVersion == "" {
+			continue
+		}
+		if driver.CompareStatus == model.StatusLocalNewer && alternateSourceMap == nil {
+			alternateSourceMap = a.initAlternateSourceMap(ctx, vc, vc.CurrentSystemOsID, preferredSource)
+		}
+		driver.SourceAudit = a.resolveDriverSourceAudit(ctx, driver, matchedDevices, vc.History, currentSourceMap, alternateSourceMap)
+		if driver.CompareStatus == model.StatusLocalNewer {
+			driver.CompareSource = audit.ResolveDriverSourceLabel(driver, vc.History, alternateSourceMap, driver.SourceAudit)
+			a.Log(ctx, "["+driver.DriverCode+"] "+driver.CompareSource, "WARN")
+		}
+	}
+}
+
+// partitionViewDrivers splits the selected drivers into the applicable and
+// update-only groups used by the interactive view.
+func partitionViewDrivers(selected []*model.Driver) (applicable, updates []*model.Driver) {
+	for _, driver := range selected {
+		if driver.CompareStatus != model.StatusNotApplicable {
 			applicable = append(applicable, driver)
 		}
-		if driver.CompareStatus == "Update" {
+		if driver.CompareStatus == model.StatusUpdate {
 			updates = append(updates, driver)
 		}
 	}
-	a.Log(ctx, fmt.Sprintf("Applicable candidates : %d; update-only drivers : %d", len(applicable), len(updates)), "INFO")
-	return &DriverView{
-		Selected:   selected,
-		Applicable: applicable,
-		Updates:    updates,
-		Source:     driverResult.Source,
-		OsID:       listOsID,
-	}, nil
+	return applicable, updates
+}
+
+// cloneDriver deep-copies a driver row so the comparison/assessment pass can
+// write comparison fields without mutating a shared fetch/cache object. It
+// preserves the row value including its nested source audit.
+func cloneDriver(d *model.Driver) *model.Driver {
+	if d == nil {
+		return nil
+	}
+	c := *d
+	if d.SourceAudit != nil {
+		a := *d.SourceAudit
+		a.EvidenceLines = append([]string(nil), d.SourceAudit.EvidenceLines...)
+		c.SourceAudit = &a
+	}
+	return &c
+}
+
+// cloneDrivers returns a slice of independent deep copies of the rows. The
+// comparison view owns its copies, so nothing it writes leaks back into the
+// shared driver list cache or the API transport rows.
+func cloneDrivers(drivers []*model.Driver) []*model.Driver {
+	out := make([]*model.Driver, len(drivers))
+	for i, d := range drivers {
+		out[i] = cloneDriver(d)
+	}
+	return out
 }
 
 func filterDriverRows(rows []*model.Driver, includeBios bool) []*model.Driver {
-	installableExts := map[string]bool{".exe": true, ".msi": true, ".zip": true, ".inf": true, ".cab": true}
 	var out []*model.Driver
 	biosSkipped := 0
 	extSkipped := 0
-	reBios := regexp.MustCompile(`(?i)BIOS|EC Version`)
 	for _, driver := range rows {
 		if driver == nil {
 			continue
 		}
-		if (driver.Status != "" && driver.Status == "0") || (driver.IsEnable != "" && driver.IsEnable == "0") {
+		if driver.Disabled() {
 			continue
 		}
 		if !includeBios && reBios.MatchString(driver.DriverName) {
@@ -161,40 +319,48 @@ func filterDriverRows(rows []*model.Driver, includeBios bool) []*model.Driver {
 	return out
 }
 
-func initCurrentSourceMap(drivers []*model.Driver) map[string]model.SourceMapEntry {
+// otherOSIDs returns the OSIDs of every entry in osList except excludeID, in
+// list order. It is the single source of truth for "which OS lists are the
+// alternates for the current one" shared by the cross-OS merge, the
+// alternate-source map, and URL refresh.
+func otherOSIDs(osList []model.OSListEntry, excludeID string) []string {
+	out := make([]string, 0, len(osList))
+	for _, entry := range osList {
+		if entry.OSID == excludeID {
+			continue
+		}
+		out = append(out, entry.OSID)
+	}
+	return out
+}
+
+func buildDriverSourceMap(drivers []*model.Driver) map[string]model.SourceMapEntry {
 	sourceMap := map[string]model.SourceMapEntry{}
 	for _, driver := range drivers {
-		for _, versionKey := range compare.GetVersionMatchKeys(driver.Version) {
-			nameKey := strings.TrimSpace(driver.DriverName) + "|" + versionKey
-			codeKey := driver.DriverCode + "|" + versionKey
-			if _, ok := sourceMap[nameKey]; !ok {
-				sourceMap[nameKey] = model.SourceMapEntry{OSID: driver.OSID, OSName: driver.OSName}
-			}
-			if _, ok := sourceMap[codeKey]; !ok {
-				sourceMap[codeKey] = model.SourceMapEntry{OSID: driver.OSID, OSName: driver.OSName}
+		if driver == nil {
+			continue
+		}
+		for _, key := range audit.SourceMapKeys(driver.DriverName, driver.DriverCode, driver.Version) {
+			if _, ok := sourceMap[key]; !ok {
+				sourceMap[key] = model.SourceMapEntry{OSID: driver.OSID, OSName: driver.OSName}
 			}
 		}
 	}
 	return sourceMap
 }
 
-func (a *App) initAlternateSourceMap(ctx context.Context, categoryID string, osList []model.OSListEntry, sysID, preferredSource string) map[string]model.SourceMapEntry {
+func (a *App) initAlternateSourceMap(ctx context.Context, vc *ViewContext, sysID, preferredSource string) map[string]model.SourceMapEntry {
 	sourceMap := map[string]model.SourceMapEntry{}
-	for _, alt := range osList {
-		if alt.OSID == sysID {
+	alternateIDs := otherOSIDs(vc.OsList, sysID)
+	// Fetch the alternate OS lists in parallel; merge the source map in OSID
+	// order so the existing first-wins tie-break is preserved deterministically.
+	for _, load := range a.loadDriverListsForOSIDs(ctx, vc, alternateIDs, preferredSource) {
+		if toleratedDriverListMiss(load.err, load.result) != nil {
 			continue
 		}
-		result := a.APIClient.GetDriverObjects(ctx, categoryID, alt.OSID, preferredSource)
-		for _, altDriver := range result.Drivers {
-			for _, versionKey := range compare.GetVersionMatchKeys(altDriver.Version) {
-				nameKey := strings.TrimSpace(altDriver.DriverName) + "|" + versionKey
-				codeKey := altDriver.DriverCode + "|" + versionKey
-				if _, ok := sourceMap[nameKey]; !ok {
-					sourceMap[nameKey] = model.SourceMapEntry{OSID: altDriver.OSID, OSName: altDriver.OSName}
-				}
-				if _, ok := sourceMap[codeKey]; !ok {
-					sourceMap[codeKey] = model.SourceMapEntry{OSID: altDriver.OSID, OSName: altDriver.OSName}
-				}
+		for key, entry := range buildDriverSourceMap(load.result.Drivers) {
+			if _, ok := sourceMap[key]; !ok {
+				sourceMap[key] = entry
 			}
 		}
 	}
@@ -216,7 +382,7 @@ func (a *App) resolveDriverSourceAudit(
 
 // WritePlanFile mirrors Write-PlanFile.
 func (a *App) WritePlanFile(drivers []*model.Driver) error {
-	lines := plan.BuildPlanText(drivers, time.Now().Format("2006-01-02 15:04:05"))
+	lines := plan.BuildPlanText(drivers, formatTimestamp(time.Now()))
 	content := strings.Join(lines, "\r\n") + "\r\n"
 	return os.WriteFile(a.PlanPath, []byte(content), 0o644)
 }
@@ -254,49 +420,41 @@ type guiDriverRow struct {
 }
 
 // ExportGUIView writes the WPF-compatible JSON view.
-func (a *App) ExportGUIView(path string, view *DriverView, osList []model.OSListEntry, currentSystemOsID string, machine inventory.MachineInfo, osInfo inventory.OSInfo) error {
-	currentOSName := ""
-	listOSName := ""
-	for _, entry := range osList {
-		if entry.OSID == currentSystemOsID {
-			currentOSName = entry.OSName
-		}
-		if entry.OSID == view.OsID {
-			listOSName = entry.OSName
-		}
-	}
+func (a *App) ExportGUIView(path string, vc *ViewContext, view *DriverView) error {
+	currentOSName := model.OSNameByID(vc.OsList, vc.CurrentSystemOsID)
+	listOSName := model.OSNameByID(vc.OsList, view.OsID)
 	payload := guiExportPayload{
-		GeneratedAt:   time.Now().Format("2006-01-02 15:04:05"),
-		MachineModel:  machine.Model,
-		SerialNumber:  machine.Serial,
-		SystemCaption: osInfo.Caption,
-		CurrentOsID:   currentSystemOsID,
+		GeneratedAt:   formatTimestamp(time.Now()),
+		MachineModel:  vc.Machine.Model,
+		SerialNumber:  vc.Machine.Serial,
+		SystemCaption: vc.OSInfo.Caption,
+		CurrentOsID:   vc.CurrentSystemOsID,
 		CurrentOsName: currentOSName,
 		ListOsID:      view.OsID,
 		ListOsName:    listOSName,
 		DataSource:    view.Source,
-		OsList:        osList,
+		OsList:        vc.OsList,
 		Drivers:       make([]guiDriverRow, 0, len(view.Selected)),
 	}
 	for _, driver := range view.Selected {
 		sourceAudit := ""
 		if driver.SourceAudit != nil {
-			sourceAudit = driver.SourceAudit.Category + ": " + driver.SourceAudit.Summary
+			sourceAudit = string(driver.SourceAudit.Category) + ": " + driver.SourceAudit.Summary
 		}
 		payload.Drivers = append(payload.Drivers, guiDriverRow{
 			DriverCode:    driver.DriverCode,
 			DriverName:    driver.DriverName,
 			Version:       driver.Version,
 			LocalVersion:  driver.LocalVersion,
-			CompareStatus: driver.CompareStatus,
+			CompareStatus: string(driver.CompareStatus),
 			SourceAudit:   sourceAudit,
 			CompareSource: driver.CompareSource,
 			FileName:      driver.FileName,
 			FilePath:      driver.FilePath,
 			FileSize:      driver.FileSize,
 			MD5:           driver.OfficialMD5,
-			IsApplicable:  driver.CompareStatus != "Not applicable",
-			IsUpdate:      driver.CompareStatus == "Update",
+			IsApplicable:  driver.CompareStatus != model.StatusNotApplicable,
+			IsUpdate:      driver.CompareStatus == model.StatusUpdate,
 		})
 	}
 	data, err := json.MarshalIndent(payload, "", "  ")

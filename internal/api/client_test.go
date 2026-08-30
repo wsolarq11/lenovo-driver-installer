@@ -25,14 +25,25 @@ func TestFindOSEntryCaseInsensitive(t *testing.T) {
 	}
 }
 
-func TestGetRefreshedDriverURL(t *testing.T) {
+func TestGetDriverObjectsReturnsErrorWhenBothSourcesFail(t *testing.T) {
+	client := NewClient()
+	client.HTTP = &http.Client{Transport: roundTripFunc(func(req *http.Request) *http.Response {
+		return &http.Response{StatusCode: http.StatusInternalServerError, Body: io.NopCloser(bytes.NewReader(nil))}
+	})}
+	_, err := client.GetDriverObjects(context.Background(), "cat", "248", "QuickFix")
+	if err == nil {
+		t.Fatal("expected GetDriverObjects to return an error when both sources fail")
+	}
+}
+
+func TestGetDriverObjectsReturnsQuickFix(t *testing.T) {
 	client := NewClient()
 	client.HTTP = &http.Client{Transport: roundTripFunc(func(req *http.Request) *http.Response {
 		resp := QuickFixResponse{StatusCode: "200"}
 		resp.Data.DriverList = []driverRow{{
 			DriverCode: "d1",
 			FileName:   "d1.exe",
-			FilePath:   "https://cdn.example.invalid/d1-new.exe",
+			FilePath:   "https://cdn.example.invalid/d1.exe",
 		}}
 		body, _ := json.Marshal(resp)
 		return &http.Response{
@@ -41,36 +52,11 @@ func TestGetRefreshedDriverURL(t *testing.T) {
 			Body:       io.NopCloser(bytes.NewReader(body)),
 		}
 	})}
-	osList := []model.OSListEntry{{OSID: "248"}, {OSID: "249"}}
-	driver := &model.Driver{DriverCode: "d1"}
-	got, err := client.GetRefreshedDriverURL(context.Background(), driver, "cat", "248", osList, true, true)
+	result, err := client.GetDriverObjects(context.Background(), "cat", "248", "QuickFix")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "https://cdn.example.invalid/d1-new.exe" {
-		t.Fatalf("GetRefreshedDriverURL = %q", got)
-	}
-}
-
-func TestGetRefreshedDriverURLMissingReturnsError(t *testing.T) {
-	client := NewClient()
-	client.HTTP = &http.Client{Transport: roundTripFunc(func(req *http.Request) *http.Response {
-		resp := QuickFixResponse{StatusCode: "200"}
-		resp.Data.DriverList = []driverRow{{
-			DriverCode: "other",
-			FileName:   "other.exe",
-			FilePath:   "https://cdn.example.invalid/other.exe",
-		}}
-		body, _ := json.Marshal(resp)
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body:       io.NopCloser(bytes.NewReader(body)),
-		}
-	})}
-	driver := &model.Driver{DriverCode: "d1"}
-	_, err := client.GetRefreshedDriverURL(context.Background(), driver, "cat", "248", nil, false, true)
-	if err == nil {
-		t.Fatal("expected an error for a missing refreshed driver URL")
+	if result.Source != "QuickFix" || len(result.Drivers) != 1 {
+		t.Fatalf("GetDriverObjects = %#v", result)
 	}
 }

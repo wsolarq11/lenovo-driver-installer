@@ -171,10 +171,5 @@ func normalizeDriver(row *driverRow, partMap map[string]string, osID, osName, so
 }
 
 func findOSName(osList []model.OSListEntry, osID string) string {
-	for _, entry := range osList {
-		if entry.OSID == osID {
-			return entry.OSName
-		}
-	}
-	return ""
+	return model.OSNameByID(osList, osID)
 }

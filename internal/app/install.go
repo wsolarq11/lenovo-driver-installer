@@ -18,14 +18,12 @@ import (
 // InstallSelected downloads and installs the selected drivers, mirroring the PS1 main loop.
 func (a *App) InstallSelected(
 	ctx context.Context,
-	opts *Options,
+	vc *ViewContext,
 	selected []*model.Driver,
 	dataSource string,
-	categoryID string,
-	sysID string,
-	osList []model.OSListEntry,
+	listOsID string,
 ) error {
-	dlDir := opts.DownloadDir
+	dlDir := vc.Opts.DownloadDir
 	if dlDir == "" {
 		dlDir = filepath.Join(os.TempDir(), "LenovoDrivers")
 	}
@@ -41,9 +39,14 @@ func (a *App) InstallSelected(
 			continue
 		}
 		outFile := filepath.Join(dlDir, driver.DriverCode+"_"+driver.FileName)
-		expectedSize := compare.ConvertToBytes(driver.FileSize)
+		expectedSize, sizeErr := compare.ConvertToBytes(driver.FileSize)
+		if sizeErr != nil {
+			a.Log(ctx, "["+driver.DriverCode+"] Invalid driver file size: "+sizeErr.Error(), "ERROR")
+			failed = append(failed, driver)
+			continue
+		}
 		a.Log(ctx, "["+driver.DriverCode+"] Downloading "+driver.FileName, "INFO")
-		downloadedSize, downloadErr := a.downloadVerified(ctx, opts, driver, outFile, expectedSize, categoryID, sysID, osList, dataSource)
+		downloadedSize, downloadErr := a.downloadVerified(ctx, vc, driver, outFile, expectedSize, listOsID, dataSource)
 		if downloadErr != nil {
 			_ = os.Remove(outFile)
 			_ = os.Remove(outFile + ".sha256")
@@ -52,7 +55,7 @@ func (a *App) InstallSelected(
 			continue
 		}
 
-		if opts.DownloadOnly {
+		if vc.Opts.DownloadOnly {
 			a.Log(ctx, "["+driver.DriverCode+"] Downloaded only.", "INFO")
 			a.writeHistoryRecordChecked(ctx, driver, "Downloaded", fmt.Sprintf("size=%d bytes", downloadedSize), "", "")
 			success = append(success, driver)
@@ -61,13 +64,20 @@ func (a *App) InstallSelected(
 
 		a.Log(ctx, "["+driver.DriverCode+"] Installing "+driver.FileName, "INFO")
 		code, installErr := install.InstallDriverFile(outFile, driver, dlDir)
-		if installErr == nil && code == 0 {
+		switch {
+		case code == 0 && installErr == nil:
 			a.Log(ctx, "["+driver.DriverCode+"] Install success.", "INFO")
 			a.writeHistoryRecordChecked(ctx, driver, "Installed", "exit=0", "", "")
 			success = append(success, driver)
-		} else if installErr != nil {
-			interactiveCode, interactiveErr := a.tryInteractiveExeFallback(driver, outFile, dlDir)
-			if interactiveErr == nil {
+		case installErr != nil:
+			// Terminal failure with no usable exit code (timeout/unpack/empty INF).
+			message := installErr.Error()
+			a.Log(ctx, "["+driver.DriverCode+"] Install failed: "+message, "ERROR")
+			a.writeHistoryRecordChecked(ctx, driver, "Failed", message, "", "")
+			failed = append(failed, driver)
+		case strings.EqualFold(filepath.Ext(outFile), ".exe"):
+			// A silent EXE ran and exited non-zero; offer the user an interactive rerun.
+			if interactiveCode, interactiveErr := a.tryInteractiveExeFallback(driver, outFile, dlDir); interactiveErr == nil {
 				a.Log(ctx, "["+driver.DriverCode+"] Interactive installer succeeded.", "INFO")
 				a.writeHistoryRecordChecked(ctx, driver, "Installed", "interactive exit=0", "", "")
 				success = append(success, driver)
@@ -77,14 +87,15 @@ func (a *App) InstallSelected(
 				a.writeHistoryRecordChecked(ctx, driver, "Failed", message, "", "")
 				failed = append(failed, driver)
 			}
-		} else {
+		default:
+			// Concrete non-zero exit from a non-EXE package.
 			a.Log(ctx, fmt.Sprintf("[%s] Install exit code %d.", driver.DriverCode, code), "ERROR")
 			a.writeHistoryRecordChecked(ctx, driver, "Failed", fmt.Sprintf("exit=%d", code), "", "")
 			failed = append(failed, driver)
 		}
 	}
 
-	if len(success) > 0 && !opts.DownloadOnly {
+	if len(success) > 0 && !vc.Opts.DownloadOnly {
 		a.verifyInstalled(ctx, success)
 	}
 
@@ -102,7 +113,12 @@ func (a *App) tryInteractiveExeFallback(driver *model.Driver, filePath, workingD
 		return -2, fmt.Errorf("interactive fallback is only available for EXE packages")
 	}
 	fmt.Fprintf(a.Stdout, "Type r to run %s interactively, or s to skip: ", driver.FileName)
-	answer := strings.ToLower(strings.TrimSpace(readLine(a.Stdin)))
+	line, err := readLine(a.Stdin)
+	if err != nil {
+		a.Log(context.Background(), "["+driver.DriverCode+"] No interactive fallback answer was received; skipping.", "WARN")
+		return -2, fmt.Errorf("interactive fallback skipped")
+	}
+	answer := strings.ToLower(strings.TrimSpace(line))
 	if answer != "r" {
 		if answer == "" {
 			a.Log(context.Background(), "["+driver.DriverCode+"] No interactive fallback answer was received; skipping.", "WARN")
@@ -110,7 +126,7 @@ func (a *App) tryInteractiveExeFallback(driver *model.Driver, filePath, workingD
 		return -2, fmt.Errorf("interactive fallback skipped")
 	}
 	result := install.RunProcessWithTimeout(filePath, nil, 0, workingDir)
-	if result.ExitCode == 0 || result.ExitCode == 3010 || result.ExitCode == 1641 {
+	if compare.InstallSucceeded(result.ExitCode) {
 		return 0, nil
 	}
 	return result.ExitCode, fmt.Errorf("interactive installer exit %d", result.ExitCode)
@@ -118,58 +134,37 @@ func (a *App) tryInteractiveExeFallback(driver *model.Driver, filePath, workingD
 
 func (a *App) downloadVerified(
 	ctx context.Context,
-	opts *Options,
+	vc *ViewContext,
 	driver *model.Driver,
 	outFile string,
 	expectedSize int64,
-	categoryID string,
-	sysID string,
-	osList []model.OSListEntry,
+	listOsID string,
 	dataSource string,
 ) (int64, error) {
-	downloadAttempt := 0
-	refreshAttempted := false
-	for {
-		downloadAttempt++
+	opts := vc.Opts
+	// At most one URL refresh is attempted, so the loop is bounded to two
+	// passes: an initial download attempt and one retry against a refreshed
+	// URL after a 403. The pass index makes the bound explicit instead of an
+	// unbounded "for" whose termination the reader must infer from returns.
+	for pass := 0; pass < 2; pass++ {
 		needsDownload := true
-		existingSize := int64(0)
-		if info, err := os.Stat(outFile); err == nil && !info.IsDir() {
-			existingSize = info.Size()
-			if compare.TestFileSizeMatch(expectedSize, existingSize) {
-				needsDownload = false
-			} else {
-				a.Log(ctx, "["+driver.DriverCode+"] Cached file size mismatch, redownloading.", "WARN")
-				_ = os.Remove(outFile)
-				_ = os.Remove(outFile + ".sha256")
-			}
-			if !needsDownload && !download.TestHashCompanion(outFile, opts.SkipHashCheck) {
-				a.Log(ctx, "["+driver.DriverCode+"] Cached file hash missing or mismatch, redownloading.", "WARN")
-				_ = os.Remove(outFile)
-				_ = os.Remove(outFile + ".sha256")
-				needsDownload = true
-			}
-			if !needsDownload && driver.OfficialMD5 != "" && !opts.SkipHashCheck {
-				cachedMD5 := download.FileMD5(outFile)
-				if cachedMD5 != driver.OfficialMD5 {
-					a.Log(ctx, "["+driver.DriverCode+"] Cached file MD5 mismatch, redownloading.", "WARN")
-					_ = os.Remove(outFile)
-					_ = os.Remove(outFile + ".sha256")
-					needsDownload = true
-				}
-			}
-			if !needsDownload {
-				a.Log(ctx, fmt.Sprintf("[%s] Using verified cached file (%d bytes).", driver.DriverCode, existingSize), "INFO")
-			}
+		usable, existingSize, rejectReason := inspectCachedFile(outFile, expectedSize, driver.OfficialMD5, opts.SkipHashCheck)
+		if usable {
+			needsDownload = false
+			a.Log(ctx, fmt.Sprintf("[%s] Using verified cached file (%d bytes).", driver.DriverCode, existingSize), "INFO")
+		} else if rejectReason != "" {
+			a.Log(ctx, "["+driver.DriverCode+"] "+rejectReason+", redownloading.", "WARN")
+			_ = os.Remove(outFile)
+			_ = os.Remove(outFile + ".sha256")
 		}
 		if needsDownload {
 			err := a.Downloader.DownloadWithRetry(ctx, driver.FilePath, outFile, 3)
 			if err != nil {
-				if download.IsHTTPStatus(err, 403) && !refreshAttempted {
-					refreshAttempted = true
+				if download.IsHTTPStatus(err, 403) && pass == 0 {
 					a.Log(ctx, "["+driver.DriverCode+"] Download URL returned 403; refreshing official URL.", "WARN")
 					_ = os.Remove(outFile)
 					_ = os.Remove(outFile + ".sha256")
-					refreshed, refreshErr := a.APIClient.GetRefreshedDriverURL(ctx, driver, categoryID, sysID, osList, opts.LatestAcrossOS, dataSource == "QuickFix")
+					refreshed, refreshErr := a.refreshDriverURL(ctx, vc, driver, listOsID, dataSource)
 					if refreshErr != nil {
 						a.Log(ctx, "["+driver.DriverCode+"] URL refresh failed: "+refreshErr.Error(), "ERROR")
 						return 0, err
@@ -181,36 +176,88 @@ func (a *App) downloadVerified(
 				return 0, err
 			}
 		}
-		downloadedSize := fileSize(outFile)
-		if !compare.TestFileSizeMatch(expectedSize, downloadedSize) {
-			return 0, fmt.Errorf("downloaded size mismatch: expected %d, got %d", expectedSize, downloadedSize)
-		}
-		if driver.OfficialMD5 != "" && !opts.SkipHashCheck {
-			actualMD5 := download.FileMD5(outFile)
-			if actualMD5 == "" || actualMD5 != driver.OfficialMD5 {
-				return 0, fmt.Errorf("official MD5 mismatch: expected %s, got %s", driver.OfficialMD5, actualMD5)
-			}
-		}
-		if needsDownload && !opts.SkipHashCheck {
-			downloadedHash := download.FileSHA256(outFile)
-			if downloadedHash == "" {
-				return 0, fmt.Errorf("could not compute SHA-256 for downloaded file")
-			}
-			_ = os.Remove(outFile + ".sha256")
-			if err := download.WriteHashCompanion(outFile, downloadedHash); err != nil {
-				return 0, err
-			}
-		}
-		return downloadedSize, nil
+		return verifyDownloadedFile(outFile, expectedSize, driver.OfficialMD5, opts.SkipHashCheck, needsDownload)
 	}
+	return 0, fmt.Errorf("download did not converge after 2 passes")
 }
 
-func fileSize(path string) int64 {
+func inspectCachedFile(outFile string, expectedSize int64, officialMD5 string, skipHashCheck bool) (usable bool, size int64, rejectReason string) {
+	info, err := os.Stat(outFile)
+	if err != nil || info.IsDir() {
+		return false, 0, ""
+	}
+	size = info.Size()
+	if !compare.TestFileSizeMatch(expectedSize, size) {
+		return false, size, "Cached file size mismatch"
+	}
+	if !download.TestHashCompanion(outFile, skipHashCheck) {
+		return false, size, "Cached file hash missing or mismatch"
+	}
+	if officialMD5 != "" && !skipHashCheck && download.FileMD5(outFile) != officialMD5 {
+		return false, size, "Cached file MD5 mismatch"
+	}
+	return true, size, ""
+}
+
+func verifyDownloadedFile(outFile string, expectedSize int64, officialMD5 string, skipHashCheck, createCompanion bool) (int64, error) {
+	downloadedSize, err := fileSize(outFile)
+	if err != nil {
+		return 0, err
+	}
+	if !compare.TestFileSizeMatch(expectedSize, downloadedSize) {
+		return 0, fmt.Errorf("downloaded size mismatch: expected %d, got %d", expectedSize, downloadedSize)
+	}
+	if officialMD5 != "" && !skipHashCheck {
+		actualMD5 := download.FileMD5(outFile)
+		if actualMD5 == "" || actualMD5 != officialMD5 {
+			return 0, fmt.Errorf("official MD5 mismatch: expected %s, got %s", officialMD5, actualMD5)
+		}
+	}
+	if createCompanion && !skipHashCheck {
+		downloadedHash := download.FileSHA256(outFile)
+		if downloadedHash == "" {
+			return 0, fmt.Errorf("could not compute SHA-256 for downloaded file")
+		}
+		_ = os.Remove(outFile + ".sha256")
+		if err := download.WriteHashCompanion(outFile, downloadedHash); err != nil {
+			return 0, err
+		}
+	}
+	return downloadedSize, nil
+}
+
+func (a *App) refreshDriverURL(ctx context.Context, vc *ViewContext, driver *model.Driver, listOsID, preferredSource string) (string, error) {
+	osIDs := []string{listOsID}
+	if vc.Opts.LatestAcrossOS {
+		osIDs = append(osIDs, otherOSIDs(vc.OsList, listOsID)...)
+	}
+	// Fetch each candidate OS list in parallel (independent reads), then scan
+	// in OSID order so the first match is selected deterministically.
+	var lastErr error
+	for _, load := range a.loadDriverListsForOSIDs(ctx, vc, osIDs, preferredSource) {
+		if load.err != nil {
+			lastErr = load.err
+			continue
+		}
+		for _, candidate := range load.result.Drivers {
+			if candidate.DriverCode == driver.DriverCode && candidate.FilePath != "" {
+				return candidate.FilePath, nil
+			}
+		}
+		lastErr = fmt.Errorf("driver %s has no refreshed URL for OSID %s", driver.DriverCode, load.osID)
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("driver %s has no refreshed URL", driver.DriverCode)
+	}
+	return "", lastErr
+}
+
+func fileSize(path string) (int64, error) {
 	info, err := os.Stat(path)
 	if err != nil {
-		return 0
+		return 0, fmt.Errorf("could not stat downloaded file %s: %w", path, err)
 	}
-	return info.Size()
+	return info.Size(), nil
 }
 
 func (a *App) verifyInstalled(ctx context.Context, drivers []*model.Driver) {
@@ -233,14 +280,11 @@ func (a *App) verifyInstalled(ctx context.Context, drivers []*model.Driver) {
 	for _, driver := range drivers {
 		beforeLocal := driver.LocalVersion
 		matched := compare.GetMatchingLocalDevices(driver, localDevices)
-		var pnpIDs []string
-		for _, dev := range matched {
-			if dev.PnpDeviceID != "" {
-				pnpIDs = append(pnpIDs, dev.PnpDeviceID)
-			}
+		afterLocal, _, err := a.localDriverState(ctx, driver, matched, &snapshot)
+		if err != nil {
+			a.Log(ctx, "["+driver.DriverCode+"] Recheck: could not read local driver version: "+err.Error(), "WARN")
+			continue
 		}
-		driverVersions, _ := inventory.GetDeviceDriverVersions(ctx, pnpIDs)
-		afterLocal, _ := compare.ResolveLocalDriverVersion(driver, matched, driverVersions, &snapshot)
 		if afterLocal == "" {
 			a.Log(ctx, "["+driver.DriverCode+"] Recheck: version not detectable yet.", "WARN")
 			continue

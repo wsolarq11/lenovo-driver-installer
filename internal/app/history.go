@@ -108,7 +108,7 @@ func (a *App) WriteHistoryRecord(driver *model.Driver, result, message, verified
 		message,
 		verifiedVersion,
 		beforeVersion,
-		time.Now().Format("2006-01-02 15:04:05"),
+		formatTimestamp(time.Now()),
 	)
 	writer := csv.NewWriter(f)
 	if err := writer.Write([]string{

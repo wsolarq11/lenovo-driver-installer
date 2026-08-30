@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"lenovo-driver/internal/api"
 	"lenovo-driver/internal/download"
@@ -74,7 +77,12 @@ func TestDownloadVerifiedRefreshes403URL(t *testing.T) {
 	downloadDir := t.TempDir()
 	outFile := filepath.Join(downloadDir, "d1_driver.exe")
 	driver := &model.Driver{DriverCode: "d1", FileName: "driver.exe", FilePath: "https://download.example/old.exe", FileSize: "12 B"}
-	_, err := app.downloadVerified(context.Background(), &Options{}, driver, outFile, 12, "cat", "248", []model.OSListEntry{{OSID: "248"}}, "QuickFix")
+	vc := &ViewContext{
+		Opts:       Options{},
+		CategoryID: "cat",
+		OsList:     []model.OSListEntry{{OSID: "248"}},
+	}
+	_, err := app.downloadVerified(context.Background(), vc, driver, outFile, 12, "248", "QuickFix")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,14 +125,79 @@ func TestReadHistoryStripsUTF8BOM(t *testing.T) {
 	}
 }
 
+func TestInspectCachedFileRejectsMismatch(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "driver.bin")
+	content := []byte(strings.Repeat("x", 5000))
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	usable, size, reason := inspectCachedFile(path, int64(len(content)), "", true)
+	if !usable || size != int64(len(content)) || reason != "" {
+		t.Fatalf("cached file should be usable: usable=%v size=%d reason=%q", usable, size, reason)
+	}
+	usable, _, reason = inspectCachedFile(path, int64(len(content)+2000), "", true)
+	if usable || reason != "Cached file size mismatch" {
+		t.Fatalf("cached file mismatch should reject: usable=%v reason=%q", usable, reason)
+	}
+}
+
+func TestVerifyDownloadedFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "driver.bin")
+	content := []byte("driver bytes")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	size, err := verifyDownloadedFile(path, int64(len(content)), "", true, false)
+	if err != nil || size != int64(len(content)) {
+		t.Fatalf("verifyDownloadedFile = %d, err=%v", size, err)
+	}
+}
+
+func TestQuoteWindowsArgument(t *testing.T) {
+	cases := []struct {
+		input, want string
+	}{
+		{"", `""`},
+		{"82JQ", "82JQ"},
+		{"82 JQ", `"82 JQ"`},
+		{`a"b`, `"a\"b"`},
+		{`C:\temp with space\file`, `"C:\temp with space\file"`},
+		{"trailing\\", "trailing\\"},
+	}
+	for _, tc := range cases {
+		if got := quoteWindowsArgument(tc.input); got != tc.want {
+			t.Fatalf("quoteWindowsArgument(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
 func TestSelectByCodes(t *testing.T) {
 	drivers := []*model.Driver{
 		{DriverCode: "d1"},
 		{DriverCode: "d2"},
 	}
-	selected := selectByCodes(drivers, "d2")
-	if len(selected) != 1 || selected[0].DriverCode != "d2" {
-		t.Fatalf("unexpected GUI selection: %#v", selected)
+	selection := selectByCodes(drivers, "d2")
+	if len(selection.Selected) != 1 || selection.Selected[0].DriverCode != "d2" {
+		t.Fatalf("unexpected GUI selection: %#v", selection)
+	}
+}
+
+func TestSelectByCodesRejectsPartialAndNotApplicable(t *testing.T) {
+	drivers := []*model.Driver{
+		{DriverCode: "d1", CompareStatus: model.StatusUpdate},
+		{DriverCode: "d2", CompareStatus: model.StatusNotApplicable},
+	}
+	selection := selectByCodes(drivers, "d1,missing,d2")
+	if len(selection.Selected) != 1 || selection.Selected[0].DriverCode != "d1" {
+		t.Fatalf("unexpected selected drivers: %#v", selection)
+	}
+	if len(selection.Missing) != 1 || selection.Missing[0] != "missing" {
+		t.Fatalf("unexpected missing codes: %#v", selection.Missing)
+	}
+	if len(selection.NotApplicable) != 1 || selection.NotApplicable[0] != "d2" {
+		t.Fatalf("unexpected not-applicable codes: %#v", selection.NotApplicable)
 	}
 }
 
@@ -136,5 +209,189 @@ func TestNextOSLabelIncludesOSID(t *testing.T) {
 	got := nextOSLabel(osList, "42")
 	if got != "Windows 11 64-bit (OSID 248)" {
 		t.Fatalf("nextOSLabel = %q", got)
+	}
+}
+
+func TestFormatTimestampIsRFC3339UTC(t *testing.T) {
+	got := formatTimestamp(time.Date(2026, 8, 30, 12, 3, 4, 0, time.FixedZone("+8", 8*3600)))
+	want := "2026-08-30T04:03:04Z"
+	if got != want {
+		t.Fatalf("formatTimestamp = %q, want %q (UTC RFC3339)", got, want)
+	}
+}
+
+func TestOtherOSIDsExcludesCurrentAndPreservesOrder(t *testing.T) {
+	osList := []model.OSListEntry{
+		{OSID: "42", OSName: "W10"},
+		{OSID: "248", OSName: "W11"},
+		{OSID: "7", OSName: "W7"},
+	}
+	if got := otherOSIDs(osList, "248"); !reflect.DeepEqual(got, []string{"42", "7"}) {
+		t.Fatalf("otherOSIDs('248') = %#v, want [42 7]", got)
+	}
+	if got := otherOSIDs(osList, "nope"); !reflect.DeepEqual(got, []string{"42", "248", "7"}) {
+		t.Fatalf("otherOSIDs(unknown) = %#v, want all in order", got)
+	}
+	if got := otherOSIDs(nil, "42"); len(got) != 0 {
+		t.Fatalf("otherOSIDs(nil) = %#v, want empty", got)
+	}
+}
+
+func TestCachedDriverObjectsAvoidsDuplicateFetch(t *testing.T) {
+	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app.APIClient = nil
+	app.osDriverCache = map[string]api.SourceDrivers{
+		"248|QuickFix": {Source: "QuickFix", Drivers: []*model.Driver{{DriverCode: "d1"}}},
+	}
+	vc := &ViewContext{CategoryID: "cat"}
+	result, err := app.cachedDriverObjects(context.Background(), vc, "248", "QuickFix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Source != "QuickFix" || len(result.Drivers) != 1 {
+		t.Fatalf("cached driver result mismatch: %#v", result)
+	}
+}
+
+func TestCachedDriverObjectsDoesNotCacheFailure(t *testing.T) {
+	client := &http.Client{Transport: appRoundTripFunc(func(req *http.Request) *http.Response {
+		return &http.Response{StatusCode: http.StatusInternalServerError, Body: io.NopCloser(bytes.NewReader(nil))}
+	})}
+	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app.APIClient = api.NewClient()
+	app.APIClient.HTTP = client
+	vc := &ViewContext{CategoryID: "cat"}
+	_, err := app.cachedDriverObjects(context.Background(), vc, "248", "QuickFix")
+	if err == nil {
+		t.Fatal("expected API failure to propagate")
+	}
+	if len(app.osDriverCache) != 0 {
+		t.Fatalf("failed API result was cached: %#v", app.osDriverCache)
+	}
+}
+
+func TestBuildDriverSourceMapUsesSharedKeys(t *testing.T) {
+	drivers := []*model.Driver{
+		{DriverCode: "d1", DriverName: "Audio", Version: "1.0.0.1", OSID: "248", OSName: "Windows 11 64-bit"},
+	}
+	sourceMap := buildDriverSourceMap(drivers)
+	if got := sourceMap["Audio|1.0.0.1"]; got.OSID != "248" {
+		t.Fatalf("source map name key mismatch: %#v", got)
+	}
+	if got := sourceMap["d1|1.0.0.1"]; got.OSID != "248" {
+		t.Fatalf("source map code key mismatch: %#v", got)
+	}
+}
+
+func TestPnpIDsOfSkipsEmpty(t *testing.T) {
+	devices := []model.Device{
+		{Name: "a", PnpDeviceID: "VEN_0000&DEV_0001"},
+		{Name: "b", PnpDeviceID: ""},
+		{Name: "c", PnpDeviceID: "VEN_0002&DEV_0003"},
+	}
+	got := pnpIDsOf(devices)
+	if len(got) != 2 || got[0] != "VEN_0000&DEV_0001" || got[1] != "VEN_0002&DEV_0003" {
+		t.Fatalf("pnpIDsOf = %#v", got)
+	}
+}
+
+func TestLoadDriverListToleratesEmpty(t *testing.T) {
+	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app.APIClient = nil
+	app.osDriverCache = map[string]api.SourceDrivers{"248|QuickFix": {Source: "QuickFix"}}
+	vc := &ViewContext{CategoryID: "cat"}
+	result, ok := app.loadDriverList(context.Background(), vc, "248", "QuickFix")
+	if ok || len(result.Drivers) != 0 {
+		t.Fatalf("empty driver list should be tolerated as not-ok: %#v ok=%v", result, ok)
+	}
+}
+
+func TestLoadDriverListReturnsCachedRows(t *testing.T) {
+	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app.APIClient = nil
+	app.osDriverCache = map[string]api.SourceDrivers{
+		"248|QuickFix": {Source: "QuickFix", Drivers: []*model.Driver{{DriverCode: "d1"}}},
+	}
+	vc := &ViewContext{CategoryID: "cat"}
+	result, ok := app.loadDriverList(context.Background(), vc, "248", "QuickFix")
+	if !ok || result.Source != "QuickFix" || len(result.Drivers) != 1 {
+		t.Fatalf("loadDriverList = %#v ok=%v", result, ok)
+	}
+}
+
+func TestMustDriverListHardErrorsOnEmpty(t *testing.T) {
+	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app.APIClient = nil
+	app.osDriverCache = map[string]api.SourceDrivers{"248|QuickFix": {Source: "QuickFix"}}
+	vc := &ViewContext{CategoryID: "cat"}
+	_, err := app.mustDriverList(context.Background(), vc, "248", "QuickFix")
+	if err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("mustDriverList empty list should hard-error: %v", err)
+	}
+}
+
+func TestMustDriverListReturnsCachedRows(t *testing.T) {
+	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app.APIClient = nil
+	app.osDriverCache = map[string]api.SourceDrivers{
+		"248|QuickFix": {Source: "QuickFix", Drivers: []*model.Driver{{DriverCode: "d1"}}},
+	}
+	vc := &ViewContext{CategoryID: "cat"}
+	result, err := app.mustDriverList(context.Background(), vc, "248", "QuickFix")
+	if err != nil || result.Source != "QuickFix" || len(result.Drivers) != 1 {
+		t.Fatalf("mustDriverList = %#v err=%v", result, err)
+	}
+}
+
+func TestLoadDriverListsForOSIDsPreservesOrder(t *testing.T) {
+	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app.APIClient = nil
+	app.osDriverCache = map[string]api.SourceDrivers{
+		"42|QuickFix":  {Source: "QuickFix", Drivers: []*model.Driver{{DriverCode: "a"}}},
+		"248|QuickFix": {Source: "QuickFix", Drivers: []*model.Driver{{DriverCode: "b"}}},
+	}
+	vc := &ViewContext{CategoryID: "cat"}
+	loads := app.loadDriverListsForOSIDs(context.Background(), vc, []string{"248", "42"}, "QuickFix")
+	if len(loads) != 2 || loads[0].osID != "248" || loads[1].osID != "42" {
+		t.Fatalf("input order not preserved: %#v", loads)
+	}
+	if loads[0].err != nil || loads[1].err != nil {
+		t.Fatalf("cached loads should have no error: %#v", loads)
+	}
+}
+
+func TestToleratedDriverListMissPolicy(t *testing.T) {
+	if toleratedDriverListMiss(nil, api.SourceDrivers{Drivers: []*model.Driver{{DriverCode: "d1"}}}) != nil {
+		t.Fatal("a usable list should not count as a miss")
+	}
+	if toleratedDriverListMiss(nil, api.SourceDrivers{}) == nil {
+		t.Fatal("an empty list should count as a miss")
+	}
+	if toleratedDriverListMiss(errors.New("boom"), api.SourceDrivers{Drivers: []*model.Driver{{DriverCode: "d1"}}}) == nil {
+		t.Fatal("a fetch error should count as a miss")
+	}
+}
+
+func TestCloneDriversIsOwnedCopy(t *testing.T) {
+	audit := &model.SourceAudit{Category: model.AuditCategoryOnlinePackage, EvidenceLines: []string{"a", "b"}}
+	source := []*model.Driver{
+		{DriverCode: "d1", DriverName: "Audio", Version: "1.0.0.0", SourceAudit: audit},
+	}
+	clones := cloneDrivers(source)
+	if len(clones) != 1 || clones[0] == source[0] {
+		t.Fatalf("expected a distinct owned copy")
+	}
+	// Mutating an owned view copy must never leak into the shared/cached row.
+	clones[0].DriverName = "Audio-X"
+	clones[0].LocalVersion = "2.0.0.0"
+	clones[0].CompareStatus = model.StatusUpdate
+	clones[0].CompareSource = "source"
+	clones[0].SourceAudit.Summary = "changed"
+	if source[0].DriverName != "Audio" || source[0].LocalVersion != "" ||
+		source[0].CompareStatus != "" || source[0].CompareSource != "" {
+		t.Fatalf("clone mutation leaked into the shared driver row: %#v", source[0])
+	}
+	if source[0].SourceAudit.Summary != "" {
+		t.Fatalf("nested source audit was not deep-copied: %#v", source[0].SourceAudit)
 	}
 }

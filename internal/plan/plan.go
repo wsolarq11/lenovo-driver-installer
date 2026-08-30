@@ -28,13 +28,13 @@ func BuildPlanText(drivers []*model.Driver, generatedAt string) []string {
 			fmt.Sprintf("[%d] %s", i+1, d.DriverName),
 			"  Remote : "+d.Version,
 			"  Local  : "+local,
-			"  Status : "+d.CompareStatus,
+			"  Status : "+string(d.CompareStatus),
 		)
 		if d.CompareSource != "" {
 			lines = append(lines, "  Source note : "+d.CompareSource)
 		}
 		if d.SourceAudit != nil {
-			lines = append(lines, "  Source audit : "+d.SourceAudit.Category+": "+d.SourceAudit.Summary)
+			lines = append(lines, "  Source audit : "+string(d.SourceAudit.Category)+": "+d.SourceAudit.Summary)
 			for _, evidenceLine := range d.SourceAudit.EvidenceLines {
 				lines = append(lines, "    - "+evidenceLine)
 			}
@@ -85,7 +85,7 @@ func FormatDriverTableLines(drivers []*model.Driver) []string {
 			compare.FormatCell(compare.GetTruncatedText(d.DriverName, driverWidth), driverWidth, false) + " " +
 			compare.FormatCell(compare.GetTruncatedText(d.Version, remoteWidth), remoteWidth, false) + " " +
 			compare.FormatCell(compare.GetTruncatedText(d.LocalVersion, localWidth), localWidth, false) + " " +
-			compare.FormatCell(d.CompareStatus, statusWidth, false)
+			compare.FormatCell(string(d.CompareStatus), statusWidth, false)
 		lines = append(lines, line)
 	}
 	lines = append(lines, "")
@@ -94,8 +94,8 @@ func FormatDriverTableLines(drivers []*model.Driver) []string {
 
 // FormatStatusSummaryLines mirrors Format-StatusSummaryLines.
 func FormatStatusSummaryLines(drivers []*model.Driver) []string {
-	counts := map[string]int{}
-	for _, status := range []string{"Update", "Up to date", "Not installed", "Local newer", "Unknown", "Not applicable"} {
+	counts := map[model.CompareStatus]int{}
+	for _, status := range []model.CompareStatus{model.StatusUpdate, model.StatusUpToDate, model.StatusNotInstalled, model.StatusLocalNewer, model.StatusUnknown, model.StatusNotApplicable} {
 		counts[status] = 0
 	}
 	for _, d := range drivers {
@@ -108,23 +108,23 @@ func FormatStatusSummaryLines(drivers []*model.Driver) []string {
 	}
 	lines := []string{
 		"",
-		fmt.Sprintf("  Update         : %d", counts["Update"]),
-		fmt.Sprintf("  Up to date     : %d", counts["Up to date"]),
-		fmt.Sprintf("  Not installed  : %d", counts["Not installed"]),
-		fmt.Sprintf("  Local newer    : %d", counts["Local newer"]),
-		fmt.Sprintf("  Unknown        : %d", counts["Unknown"]),
-		fmt.Sprintf("  Not applicable : %d", counts["Not applicable"]),
+		fmt.Sprintf("  Update         : %d", counts[model.StatusUpdate]),
+		fmt.Sprintf("  Up to date     : %d", counts[model.StatusUpToDate]),
+		fmt.Sprintf("  Not installed  : %d", counts[model.StatusNotInstalled]),
+		fmt.Sprintf("  Local newer    : %d", counts[model.StatusLocalNewer]),
+		fmt.Sprintf("  Unknown        : %d", counts[model.StatusUnknown]),
+		fmt.Sprintf("  Not applicable : %d", counts[model.StatusNotApplicable]),
 	}
-	if counts["Unknown"] > 0 {
+	if counts[model.StatusUnknown] > 0 {
 		lines = append(lines, "  Note: Unknown = multi-vendor package, no matching local component found.")
 	}
-	if counts["Not applicable"] > 0 {
+	if counts[model.StatusNotApplicable] > 0 {
 		lines = append(lines, "  Note: Not applicable = hardware not detected on this machine.")
 	}
-	if counts["Local newer"] > 0 {
+	if counts[model.StatusLocalNewer] > 0 {
 		shown := 0
 		for _, d := range drivers {
-			if d == nil || d.CompareStatus != "Local newer" {
+			if d == nil || d.CompareStatus != model.StatusLocalNewer {
 				continue
 			}
 			if shown >= 5 {
@@ -164,7 +164,7 @@ func ParseDriverSelectionTokens(inputText string, allSelected []*model.Driver) m
 			invalid = append(invalid, strconv.Itoa(number))
 			continue
 		}
-		if allSelected[index].CompareStatus == "Not applicable" {
+		if allSelected[index].CompareStatus == model.StatusNotApplicable {
 			notApplicable = append(notApplicable, strconv.Itoa(number))
 			continue
 		}
