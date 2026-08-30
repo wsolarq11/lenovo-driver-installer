@@ -227,10 +227,11 @@ The runtime is a functional core with an imperative shell:
 - `cmd/lenovo-driver` is the CLI orchestration shell. It owns flag parsing,
   elevation, API calls, system snapshots, history files, logging, prompts, and
   download/install side effects.
-- `lenovo_driver_wpf.ps1` is the desktop presentation layer. It launches the Go
-  CLI in a child process, renders the JSON driver view in a WPF table, and
-  forwards user-selected driver codes back to the same CLI for
-  download/install.
+- `lenovo_driver_wpf.ps1` is the desktop presentation entry point. It dot-sources
+  `wpf/ui.ps1`, `wpf/worker.ps1`, and `wpf/actions.ps1`, loads
+  `wpf/window.xaml`, launches the Go CLI in a child process, renders the JSON
+  driver view in a WPF table, and forwards user-selected driver codes back to
+  the same CLI for download/install.
 - `install_lenovo_drivers.bat` and `install_lenovo_drivers_wpf.bat` stay thin
   and are the recommended entry points. The CLI wrapper builds the Go
   engine when needed; the WPF wrapper expects `bin\lenovo-driver.exe`.

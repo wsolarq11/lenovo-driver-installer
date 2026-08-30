@@ -62,8 +62,12 @@ internal/inventory           Windows machine/OS/PnP/app snapshots
 internal/model               shared plain data types
 internal/pathutil            Windows path helpers
 internal/plan                plan text, tables, history row building
+wpf/window.xaml              WPF window layout
+wpf/ui.ps1                   WPF window construction and UI helpers
+wpf/worker.ps1               WPF background worker state machine
+wpf/actions.ps1              WPF install action confirmation and dispatch
 scripts/verify.ps1           offline acceptance gate
-lenovo_driver_wpf.ps1        WPF presentation layer
+lenovo_driver_wpf.ps1        WPF presentation entry point
 install_lenovo_drivers.bat   thin CLI launcher
 install_lenovo_drivers_wpf.bat thin WPF launcher
 docs/TECHNICAL.md            this document
