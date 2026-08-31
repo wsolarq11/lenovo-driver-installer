@@ -1,5 +1,52 @@
 # Work Log - 2026-08-29
 
+## Session: Native-only Runtime and WPF Fix
+
+**Branch**: `main`
+
+### Summary
+
+Completed the native-only backend migration, removed the PowerShell runtime
+path, fixed the WPF UI not updating after a refresh, wrote the quality gate
+evidence, and pushed the working tree.
+
+### Main Changes
+
+- `internal/inventory`: all inventory now uses native SetupAPI/CfgMgr32,
+  registry, and SMBIOS reads; PowerShell runtime path removed.
+- `internal/inventory/native_full_windows.go`: native device snapshot, machine
+  and OS info, installed apps, software snapshot, file version, elevation
+  check.
+- `internal/inventory/smbios_windows.go`: `GetSystemFirmwareTable` SMBIOS
+  parsing, including Type 1 serial.
+- `internal/install/native_windows.go`: `DiInstallDriverW` native INF install
+  with system-native `pnputil` fallback.
+- `internal/app/native_elevate_windows.go`: native `ShellExecuteExW` UAC
+  elevation, replacing the PowerShell elevation path.
+- `wpf/window.xaml`: added UTF-8 BOM so Windows PowerShell 5.1 parses the
+  Chinese XAML correctly.
+- `wpf/worker.ps1`: wait for the child process to exit and read its exit code
+  after `HasExited`; PowerShell 5.1 can leave `ExitCode` null after
+  `Start-Process` with redirected output, which froze the UI on
+  "正在识别机器...".
+- `docs/BACKEND-BENCHMARK-AND-NATIVE-MIGRATION.md`: benchmark and native
+  migration report.
+- `README.md`, `docs/TECHNICAL.md`: native-only architecture and smoke commands.
+
+### Testing
+
+- [OK] `scripts/verify.ps1` 14/14 PASS.
+- [OK] `LENOVO_NATIVE_SMOKE=1 go test ./internal/inventory/ -run TestNativeSmoke` PASS.
+- [OK] `LENOVO_NATIVE_EQUIV_SMOKE=1 go test -tags legacyps ./internal/inventory/ -run TestNativePSEquivalenceSmoke` PASS.
+- [OK] `LENOVO_NATIVE_INSTALL_SMOKE=1 go test ./internal/install/ -run TestNativeInstallSmoke` PASS.
+- [OK] WPF `-SelfTest` and `-WorkerSmoke` PASS.
+
+### Status
+
+[OK] **Completed** and pushed to `origin/main`.
+
+---
+
 ## Session: Thermo-Nuclear Code Quality Review Delivery
 
 **Branch**: `main`
