@@ -180,9 +180,14 @@ fails fast with exit code `2`.
 | --- | --- |
 | `.exe` | Silent Inno-style flags, Lenovo `InstallCode` arguments when provided, timeout, log capture, and extracted-installer fallback. |
 | `.msi` | `msiexec /i <file> /qn /norestart` with timeout. |
-| `.inf` | `pnputil /add-driver <file> /install` with timeout. |
-| `.zip` | Expand and install every contained INF. |
-| `.cab` | Expand with `expand.exe` and install every contained INF. |
+| `.inf` | Native `DiInstallDriverW` (newdev.dll); falls back to system-native `pnputil /add-driver <file> /install` with timeout. |
+| `.zip` | Expand and install every contained INF with the same native INF path. |
+| `.cab` | Expand with `expand.exe` and install every contained INF with the same native INF path. |
+
+The runtime is native-only: it never spawns PowerShell. The driver source and
+update path never depend on Windows Update. With network access, the official
+Lenovo API list is loaded, packages are downloaded and integrity-checked, and
+INF packages are installed through the native Windows driver-install API.
 
 ## Logs And Plans
 
@@ -261,6 +266,22 @@ Run the full offline acceptance gate with:
 
 ```powershell
 .\scripts\verify.ps1
+```
+
+Run the opt-in real-machine native inventory quality checks on a Windows
+machine with Lenovo hardware:
+
+```powershell
+$env:LENOVO_NATIVE_SMOKE=1; go test ./internal/inventory/ -run TestNativeSmoke -count=10 -v
+# native-vs-PowerShell equivalence requires the legacyps test oracle tag
+$env:LENOVO_NATIVE_EQUIV_SMOKE=1; go test -tags legacyps ./internal/inventory/ -run TestNativePSEquivalenceSmoke -v
+```
+
+Native install API smoke (does not install a real driver; verifies the
+`DiInstallDriverW` path is callable and the pnputil fallback remains wired):
+
+```powershell
+$env:LENOVO_NATIVE_INSTALL_SMOKE=1; go test ./internal/install/ -run TestNativeInstallSmoke -count=3 -v
 ```
 
 Smoke-check the WPF render and the real API bridge after building the Go

@@ -4,13 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"lenovo-driver/internal/inventory"
 	"lenovo-driver/internal/model"
 )
 
@@ -52,11 +50,6 @@ func openAppend(path string) (*os.File, error) {
 	return os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 }
 
-func execPowershell(script string) *exec.Cmd {
-	cmd := exec.Command(inventory.PowerShellExe, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
-	return cmd
-}
-
 type codeSelection struct {
 	Selected      []*model.Driver
 	Missing       []string
@@ -91,10 +84,6 @@ func quoteWindowsArgument(arg string) string {
 	b.WriteString(strings.Repeat(`\`, backslashes*2))
 	b.WriteByte('"')
 	return b.String()
-}
-
-func singleQuotePowerShell(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
 func selectByCodes(drivers []*model.Driver, codes string) codeSelection {

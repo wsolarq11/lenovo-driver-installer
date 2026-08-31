@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -312,25 +311,17 @@ func (a *App) RelaunchElevated(args []string) (bool, int) {
 	if err != nil {
 		return false, 1
 	}
-	var quoted []string
-	for _, arg := range args {
-		quoted = append(quoted, quoteWindowsArgument(arg))
-	}
-	var powerShellArgs []string
-	for _, arg := range quoted {
-		powerShellArgs = append(powerShellArgs, singleQuotePowerShell(arg))
-	}
-	script := fmt.Sprintf(`$relaunchArgs = @(%s); $p = Start-Process -FilePath '%s' -ArgumentList $relaunchArgs -Verb RunAs -Wait -PassThru; exit $p.ExitCode`, strings.Join(powerShellArgs, ","), strings.ReplaceAll(exe, "'", "''"))
-	cmd := execPowershell(script)
-	cmd.Stdout = a.Stdout
-	cmd.Stderr = a.Stderr
-	err = cmd.Run()
-	code := 0
-	if err != nil {
-		code = 1
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			code = exitErr.ExitCode()
+	var argLine strings.Builder
+	for i, arg := range args {
+		if i > 0 {
+			argLine.WriteByte(' ')
 		}
+		argLine.WriteString(quoteWindowsArgument(arg))
+	}
+	code, err := relaunchElevatedNative(exe, argLine.String())
+	if err != nil {
+		a.Log(context.Background(), "Elevation failed: "+err.Error(), "ERROR")
+		return true, 1
 	}
 	return true, code
 }

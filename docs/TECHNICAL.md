@@ -57,8 +57,8 @@ internal/app                 orchestration, CLI, GUI export, history, prompts
 internal/audit               setupapi parsing and source evidence audit
 internal/compare             version parsing, matching, selection, formatting
 internal/download            HTTP download, retry, SHA-256 companion
-internal/install             installer dispatch and EXE fallback
-internal/inventory           Windows machine/OS/PnP/app snapshots
+internal/install             installer dispatch and EXE fallback; native DiInstallDriverW INF path with pnputil fallback
+internal/inventory           Windows machine/OS/PnP/app snapshots via native SetupAPI/CfgMgr32/registry; no PowerShell in runtime
 internal/model               shared plain data types
 internal/pathutil            Windows path helpers
 internal/plan                plan text, tables, history row building
@@ -220,10 +220,15 @@ For every file:
 | Extension | Strategy |
 |---|---|
 | `.msi` | `msiexec.exe /i <file> /qn /norestart`; 3010/1641 treated as success |
-| `.inf` | `pnputil.exe /add-driver <file> /install`; exit 1 treated as reboot-required success |
-| `.zip` | expand, walk extracted INFs, `pnputil` each INF |
-| `.cab` | `expand.exe <file> -F:* <dir>`, then install INFs |
+| `.inf` | `DiInstallDriverW` (newdev.dll) first; falls back to `pnputil.exe /add-driver <file> /install`; exit 1 treated as reboot-required success |
+| `.zip` | expand, walk extracted INFs, native-first INF install for each INF |
+| `.cab` | `expand.exe <file> -F:* <dir>`, then native-first INF install |
 | `.exe` | silent installer first, then extracted fallback on timeout/failure |
+
+The install channel does not use Windows Update. The runtime is native-only:
+official Lenovo API list -> verified download -> native `DiInstallDriverW` for
+INF packages, with system-native `pnputil` as a fallback when the API is
+unavailable.
 
 EXE fallback behavior:
 
@@ -329,6 +334,25 @@ After building the engine, run the WPF smoke checks:
 .\lenovo_driver_wpf.ps1 -SelfTest -NoElevation
 .\lenovo_driver_wpf.ps1 -WorkerSmoke -NoElevation
 ```
+
+Real-machine native inventory checks (opt-in; skipped by the offline gate):
+
+```powershell
+$env:LENOVO_NATIVE_SMOKE=1; go test ./internal/inventory/ -run TestNativeSmoke -count=10 -v
+# native-vs-PowerShell equivalence requires the legacyps test oracle tag
+$env:LENOVO_NATIVE_EQUIV_SMOKE=1; go test -tags legacyps ./internal/inventory/ -run TestNativePSEquivalenceSmoke -v
+```
+
+Native install API smoke (does not install a real driver):
+
+```powershell
+$env:LENOVO_NATIVE_INSTALL_SMOKE=1; go test ./internal/install/ -run TestNativeInstallSmoke -count=3 -v
+```
+
+The native path uses SetupAPI enumeration plus CfgMgr32 `CM_Get_Device_IDW`
+for stable device instance IDs, then reads driver properties from the class
+registry keys. The runtime does not spawn PowerShell; the legacy PowerShell
+oracle is compiled only with `-tags legacyps` for equivalence verification.
 
 Real API, real hardware, and real driver installation require an interactive
 Windows machine and are outside the offline gate.

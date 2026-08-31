@@ -148,14 +148,7 @@ func InstallDriverFile(filePath string, driver *model.Driver, workingDir string)
 		}
 		return result.ExitCode, nil
 	case ".inf":
-		result := RunPnPUtilWithTimeout(filePath, workingDir)
-		if result.StartErr != nil {
-			return result.ExitCode, result.StartErr
-		}
-		if result.TimedOut {
-			return -1, timeoutErr("pnputil", result)
-		}
-		return result.ExitCode, nil
+		return installNativeOrPnPUtil(filePath, workingDir)
 	case ".zip":
 		extract := filepath.Join(workingDir, strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath)))
 		if err := ExtractZip(filePath, extract); err != nil {
@@ -250,18 +243,33 @@ func installINFPaths(paths []string, workingDir string) (int, error) {
 	}
 	exitCode := 0
 	for _, inf := range paths {
-		result := RunPnPUtilWithTimeout(inf, workingDir)
-		if result.StartErr != nil {
-			return result.ExitCode, result.StartErr
+		code, err := installNativeOrPnPUtil(inf, workingDir)
+		if err != nil {
+			return code, err
 		}
-		if result.TimedOut {
-			return -1, timeoutErr("pnputil", result)
-		}
-		if result.ExitCode != 0 {
-			exitCode = result.ExitCode
+		if code != 0 {
+			exitCode = code
 		}
 	}
 	return exitCode, nil
+}
+
+// installNativeOrPnPUtil installs one INF through DiInstallDriverW when the
+// native path is available, and falls back to pnputil otherwise or on failure.
+func installNativeOrPnPUtil(infPath, workingDir string) (int, error) {
+	if NativeInstallEnabled() && NativeInstallAvailable() {
+		if _, err := InstallNativeINF(infPath); err == nil {
+			return 0, nil
+		}
+	}
+	result := RunPnPUtilWithTimeout(infPath, workingDir)
+	if result.StartErr != nil {
+		return result.ExitCode, result.StartErr
+	}
+	if result.TimedOut {
+		return -1, timeoutErr("pnputil", result)
+	}
+	return result.ExitCode, nil
 }
 
 func collectINFs(root string) ([]string, error) {
