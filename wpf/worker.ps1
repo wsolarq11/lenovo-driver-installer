@@ -18,8 +18,12 @@
     $process.Refresh()
     if (-not $process.HasExited) { return }
 
+    # WaitForExit ensures ExitCode is populated for redirect-stdout jobs in
+    # Windows PowerShell 5.1; HasExited alone can leave ExitCode null.
+    $process.WaitForExit()
     if ($null -ne $script:Timer) { $script:Timer.Stop() }
     $exitCode = $process.ExitCode
+    if ($null -eq $exitCode) { $exitCode = 0 }
     $mode = $script:WorkerMode
     $exportPath = $script:WorkerExportPath
     $outFile = $script:WorkerStdoutPath
