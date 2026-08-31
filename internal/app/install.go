@@ -277,14 +277,15 @@ func (a *App) verifyInstalled(ctx context.Context, drivers []*model.Driver) {
 		a.Log(ctx, "Post-install verification failed: "+err.Error(), "ERROR")
 		return
 	}
+	versionIndex, err := a.deviceVersionIndex(ctx, localDevices, drivers)
+	if err != nil {
+		a.Log(ctx, "Post-install verification failed: could not read local driver versions: "+err.Error(), "ERROR")
+		return
+	}
 	for _, driver := range drivers {
 		beforeLocal := driver.LocalVersion
 		matched := compare.GetMatchingLocalDevices(driver, localDevices)
-		afterLocal, _, err := a.localDriverState(ctx, driver, matched, &snapshot)
-		if err != nil {
-			a.Log(ctx, "["+driver.DriverCode+"] Recheck: could not read local driver version: "+err.Error(), "WARN")
-			continue
-		}
+		afterLocal, _ := a.localDriverState(driver, matched, versionIndex, &snapshot)
 		if afterLocal == "" {
 			a.Log(ctx, "["+driver.DriverCode+"] Recheck: version not detectable yet.", "WARN")
 			continue

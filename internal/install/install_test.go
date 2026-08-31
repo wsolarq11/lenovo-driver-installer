@@ -177,3 +177,16 @@ func TestRunProcessStartFailureCarriesError(t *testing.T) {
 		t.Fatal("runProcess should surface a start error for a missing executable")
 	}
 }
+
+func TestNormalizePnPUtilExitCode(t *testing.T) {
+	for code, want := range map[int]int{
+		0:    0,
+		1:    errorSuccessRebootRequired,
+		3010: 3010,
+		-1:   -1,
+	} {
+		if got := normalizePnPUtilExitCode(code); got != want {
+			t.Fatalf("normalizePnPUtilExitCode(%d) = %d, want %d", code, got, want)
+		}
+	}
+}

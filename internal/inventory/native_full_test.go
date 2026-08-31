@@ -3,21 +3,19 @@
 package inventory
 
 import (
+	"encoding/binary"
 	"os"
 	"testing"
 )
 
-func TestDecodeFirstMultiString(t *testing.T) {
-	// UTF-16LE bytes for "one\0two\0\0"
+func TestDecodeUTF16MultiString(t *testing.T) {
+	// UTF-16LE bytes for "one\0two\0\0"; decodeUTF16 stops at the first NUL.
 	b := []byte{
 		'o', 0, 'n', 0, 'e', 0, 0, 0,
 		't', 0, 'w', 0, 'o', 0, 0, 0, 0, 0,
 	}
-	if got := decodeFirstMultiString(b); got != "one" {
-		t.Fatalf("decodeFirstMultiString = %q, want one", got)
-	}
-	if got := decodeFirstMultiString(nil); got != "" {
-		t.Fatalf("decodeFirstMultiString(nil) = %q, want empty", got)
+	if got := decodeUTF16(b); got != "one" {
+		t.Fatalf("decodeUTF16(multi) = %q, want one", got)
 	}
 }
 
@@ -59,10 +57,29 @@ func TestDecodeASCIIAndSMBIOSString(t *testing.T) {
 	}
 }
 
-func TestNativeReadStringRejectsNonStringType(t *testing.T) {
-	// This tests the type check path without a real registry handle by
-	// relying on an invalid handle: the function should return false.
-	if got, ok := nativeReadString(0, "X"); ok || got != "" {
-		t.Fatalf("nativeReadString(invalid) = %q,%v, want empty,false", got, ok)
+func TestFormatFileTime(t *testing.T) {
+	if got := formatFileTime([8]byte{}); got != "" {
+		t.Fatalf("formatFileTime(zero) = %q, want empty", got)
+	}
+	var ft [8]byte
+	// 2020-01-01 00:00:00 UTC as FILETIME ticks (100ns since 1601-01-01 UTC).
+	binary.LittleEndian.PutUint64(ft[:], 132223104000000000)
+	if got := formatFileTime(ft); got != "2020-01-01T00:00:00Z" {
+		t.Fatalf("formatFileTime(2020-01-01) = %q, want 2020-01-01T00:00:00Z", got)
+	}
+}
+
+func TestIsStringType(t *testing.T) {
+	for typ, want := range map[uint32]bool{
+		1: true, // REG_SZ
+		2: true, // REG_EXPAND_SZ
+		0: false,
+		3: false, // REG_BINARY
+		4: false, // REG_DWORD
+		7: false, // REG_MULTI_SZ (handled by decodeUTF16's first-NUL stop)
+	} {
+		if got := isStringType(typ); got != want {
+			t.Fatalf("isStringType(%d) = %v, want %v", typ, got, want)
+		}
 	}
 }

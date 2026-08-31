@@ -126,3 +126,68 @@ process-output capture). No follow-up remains open.
 ### Status
 
 [OK] **Completed** (#4/#5/#6/#7). All prior follow-ups closed.
+
+---
+
+## Session: Thermo-Nuclear Code Quality Review — Round 7 (native hardening)
+
+**Branch**: `main`
+
+### Summary
+
+Ran an independent, code-only, whole-repo Round 7 thermo-nuclear review (no
+baseline, no reliance on prior report or code comments), then landed the
+behavior-preserving fixes it surfaced and completed the native-install /
+native-inventory hardening. All work verified green and the working tree is
+now clean.
+
+### Main Changes
+
+- `internal/app/view.go`: dropped from 501 → 423 lines by extracting the
+  WPF-compatible JSON export concern into a new `internal/app/export.go`
+  (`ExportGUIView` / `guiExportPayload` / `guiDriverRow`), removing the now
+  unused `encoding/json` dependency. All Go files are back under the 500-line
+  ceiling.
+- `internal/inventory/native_windows.go`: extracted `evidenceRows()` shared
+  "enumerate + load driver evidence + index" prefix, so `GetDeviceEvidence`
+  and `GetDeviceDriverVersions` no longer each enumerate and re-index.
+- `internal/inventory/native_full_windows.go`: `expandWindowsEnv` changed from
+  an unbounded `for {}` to an explicitly bounded loop (64 passes + consuming
+  invariant); extracted the Windows file-version reader into
+  `internal/inventory/fileversion_windows.go`; made driver-evidence column
+  values `RFC3339/UTC` for the setupapi import timestamps.
+- `internal/install`: normalised the reboot-required install result across the
+  native `DiInstallDriverW` path and the `pnputil` fallback to a single shared
+  code (`errorSuccessRebootRequired = 3010`); dropped the now-unused
+  `NativeInstallEnabled`/`NativeInstallAvailable` indirection.
+- `internal/app/native_elevate_windows.go`: hoisted the Win32 DLL/proc handles
+  to package-level vars (loaded lazily) instead of re-binding them on every
+  relaunch.
+- `internal/app/evidence.go`: normalized the DriverStore package-creation
+  timestamp to `RFC3339/UTC`.
+- `internal/inventory/windows_legacy_ps.go`: pinned the legacy PowerShell
+  oracle to the stable `C:\Windows\System32\WindowsPowerShell\...\powershell.exe`
+  path.
+- `docs/thermo-nuclear-code-quality-review.md`: appended Round 7 (only the
+  10th section) with findings `R7-1..R7-5`, verified file sizes, and the
+  run verification matrix.
+
+### Recorded (non-blocking round-7 findings)
+
+- `R7-3`: `HistoryRecord` CSV column order is authored in three places
+  (header slice, write literal, read field list) — kept, to preserve the CSV
+  line format.
+- `R7-5`: the Windows command-line quoting algorithm exists in both Go
+  (`quoteWindowsArgument`) and WPF (`ConvertTo-CommandLineArgument`) — cannot
+  be reused across layers, both tested, noted as a drift risk.
+
+### Testing
+
+- [OK] `go build ./...`, `go vet ./...`, `go test ./...` all packages pass.
+- [OK] `gofmt -l` clean.
+- [OK] `go build`/`go vet -tags legacyps ./...` OK.
+- [OK] `scripts/verify.ps1` — 14 steps, 0 failed, `VERIFY_OK`.
+
+### Status
+
+[OK] **Completed** and pushed to `origin/main`.

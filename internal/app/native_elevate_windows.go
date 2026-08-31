@@ -32,14 +32,16 @@ const (
 	infinite              = 0xFFFFFFFF
 )
 
-func relaunchElevatedNative(exe, args string) (int, error) {
-	shell32 := syscall.NewLazyDLL("shell32.dll")
-	procShellExecuteEx := shell32.NewProc("ShellExecuteExW")
-	kernel32 := syscall.NewLazyDLL("kernel32.dll")
-	procWaitForSingleObject := kernel32.NewProc("WaitForSingleObject")
-	procGetExitCodeProcess := kernel32.NewProc("GetExitCodeProcess")
-	procCloseHandle := kernel32.NewProc("CloseHandle")
+var (
+	shell32                 = syscall.NewLazyDLL("shell32.dll")
+	kernel32                = syscall.NewLazyDLL("kernel32.dll")
+	procShellExecuteEx      = shell32.NewProc("ShellExecuteExW")
+	procWaitForSingleObject = kernel32.NewProc("WaitForSingleObject")
+	procGetExitCodeProcess  = kernel32.NewProc("GetExitCodeProcess")
+	procCloseHandle         = kernel32.NewProc("CloseHandle")
+)
 
+func relaunchElevatedNative(exe, args string) (int, error) {
 	verb, _ := syscall.UTF16PtrFromString("runas")
 	file, _ := syscall.UTF16PtrFromString(exe)
 	params, _ := syscall.UTF16PtrFromString(args)

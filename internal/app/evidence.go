@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"lenovo-driver/internal/audit"
 	"lenovo-driver/internal/inventory"
@@ -108,13 +109,13 @@ func resolvePackageEvidence(device model.Device, imports []model.ImportRecord) *
 		candidate := filepath.Join(`C:\Windows\System32\DriverStore\FileRepository`, baseName)
 		if info, err := os.Stat(candidate); err == nil {
 			packageDir = candidate
-			packageCreation = info.ModTime().String()
+			packageCreation = info.ModTime().UTC().Format(time.RFC3339)
 		}
 	}
 	if packageDir == "" && packageDirFromInf != "" {
 		packageDir = packageDirFromInf
 		if info, err := os.Stat(packageDir); err == nil {
-			packageCreation = info.ModTime().String()
+			packageCreation = info.ModTime().UTC().Format(time.RFC3339)
 		}
 	}
 	if importRow == nil {

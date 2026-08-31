@@ -17,8 +17,12 @@ import (
 // as a comparison oracle for real-machine equivalence tests. It is not part of
 // the normal runtime path.
 
+// powershellExe is the stable Windows PowerShell path used by the legacy
+// oracle only; the runtime path is native-only.
+const powershellExe = `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`
+
 func runLegacyJSON(ctx context.Context, script string, target any) error {
-	cmd := exec.CommandContext(ctx, PowerShellExe, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
+	cmd := exec.CommandContext(ctx, powershellExe, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()

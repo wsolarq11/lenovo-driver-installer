@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -123,15 +122,48 @@ func pnpIDsOf(devices []model.Device) []string {
 }
 
 // localDriverState resolves the current local version and vendor for a driver
-// against a device snapshot. It is the single canonical pipeline shared by the
-// driver-comparison view and post-install verification.
-func (a *App) localDriverState(ctx context.Context, driver *model.Driver, matchedDevices []model.Device, snapshot *model.SoftwareSnapshot) (localVersion, localVendor string, err error) {
-	versions, err := inventory.GetDeviceDriverVersions(ctx, pnpIDsOf(matchedDevices))
-	if err != nil {
-		return "", "", err
+// against the pre-fetched per-device version index. It is the single canonical
+// pipeline shared by the driver-comparison view and post-install verification;
+// the index itself is fetched once per pass by deviceVersionIndex.
+func (a *App) localDriverState(driver *model.Driver, matchedDevices []model.Device, versionIndex map[string]string, snapshot *model.SoftwareSnapshot) (localVersion, localVendor string) {
+	versions := make([]string, 0, len(matchedDevices))
+	for _, dev := range matchedDevices {
+		versions = append(versions, versionIndex[dev.PnpDeviceID])
 	}
-	localVersion, localVendor = compare.ResolveLocalDriverVersion(driver, matchedDevices, versions, snapshot)
-	return localVersion, localVendor, nil
+	return compare.ResolveLocalDriverVersion(driver, matchedDevices, versions, snapshot)
+}
+
+// deviceVersionIndex resolves the driver version of every matched device
+// across the applicable drivers in a single inventory pass, keyed by PnP
+// device ID. A fetch failure aborts the pass: a whole-tree enumeration that
+// fails for one driver fails for all of them.
+func (a *App) deviceVersionIndex(ctx context.Context, localDevices []model.Device, selected []*model.Driver) (map[string]string, error) {
+	var ids []string
+	seen := make(map[string]struct{})
+	for _, driver := range selected {
+		if driver == nil || !compare.TestDriverApplicable(driver, localDevices) {
+			continue
+		}
+		for _, id := range pnpIDsOf(compare.GetMatchingLocalDevices(driver, localDevices)) {
+			if _, dup := seen[id]; dup {
+				continue
+			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return map[string]string{}, nil
+	}
+	versions, err := inventory.GetDeviceDriverVersions(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]string, len(ids))
+	for i, id := range ids {
+		byID[id] = versions[i]
+	}
+	return byID, nil
 }
 
 // mustDriverList is the strict counterpart of loadDriverList: the primary
@@ -219,10 +251,17 @@ func (a *App) presentDriverView(ctx context.Context, selected []*model.Driver) {
 
 // assessSelectedDrivers resolves the local version, compare status and
 // source-evidence audit for each driver, mutating only that driver's
-// comparison fields. Any alternate-source map needed for source auditing is
-// built lazily and reused across the remaining drivers in the pass.
+// comparison fields. The local version index is fetched once for all
+// applicable drivers instead of per driver. Any alternate-source map needed
+// for source auditing is built lazily and reused across the remaining drivers
+// in the pass.
 func (a *App) assessSelectedDrivers(ctx context.Context, vc *ViewContext, selected []*model.Driver, currentSourceMap map[string]model.SourceMapEntry, preferredSource string) {
 	var alternateSourceMap map[string]model.SourceMapEntry
+	versionIndex, err := a.deviceVersionIndex(ctx, vc.LocalDevices, selected)
+	if err != nil {
+		a.Log(ctx, "Could not read local driver versions: "+err.Error(), "WARN")
+		return
+	}
 	for _, driver := range selected {
 		if driver == nil {
 			continue
@@ -232,11 +271,7 @@ func (a *App) assessSelectedDrivers(ctx context.Context, vc *ViewContext, select
 			continue
 		}
 		matchedDevices := compare.GetMatchingLocalDevices(driver, vc.LocalDevices)
-		localVersion, localVendor, err := a.localDriverState(ctx, driver, matchedDevices, &vc.SoftwareSnapshot)
-		if err != nil {
-			a.Log(ctx, "["+driver.DriverCode+"] Could not read local driver version: "+err.Error(), "WARN")
-			continue
-		}
+		localVersion, localVendor := a.localDriverState(driver, matchedDevices, versionIndex, &vc.SoftwareSnapshot)
 		driver.LocalVersion = localVersion
 		driver.LocalVendor = localVendor
 		driver.CompareStatus = compare.CompareDriverStatus(driver.Version, localVersion, localVendor)
@@ -385,81 +420,4 @@ func (a *App) WritePlanFile(drivers []*model.Driver) error {
 	lines := plan.BuildPlanText(drivers, formatTimestamp(time.Now()))
 	content := strings.Join(lines, "\r\n") + "\r\n"
 	return os.WriteFile(a.PlanPath, []byte(content), 0o644)
-}
-
-// guiExportPayload matches Export-LenovoDriverViewJson.
-type guiExportPayload struct {
-	GeneratedAt   string              `json:"GeneratedAt"`
-	MachineModel  string              `json:"MachineModel"`
-	SerialNumber  string              `json:"SerialNumber"`
-	SystemCaption string              `json:"SystemCaption"`
-	CurrentOsID   string              `json:"CurrentOsId"`
-	CurrentOsName string              `json:"CurrentOsName"`
-	ListOsID      string              `json:"ListOsId"`
-	ListOsName    string              `json:"ListOsName"`
-	DataSource    string              `json:"DataSource"`
-	OsList        []model.OSListEntry `json:"OsList"`
-	Drivers       []guiDriverRow      `json:"Drivers"`
-}
-
-type guiDriverRow struct {
-	Selected      bool   `json:"Selected"`
-	DriverCode    string `json:"DriverCode"`
-	DriverName    string `json:"DriverName"`
-	Version       string `json:"Version"`
-	LocalVersion  string `json:"LocalVersion"`
-	CompareStatus string `json:"CompareStatus"`
-	SourceAudit   string `json:"SourceAudit"`
-	CompareSource string `json:"CompareSource"`
-	FileName      string `json:"FileName"`
-	FilePath      string `json:"FilePath"`
-	FileSize      string `json:"FileSize"`
-	MD5           string `json:"MD5"`
-	IsApplicable  bool   `json:"IsApplicable"`
-	IsUpdate      bool   `json:"IsUpdate"`
-}
-
-// ExportGUIView writes the WPF-compatible JSON view.
-func (a *App) ExportGUIView(path string, vc *ViewContext, view *DriverView) error {
-	currentOSName := model.OSNameByID(vc.OsList, vc.CurrentSystemOsID)
-	listOSName := model.OSNameByID(vc.OsList, view.OsID)
-	payload := guiExportPayload{
-		GeneratedAt:   formatTimestamp(time.Now()),
-		MachineModel:  vc.Machine.Model,
-		SerialNumber:  vc.Machine.Serial,
-		SystemCaption: vc.OSInfo.Caption,
-		CurrentOsID:   vc.CurrentSystemOsID,
-		CurrentOsName: currentOSName,
-		ListOsID:      view.OsID,
-		ListOsName:    listOSName,
-		DataSource:    view.Source,
-		OsList:        vc.OsList,
-		Drivers:       make([]guiDriverRow, 0, len(view.Selected)),
-	}
-	for _, driver := range view.Selected {
-		sourceAudit := ""
-		if driver.SourceAudit != nil {
-			sourceAudit = string(driver.SourceAudit.Category) + ": " + driver.SourceAudit.Summary
-		}
-		payload.Drivers = append(payload.Drivers, guiDriverRow{
-			DriverCode:    driver.DriverCode,
-			DriverName:    driver.DriverName,
-			Version:       driver.Version,
-			LocalVersion:  driver.LocalVersion,
-			CompareStatus: string(driver.CompareStatus),
-			SourceAudit:   sourceAudit,
-			CompareSource: driver.CompareSource,
-			FileName:      driver.FileName,
-			FilePath:      driver.FilePath,
-			FileSize:      driver.FileSize,
-			MD5:           driver.OfficialMD5,
-			IsApplicable:  driver.CompareStatus != model.StatusNotApplicable,
-			IsUpdate:      driver.CompareStatus == model.StatusUpdate,
-		})
-	}
-	data, err := json.MarshalIndent(payload, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0o644)
 }

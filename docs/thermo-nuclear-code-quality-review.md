@@ -26,18 +26,27 @@
 `compare/matching.go` 366 行），因此技能预设的两条阻塞性气味（文件超 1k、朴素意大利面）
 **不成立**。
 
-三轮累计发现与状态一览：
+各轮累计发现与状态一览：
 
 | 轮次 | 发现 | 高优先级 | 状态 |
 |------|------|---------|------|
 | 首轮 | `#1–#7` | `#1/#2/#3` | 全部 [已落地]，`#2` 部分后续方向保留 |
 | 第二轮 | `V1–V8` | `V1/V2/V3` | `V1–V5/V7/V8` 已落地；`V4` 受限落地；`V6` 延后 |
 | 第三轮 | `R1–R3` | `R1/R2` | `R1–R3` 全部落地；`V6` 复确认延后 |
+| 第四轮（原生迁移） | `N1–N12` | `N1/N2/N3` | `N1–N12` 全部已落地（`N3` 顺带修 `N2`） |
+| 第五轮（复审施工） | `S1–S6` | `S1/S2` | `S1–S6` 全部已落地 |
+| 第六轮（独立全量复审） | `F6.1–F6.5` | `F6.1/F6.2` | 见 §9；`F6.1`/`F6.2` 已落地（RFC3339 统一 + 单测），`F6.3–F6.5` 记录为不阻塞 |
 
 - **放行**：第三轮最终**无阻塞项**；前两轮阻塞（`#1` 契约、`V1` 启动失败压码）均已闭环。
+  第四轮（原生迁移分支 `19a5137` + `396c716`）原评审**不放行**，`N1–N12` 已全部落地：
+  `N1` 恢复 `legacyps` 编译（常量移入 legacy 文件）；`N2`/`N3` 合并为单一 SetupAPI 枚举
+  （`enumerateDevices()`）并恢复证据字段（Name/Class/InstallDate 不再抹空）；
+  `N4`–`N8` 清理与契约收敛（含死常量 `regClassRoot/regEnumRoot`、reboot 映射 3010）；
+  `N9`–`N12` 低项收口（包级绑定 / `fileversion_windows.go` / `isStringType` 纯函数）。
+  复验全绿，含 `go build -tags legacyps`。
 - **遗留**：`V4`（`Driver` 三职模型彻底拆分，受限落地）、`V6`（每驱动一次 PowerShell 子进程，
-  延后）、以及「`DriverView` 携带 `driverEntry{Driver, Assess}`」的可选建模方向——均不阻塞
-  正确性，见 §7。
+  已随原生迁移实质解决）、以及「`DriverView` 携带 `driverEntry{Driver, Assess}`」的可选建模
+  方向——均不阻塞正确性，见 §7。
 
 ---
 
@@ -57,8 +66,8 @@
 
 | 指标 | 数值 |
 |------|------|
-| 最大文件 | `app/view.go` 466 行 |
-| 其余大文件 | `audit/audit.go` 405、`compare/matching.go` 366、`app/app.go` 352、`app/install.go` 309 |
+| 最大文件 | `app/view.go` 501 行（第五轮实测 466；第六轮越 500 上限，见 `F6.3`） |
+| 其余大文件 | `audit/audit.go` 405、`compare/matching.go` 366、`app/app.go` 343、`app/install.go` 309 |
 | go build / vet / test / gofmt | OK / OK / 全包 ok / 干净 |
 
 > 刻意不臆造「1k 行」或「朴素 if 链」两条阻塞项——文献级证据表明它们不存在。
@@ -111,12 +120,40 @@
 | `R3` | 低/中 | 抽象 | `initCurrentSourceMap` 是无收益恒等转发壳 | 已落地（删除） |
 | `V6` | 中 | 编排 | PowerShell 子进程风暴（复确认） | 维持延后 |
 
+### 3.4 第四轮·原生迁移（`N1–N12`）
+
+| ID | 严重度 | 主题 | 一句话 | 状态 |
+| --- | --- | --- | --- | --- |
+| `N1` | 高·构建断 | 契约 | `legacyps` oracle 引用已被删的 `PowerShellExe`，等价测试不可编译、从未运行 | 已落地（常量移入 legacy 文件） |
+| `N2` | 高·行为回归 | 契约 | `GetDeviceEvidence` 用恒空 Name/Class/InstallDate 覆盖输入行，审计证据丢设备名/安装日期 | 已落地（随 `N3` 单一枚举恢复） |
+| `N3` | 高·柔术 | 重复 | 两次完整 SetupAPI 枚举（`enumeratePresentDevices` + `GetNativeDeviceEvidence`）合一 | 已落地（`enumerateDevices()` 单遍） |
+| `N4` | 中 | 死代码 | `var _ = filepath.Separator` 压未用 import；`fileExists` 包内零调用；`fileVersion` 恒等转发壳 | 已落地（含死常量 `regClassRoot/regEnumRoot`） |
+| `N5` | 中 | 重复 | `decodeFirstMultiString` ≡ `decodeUTF16`（UTF16ToString 遇首 NUL 即停） | 已落地（并入 `decodeUTF16`） |
+| `N6` | 中 | 魔数 | `IsAdministrator` 裸常量 + 残留思考注释（`TokenRead? use TOKEN_QUERY=0x0008`） | 已落地（命名常量 + 陈述注释） |
+| `N7` | 中 | 抽象 | `NativeInstallEnabled` 恒真 + `NativeInstallAvailable` 预检与内检重复 + 同义反复测试 | 已落地（三件套删除） |
+| `N8` | 中 | 契约 | 原生安装路径丢弃 `rebootRequired`，pnputil 兜底传播 3010，两路径语义分叉 | 已落地（映射 `errorSuccessRebootRequired`） |
+| `N9` | 低 | 一致性 | 三种 DLL 绑定风格并存；`relaunchElevatedNative` 每次调用重绑 | 已落地（包级绑定） |
+| `N10` | 低 | 正确性 | `GetOSInfo` caption 拼接启发式产出 "Windows 10 Pro Professional" | 已落地（删 EditionID 拼接） |
+| `N11` | 低 | 拆分 | `native_full_windows.go` 440 行装约 7 职责 | 已落地（440→311；版本读取独立成 `fileversion_windows.go`） |
+| `N12` | 低 | 测试 | `TestNativeReadStringRejectsNonStringType` 用非法句柄，未触达声称的类型分支 | 已落地（抽 `isStringType` 纯函数 + 真测试） |
+
+### 3.5 第五轮·复审施工（`S1–S6`）
+
+| ID | 严重度 | 主题 | 一句话 | 状态 |
+| --- | --- | --- | --- | --- |
+| `S1` | 高·柔术 | 性能/结构 | 单遍枚举只是函数级单遍；快照通道从轻量变重，流程级仍是 N+2 遍重枚举 | 已落地（`enumerateDevices` 拆身份轻遍 + `loadDriverEvidence` 显式加载；app 层版本索引每遍一次） |
+| `S2` | 中高·契约 | 一致性 | `N8` 的收敛声明不成立：pnputil 把重启码 1 抹成 0，原生路径返回 3010 | 已落地（`normalizePnPUtilExitCode`：1→3010，两路径真实收敛 + 真测试） |
+| `S3` | 中 | 重复 | `GetNativeDeviceEvidence` 与 `GetDeviceEvidence` 两张字段映射表；两条 `map[...]` 构建循环 | 已落地（`applyTo` + `indexRows` 单一查找源） |
+| `S4` | 低 | API 面 | `GetNativeDeviceEvidence` 生产零调用、仅供 smoke 测试 | 保留为规范投影（经 `applyTo` 收敛），并在 `native_other.go` 维持 stub |
+| `S5` | 低 | 魔数/编码 | `SPDRP_*` 内联魔数；installDate 手写小端循环 + 20 字节裸 DEVPROPKEY | 已落地（命名常量；`devPropKey` 结构体 + `binary.LittleEndian` + 纯函数 `formatFileTime` + 测试） |
+| `S6` | 低 | API 面 | `PowerShellExe` 导出仅同包使用 | 已落地（小写 `powershellExe`） |
+
 ---
 
 ## 4. 逐轮台账（同模板展开）
 
 > 每一轮严格复用同一模板：**结论速览 → 发现清单（按严重度）→ 实施记录 → 复验**。
-> 三轮分别见 4.1 / 4.2 / 4.3，结构完全一致，只替换内容——这本身就是"举一反三"。
+> 各轮分别见 4.1 / 4.2 / 4.3 / 4.5 / 4.6，结构完全一致，只替换内容——这本身就是"举一反三"。
 
 ### 4.1 首轮 — 发现与落地（`#1–#7`）
 
@@ -305,6 +342,191 @@ Selected/NotApplicable 顺序按驱动表，Missing 用 set 剩项判定，去�
 | `V5` 超时 killTree 错误捎带 | 有效（`KillErr` + `timeoutErr`） |
 | `V7` `selectByCodes` 单遍 | 有效 |
 
+### 4.5 第四轮 — 原生迁移（`19a5137` + `396c716`）独立复审
+
+> 对象：把 PowerShell 运行时整体迁移为 SetupAPI / CfgMgr32 / 注册表 / SMBIOS /
+> ShellExecuteExW / DiInstallDriverW 的分支（`19a5137`，+1908/−240），及 WPF 修复
+> （`396c716`）。方法同前轮：全量通读 + grep 佐证 + 实机 `go build/vet/test/gofmt` 复验 +
+> `go build -tags legacyps` 编译校验。
+
+**结论**：默认构建链全绿（build / vet / test / gofmt 干净），运行时 PowerShell 全删是**真实
+简化**（`execPowershell` / `runJSON` 整块删除，子进程风暴收敛）；`GetDeviceDriverVersions`
+原生版按输入对位返回 `""` 占位，优于旧 PS 版"缺项即移位"的数组错位；`396c716`（`WaitForExit`
+保 ExitCode + XAML BOM）最小且正确。原评审因等价性验证故事不可执行（`N1`）与证据管线静默
+回归（`N2`）**不放行**；以下 `N1–N12` 全部落地后复验全绿（含 `-tags legacyps`），放行。
+
+#### `N1` [高·构建断 · 已落地] `legacyps` oracle 无法编译
+
+`windows.go` 随迁移删除了 `const PowerShellExe`，`windows_legacy_ps.go:21` 仍引用：
+
+```
+$ go build -tags legacyps ./...
+internal\inventory\windows_legacy_ps.go:21:34: undefined: PowerShellExe
+```
+
+`native_equivalence_smoke_test.go` 同样要求 `legacyps` tag。因此本次迁移自带的验收故事——
+"native vs 旧 PS 等价性对比"——**从未编译通过、从未运行过**。修复：常量移入
+`windows_legacy_ps.go`（legacy 专用），并把 `go build -tags legacyps` 纳入复验清单。
+已落地：`windows_legacy_ps.go` 恢复 `const PowerShellExe`，`go build/vet -tags legacyps` 通过。
+
+#### `N2` [高·行为回归 · 已落地] `GetDeviceEvidence` 抹空 Name/Class/InstallDate
+
+`readDriverClassProperties`（`native_windows.go:159-169`）返回的 Device 行 Name / Class /
+DeviceID / InstallDate **恒为空**；`GetDeviceEvidence`（`native_full_windows.go:425-434`）
+无条件用 `row.Name/row.Class/row.InstallDate` 覆盖输入行 → 每条设备的名称、类别、安装日期被
+写空。用户可见：`audit.go:300` 证据行退化为 `Device: ; version=…; install-date=`，
+`audit.go:251` 规则名退化为 `device:`。旧 PS 实现以 `FriendlyName/Class/InstallDate` 填充。
+另外，无 class driver 的设备（`Driver` 键或版本缺失）被静默丢弃，证据行数少于输入。修复随
+`N3`：单一枚举遍同时采集 name/class 与驱动属性。已落地：证据行恢复 name/class/installDate；
+`InstallDate` 经 `SetupDiGetDevicePropertyW` 读 `DEVPKEY_Device_InstallDate`（FILETIME→UTC），
+无驱动设备按输入保留（与旧 PS 版一致，不再静默丢弃）。
+
+#### `N3` [高·柔术 · 已落地] 两次完整 SetupAPI 枚举合并为一次
+
+`enumeratePresentDevices`（`native_full_windows.go:57`）与 `GetNativeDeviceEvidence`
+（`native_windows.go:81`）各自执行 `SetupDiGetClassDevs` + `SetupDiEnumDeviceInfo` +
+每设备属性读取——同一棵 PnP 树被完整扫两遍。柔术动作：抽 `enumerateDevices()` 一次返回全量
+行（instanceID / name / class / hardwareID / 驱动属性 / installDate），
+`GetLocalDeviceSnapshot` / `GetDeviceEvidence` / `GetDeviceDriverVersions` /
+`GetNativeDeviceEvidence` 全部降为纯投影。既删一遍枚举，又顺带修复 `N2`（name/class 同遍
+采集），`N11` 的职责拆分也在此收敛。已落地：`enumerateDevices()`（`native_windows.go`），
+`native_full_windows.go` 440→311 行。
+
+#### `N4` [中·死代码 · 已落地] 未用 import 压制 + 零调用函数 + 转发壳
+
+- `native_full_windows.go:440` `var _ = filepath.Separator` 是未用 import 的压制行——删
+  import 与压制行；
+- `native_full_windows.go:316` `fileExists` 包内零调用（`install/extraction.go:137` 另有
+  独立一份）；
+- `native_full_windows.go:309` `fileVersion` 是 `nativeFileVersion` 的恒等转发壳（唯一调用
+  在 `:279`），注释在自我辩护——直接调 `nativeFileVersion`。
+
+已落地：三处全删；另删死常量 `regClassRoot` / `regEnumRoot`（定义后从未使用）。
+
+#### `N5` [中·重复 · 已落地] `decodeFirstMultiString` ≡ `decodeUTF16`
+
+`syscall.UTF16ToString` 遇首 NUL 即停，因此 `decodeFirstMultiString`（`:101`）与
+`decodeUTF16`（`native_windows.go:211`）行为逐字节相同。同包两份 byte→UTF16 解码合并为一；
+同包三份解码器（另 `decodeASCII`）收为两份。已落地：并入 `decodeUTF16`；
+`nativeDeviceRegistryString` 的 REG_MULTI_SZ / REG_SZ 分支统一走 `decodeUTF16`，
+测试改为 `TestDecodeUTF16MultiString`。
+
+#### `N6` [中·魔数/注释 · 已落地] `IsAdministrator` 裸常量 + 思考残留
+
+`native_full_windows.go:369-386`：`0xffffffffffffffff`（GetCurrentProcess 伪句柄）、`0x0008`
+（TOKEN_QUERY）、`20`（TokenElevation）均为裸数，注释还残留决策痕迹
+`// PROCESS_QUERY_INFORMATION, TokenRead? use TOKEN_QUERY=0x0008`。改为命名常量，注释陈述事实。
+已落地：`getCurrentProcess` / `tokenQuery` / `tokenElevation` / `tokenElevationEnabled` 命名常量。
+
+#### `N7` [中·死抽象 · 已落地] `NativeInstallEnabled` / `NativeInstallAvailable` 三件套
+
+`NativeInstallEnabled` 恒真（`install/native_windows.go:33`，`native_other.go` 同步），
+`NativeInstallAvailable` 的 DLL 预检与 `InstallNativeINF` 内部 `Load()` 重复，
+`TestNativeInstallAlwaysEnabled` 测恒真函数（同义反复）。柔术动作：删除 Enabled / Available
+与该测试，`installNativeOrPnPUtil` 直接"先试 `InstallNativeINF`，失败落 pnputil"——行为不变，
+少两个 API 面。`TestNativeInstallSmoke` 已直接走 `installNativeOrPnPUtil` 验兜底，不受影响。
+已落地：三件套删除；`diInstallDriver` 为包级 `LazyProc`，DLL 不可用经
+`InstallNativeINF` 的 `DiInstallDriver failed` 错误落入 pnputil 兜底（`LazyProc` 首调时
+`Load`，错误语义等价于原预检）。
+
+#### `N8` [中·契约分叉 · 已落地] 原生路径丢弃 reboot 标志
+
+`install/install.go:255-256`：原生成功路径 `if _, err := InstallNativeINF(...); err == nil
+{ return 0, nil }` 丢弃 `rebootRequired`；pnputil 兜底则传播 3010（`InstallSucceeded` 视为
+"成功+需重启"）。同一次安装走两条路径，对"是否需重启"语义不同。至少把原生路径的
+`rebootRequired` 映射为 3010 使两路径收敛。已落地：新增常量
+`errorSuccessRebootRequired = 3010`，原生需重启返回 3010，两路径收敛
+（`compare.InstallSucceeded(3010)` 为真，语义不变）。
+
+#### `N9–N12` [低·观察 · 全部已落地]
+
+- `N9`：三种 DLL 绑定风格并存——inventory 包级 procSet（`native_windows.go:53`）、install
+  包级结构体（`native_windows.go:22`）、app 每次调用重绑（`native_elevate_windows.go:36`）。
+  统一为包级绑定，或抽最小 `winapi` 共享包。已落地：app 侧提为包级
+  `var` 块（shell32 / kernel32 / 四个 proc），install 侧收敛为单个包级 `LazyProc`。
+- `N10`：`GetOSInfo` 的 caption 拼接启发式（`:157-160`）在 Pro 等 SKU 产出 "Windows 10 Pro
+  Professional"（Contains 对 "Professional" vs "Pro" 不等价）；等价测试只比 `OSName`
+  （kind+bits），掩盖 Caption 差异。建议直接只用 `ProductName`，删拼接。已落地：删除
+  EditionID 拼接，caption 即 `ProductName`（默认 "Windows"）。
+- `N11`：`native_full_windows.go` 440 行装约 7 个职责（注册表封装 / 机器身份 / OS 身份 /
+  应用 / 供应证据 / 文件版本 / 令牌提升 / 证据归并），未破 500 但已到拆分线；`IsAdministrator`
+  可随 app 提升代码就近，版本读取可独立成文件。已落地：枚举与注册表封装归入
+  `native_windows.go`（309 行），版本读取独立成 `fileversion_windows.go`（58 行），
+  `native_full_windows.go` 440→311 行。
+- `N12`：`TestNativeReadStringRejectsNonStringType`（`native_full_test.go:62`）以 h=0 调用，
+  `RegQueryValueExW` 先以 ERROR_INVALID_HANDLE 失败，**从未触达**注释声称的 REG_SZ 类型分支——
+  测试因错误的理由通过。已落地：抽纯函数 `isStringType`，`nativeReadString` 与测试
+  （`TestIsStringType`，覆盖 0/1/2/3/4/7 六型）均以它为准。
+
+#### 第四轮复验（落地后）
+
+| 检查 | 结果 |
+| --- | --- |
+| go build ./... | BUILD_OK |
+| go vet ./... | VET_OK |
+| go test ./... | 全部 ok（含重写的 `TestIsStringType` / `TestDecodeUTF16MultiString`） |
+| gofmt -l | 干净 |
+| go build -tags legacyps ./... | BUILD_OK（`N1` 修复后） |
+| go vet -tags legacyps ./... | VET_OK |
+
+### 4.6 第五轮 — 复审施工（`S1–S6`）
+
+> 对象：第四轮落地后的未提交工作区（`N1–N12` 修复本身）。独立复审放行前两处声明失实与
+> 一处回归：`S1`（快照变重 + 流程级仍多遍枚举）、`S2`（`N8` 收敛声明不成立）、`S3`（字段映射
+> 表重复）。`S1–S6` 全部落地后复验全绿。
+
+#### `S1` [高·柔术 · 已落地] 快照通道回归 + 流程级多遍枚举
+
+`enumerateDevices()` 把原本轻量的快照通道（纯 SetupAPI 身份字段）升级成每设备 2 次
+`RegOpenKeyEx` + 5 次 `RegQueryValueEx` 的重遍历，`GetLocalDeviceSnapshot` 只用 4/9 个字段。
+且 `assessSelectedDrivers` 按驱动逐个调 `GetDeviceDriverVersions`（`view.go:235`），每次重扫
+整棵 PnP 树——视图流程实际是 N+2 遍重枚举。柔术动作：`enumerateDevices` 拆为身份轻遍
+（identity + installDate），注册表重的 class-key 证据收敛为 `loadDriverEvidence(rows)`，
+仅证据入口点调用；app 层新增 `deviceVersionIndex`（去重 pnpIDs，单次 `GetDeviceDriverVersions`），
+`assessSelectedDrivers` / `verifyInstalled` 每遍一次索引，`localDriverState` 降为纯对齐纯函数。
+快照恢复轻量，主流程 N 遍枚举压为 1 遍。
+
+#### `S2` [中高·契约 · 已落地] `N8` 收敛声明不成立
+
+`RunPnPUtilWithTimeout` 把 pnputil 的重启码 1 抹成 0（信号丢失），原生路径返回 3010——两条
+路径对同一结果产出不同退出码，第四轮台账的「两路径收敛」声明与代码不符。落地：
+`normalizePnPUtilExitCode`（1→`errorSuccessRebootRequired`）+ `TestNormalizePnPUtilExitCode`；
+`install.go` 三处注释改为与代码一致的事实陈述。
+
+#### `S3` [中·重复 · 已落地] 字段映射表与索引循环双重复
+
+`GetNativeDeviceEvidence`（9 字段）与 `GetDeviceEvidence`（7 字段）两张手写映射表——正是 `N2`
+那类字段表漂移的温床；`GetDeviceEvidence` / `GetDeviceDriverVersions` 两条近同 `map[...]`
+构建循环。落地：`nativeDeviceRow.applyTo(*model.Device)`（映射唯一化）+
+`indexRows(rows)`（索引唯一化），`GetNativeDeviceEvidence` 保留为规范「全量驱动证据」投影
+（smoke 测试仍使用，`native_other.go` stub 同步保留）。
+
+#### `S4` [低 · 已落地] `GetNativeDeviceEvidence` 仅供 smoke 测试
+
+维持导出为规范投影，不删：smoke 测试（`native_smoke_test.go`）合法地需要「全量驱动证据」
+入口，删除只会逼测试走两步合成。经 `S3` 的 `applyTo` 收敛后字段表不再漂移。
+
+#### `S5` [低 · 已落地] 魔数与手写编码
+
+`SPDRP_DEVICEDESC/HARDWAREID/CLASS`（0x0/0x1/0x7）命名常量；`DEVPROPKEY` 类型化为
+`devPropKey{fmtid [16]byte; pid uint32}` 结构体；FILETIME 解码改 `binary.LittleEndian.Uint64`
+并抽纯函数 `formatFileTime`（含 `TestFormatFileTime`：零值→空串、2020-01-01 定点校验）。
+
+#### `S6` [低 · 已落地] `PowerShellExe` 导出无谓
+
+同包唯一使用，降级为 `powershellExe`。
+
+#### 第五轮复验（落地后）
+
+| 检查 | 结果 |
+| --- | --- |
+| go build ./... | BUILD_OK |
+| go vet ./... | VET_OK |
+| go test ./... | 全部 ok（含新增 `TestNormalizePnPUtilExitCode` / `TestFormatFileTime`） |
+| gofmt -l | 干净 |
+| go build -tags legacyps ./... | BUILD_OK |
+| go vet -tags legacyps ./... | VET_OK |
+
 ---
 
 ## 5. 主题归并（举一反三）：同一份发现家族
@@ -347,15 +569,17 @@ Selected/NotApplicable 顺序按驱动表，Missing 用 set 剩项判定，去�
 
 ---
 
-## 6. 验证矩阵（三轮汇总）
+## 6. 验证矩阵（各轮汇总）
 
-| 检查 | 首轮 | 第二轮 | 第三轮 |
-| --- | --- | --- | --- |
-| `go build ./...` | OK | BUILD_OK | BUILD_OK |
-| `go vet ./...` | OK | VET_OK | VET_OK |
-| `go test ./...` | 全部 ok | 全部 ok | 全部 ok |
-| `gofmt -l cmd/ internal/` | 干净 | 干净 | 干净 |
-| `scripts/verify.ps1` | — | — | VERIFY_OK（14 步） |
+| 检查 | 首轮 | 第二轮 | 第三轮 | 第四轮 | 第五轮 | 第六轮 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `go build ./...` | OK | BUILD_OK | BUILD_OK | BUILD_OK | BUILD_OK | BUILD_OK |
+| `go vet ./...` | OK | VET_OK | VET_OK | VET_OK | VET_OK | VET_OK |
+| `go test ./...` | 全部 ok | 全部 ok | 全部 ok | 全部 ok | 全部 ok | 全部 ok |
+| `gofmt -l cmd/ internal/` | 干净 | 干净 | 干净 | 干净 | 干净 | 干净 |
+| `scripts/verify.ps1` | — | — | VERIFY_OK（14 步） | — | — | — |
+| `go build -tags legacyps ./...` | — | — | — | **FAIL（评审时）→ BUILD_OK（`N1` 落地后）** | BUILD_OK | BUILD_OK |
+| `go vet -tags legacyps ./...` | — | — | — | VET_OK（`N1` 落地后） | VET_OK | VET_OK |
 
 非页面型交付：无视觉/页面 smoke 需求。
 
@@ -363,8 +587,13 @@ Selected/NotApplicable 顺序按驱动表，Missing 用 set 剩项判定，去�
 
 ## 7. 遗留 / 延后与后续方向
 
-- **`V6`（延后）**：每驱动一次 `powershell.exe` 子进程风暴 → 聚合查询按 PnP 归并，子进程降 N→1。
-  需改 `GetDeviceDriverVersions` 从 `[]string` 到 id→version，改变错误时序与无测试兜底的 PS 语义。
+- **第四轮 `N1–N12`（已全部落地）**：`N1` 常量移入 `windows_legacy_ps.go` 并将
+  `go build -tags legacyps` 纳入复验；`N2`+`N3` 合并为单一枚举（`enumerateDevices()`）并恢复
+  Name/Class/InstallDate 证据；`N4`–`N12` 的清理与契约收敛见 §4.5。落地后逐项复核完成。
+  后续方向（不阻塞）：原生枚举按需缓存（`view.go` 每驱动一次全枚举），等价性 smoke 在
+  实机上跑一遍 `LENOVO_NATIVE_EQUIV_SMOKE=1`。
+- **`V6`（随原生迁移实质解决）**：运行时 PowerShell 子进程风暴已随 `19a5137` 整块移除；
+  仅 `legacyps` 测试 oracle 保留 PS，与运行时无关。
 - **`V4` 受限落地 → 可选全量建模**：让 `DriverView` 携带 `driverEntry{Driver, Assess}`，`Driver` 彻底
   回归纯 transport。这超出当前"行为不变"约束（`guiExportPayload`/plan JSON 契约），作为后续排期方向。
 - 其余三轮已落地项的剩余表达均为**不阻塞**的低观察，可归档。
@@ -378,6 +607,220 @@ Selected/NotApplicable 顺序按驱动表，Missing 用 set 剩项判定，去�
 报告（物理删除可由具备删除能力的工具或 `rm`/git 完成；历史内容保留在 git 中）。`docs/` 现以本文件
 为**唯一权威**审查结论。`WORKLOG.md`、`TECHNICAL.md` 为工程文档，予以保留。
 
-> 交付物：本归一报告（三轮全部发现 `#1–#7 / V1–V8 / R1–R3` + 状态 + 验证矩阵）+ 既有源码改动与
+> 交付物：本归一报告（前三轮全部发现 `#1–#7 / V1–V8 / R1–R3` + 状态 + 验证矩阵）+ 既有源码改动与
 > 单测 + 全程 `go build/vet/test/gofmt` 通过 + `scripts/verify.ps1` `VERIFY_OK`，均已在上文三轮
 > 验证矩阵录入。
+
+---
+
+## 9. 第六轮 — 独立全量复审（Round 6，2026）
+
+> 方法（与前五轮完全同构）：**独立全量重读** `cmd/` + `internal/` + `wpf/` 每一份源码；逐项核实
+> 前五轮全部已落地 findings 在当前 `main` 仍有效（不复燃，见 §9.3 复核矩阵）；再按热核技能
+> （抽象 / 大文件 / 意大利面 / 时间与契约边界 / 复制）**新猎**新增问题，均以 `grep`/行号佐证；
+> 末了跑 `go build/vet/test/gofmt`（+ `-tags legacyps`）复验。
+
+### 9.1 结论速览
+
+放行条中「>1k 文件 / 朴素 if 链」两条阻塞气味依然不成立：最大文件为 `app/view.go` 501 行，
+其次 `audit/audit.go` 405、`compare/matching.go` 366、`app/install.go` 309。**没有阻塞项。**
+
+前五轮结构修复在当前树**全部有效**（§9.3）。本轮没有「可柔术整体删除一整类复杂度」的信号——
+包边界、声明式规则表、单一查找源都已到位。真正的问题集中在**时间统一边界在原生证据路径上的
+一处置漏 + 一处回潮**（`F6.1`/`F6.2`，与 `V3` 同族，只是 `V3` 当年只覆盖了 `formatTimestamp`，
+没有覆盖第四轮原生迁移新增的证据格式化），以及文件规模、无界循环一致性、跨层复制三处低危观察。
+
+| 序号 | 严重度 | 主题 | 一句话 |
+| --- | --- | --- | --- |
+| `F6.1` | 高 | 时间 | 原生 `InstallDate` 非 RFC3339 —— [已落地] 改 RFC3339 + 单测 |
+| `F6.2` | 中/高 | 时间 | `PackageCreationTime` 本地时区 + 非 RFC3339 —— [已落地] `UTC().Format(RFC3339)` |
+| `F6.3` | 低 | 文件规模 | `app/view.go` 501 行首次越过 AGENTS 500 行上限（此前 466） |
+| `F6.4` | 低 | 一致性 | `expandWindowsEnv` 又是无界 `for`（R2 已把同类收口为有界双遍） |
+| `F6.5` | 低 | 跨层复制 | Windows 命令行引号算法在 `helpers.go` 与 `wpf/worker.ps1` 各一份 |
+
+落实进度：`F6.1`/`F6.2` 已随本轮**整体落地**（行为不变，RFC3339 统一 + 单测，见 §9.2）；
+`F6.3` 拆 `export.go`、`F6.4` 显式有界、`F6.5` WPF 侧备注为后续非阻塞加工方向。
+
+### 9.2 发现清单（按严重度）
+
+#### `F6.1` [高 · 时间边界 · 回潮] 原生 `InstallDate` 非 RFC3339
+
+- 位置：`internal/inventory/native_windows.go:236` —— `formatFileTime` 末尾
+  `return time.Unix(secs, 0).UTC().Format("2006-01-02 15:04:05")`。
+- 问题：值是 `UTC` 的，但**线格式是自定义字符串、非 RFC3339**。这正是 `V3`（第二轮）关闭的同一类
+  —— 但 `V3` 只把 `formatTimestamp`（`helpers.go:20`）统一为 `time.RFC3339`；第四轮原生迁移
+  （round 4 落地的 `formatFileTime`）**在 `V3` 之后新增**了这第二处格式，前几轮从未覆盖到。
+  产物流向 `model.Device.InstallDate` → 审计证据行（`audit.go:300` `install-date=`）→ plan 落盘，
+  均属 `AGENTS.md` 第三/七节「全系统接口强制 UTC+0 + RFC3339、禁自定义字符串」边界。且
+  `latestSourceHistory` 的 Timestamp 排序依赖 RFC3339 字典序——本处非 RFC3339，一致性存疑。
+- 建议：改 `...Format(time.RFC3339)`（行为不变，仍 UTC 且字典序正确）；对 `formatFileTime`
+  补定点单测，锁定 `2020-01-01T00:00:00Z` 形式。
+- **已落地（行为不变）**：`native_windows.go` 改 `Format(time.RFC3339)`；
+  `TestFormatFileTime` 期望更新为 `"2020-01-01T00:00:00Z"`；`go test ./internal/inventory/` ok。
+
+#### `F6.2` [中/高 · 时间边界 · 漏网] `PackageCreationTime` 本地时区 + 非 RFC3339
+
+- 位置：`internal/app/evidence.go:111` 与 `:117` —— `packageCreation = info.ModTime().String()`。
+- 问题：`FileInfo.ModTime()` 返回**本地时区**时刻，`Time.String()` 是 Go 默认格式
+  （`2006-01-02 15:04:05.999… -0700 MST`）——既非 UTC 也非 RFC3339。该值经
+  `packageEvidence.PackageCreationTime` → `audit.go:302` `created=` 证据行 → plan 落盘。与
+  `F6.1`/`V3` 同族。
+- 建议：改 `info.ModTime().UTC().Format(time.RFC3339)`。
+- **已落地（行为不变）**：`evidence.go` 两处 `ModTime().String()` 改
+  `ModTime().UTC().Format(time.RFC3339)`（新增 `time` import）；`go test ./internal/app/` ok。
+
+#### `F6.3` [低 · 文件规模] `app/view.go` 501 行越过 500 行上限
+
+- 位置：`internal/app/view.go`（501 行）。
+- 问题：`AGENTS.md` 第七节「文件 ≤ 500 行」；第五轮台账实测为 466 行，现 501 行，**首次越过仓库
+  自身上限**（仍远未到热核技能预设的 1k 阻塞线，故不阻塞）。
+- 建议：把 `ExportGUIView` + `guiExportPayload`/`guiDriverRow`（`view.go` 约尾 40 行）抽到
+  `internal/app/export.go`；行为不变。
+
+#### `F6.4` [低 · 一致性] `expandWindowsEnv` 用无界 `for 循环`
+
+- 位置：`internal/inventory/native_full_windows.go:209/212`（`expandWindowsEnv`）。
+- 问题：第 2 轮 `R2` 已把 `downloadVerified` 的无界 `for {}`（终止需通读全函数）收口为**显式有界**
+  双遍；本函数又是同样无界、靠逐字符 `%` 消耗在末尾隐性收敛。实际会收敛（每次至少消掉一个变量
+  占位），但违背既定「显式有界 / 边界可由读者直接确认」的惯例。
+- 建议：改为前置「无 `%` 即 return」的有界显式结构（`for` + 明确不变量）。
+
+#### `F6.5` [低 · 跨层复制] Windows 命令行引号算法两份
+
+- 位置：`internal/app/helpers.go:59` `quoteWindowsArgument` 与 `wpf/worker.ps1:97`
+  `ConvertTo-CommandLineArgument`。
+- 问题：同一 CMD 命令行引号算法在 Go 与 WPF(PowerShell) 各写一份，后续改一边漏一边会喂出漂移。
+  （跨 Go/WPF 层无法直接复用同一函数，属已知边界，仅记录不阻塞——与 §7 的跨层注意一致。）
+
+### 9.3 前五轮落实复检矩阵（第六轮逐一核实）
+
+> 对每一已落地项在当前工作树核实，无失效。
+
+| 前轮项 | 第六轮核实 |
+| --- | --- |
+| `#1`/`V1` 成/败三态契约 + `StartErr` | 有效：`install/install.go` 各包型先判 `StartErr`/`TimedOut` 再返回，契约注释一致 |
+| `#2`/`V8` `CompareOSDriverView` + `presentDriverView` 分离 | 有效：`view.go` 决策管道与副作用单点分离 |
+| `#3` `mustDriverList` 严格版 + `loadDriverList` 软漏 | 有效：`view.go:173/105` |
+| `#4` `loadDriverListsForOSIDs` 并行 + 保序 + mutex 缓存 | 有效：`view.go:84` + `app.go` `osDriverCacheMu` |
+| `#5` `sourceEvidenceRules` 优先级表 | 有效：`audit.go:223` |
+| `#6`/`V4` `cloneDrivers` 单一所有权入口 | 有效：`view.go` 合并后一处深拷 |
+| `#7` 删伪捕获 `runProcess` | 有效：`install.go` `io.Discard` |
+| `V2` `otherOSIDs` 收敛三处 | 有效：`view.go:362`（比较/源映射/URL 刷新共用） |
+| `V3` `formatTimestamp` RFC3339 | 有效：`helpers.go:21`（唯一；`F6.1`/`F6.2` 为漏网新点） |
+| `V5` `KillErr`/`timeoutErr` | 有效：`install.go:54/96` |
+| `V7` `selectByCodes` 单遍 | 有效：`helpers.go:89` |
+| `R1` `model.OSNameByID` 单一查表 | 有效：`model.go:116` + `view.go:460/461`/`parse.go:174` |
+| `R2` `downloadVerified` 有界双遍 | 有效：`install.go:149` |
+| `R3` 删除恒等转发壳 | 有效 |
+| `N1` `legacyps` 恢复 `powershellExe` 可编译 | 有效：`windows_legacy_ps.go:22` |
+| `N2/N3` 单一枚举 `enumerateDevices()` | 有效：`native_windows.go:106` |
+| `N7` 删除 `NativeInstallEnabled`/`Available` 三件套 | 有效：仅 `diInstallDriver` 包级 `LazyProc` |
+| `N8/S2` `normalizePnPUtilExitCode` 3010 | 有效：`install.go:123` |
+| `S1` `deviceVersionIndex` 每遍一次枚举 | 有效：`view.go:141` |
+| `S3` `applyTo`/`indexRows` 单一映射 | 有效：`native_windows.go:158/148` |
+
+> 一处备注（非失效）：`V4` 的「`Driver` 三职全量拆分」仍按 §7 维持**延后**，本次核实克隆所有权
+> 单点仍唯一，不构成回归并保持不变。
+
+### 9.4 验证矩阵（第六轮）
+
+| 检查 | 结果 |
+| --- | --- |
+| `go build ./...` | BUILD_OK |
+| `go vet ./...` | VET_OK |
+| `gofmt -l cmd/ internal/` | 干净 |
+| `go test ./...` | 全部包 ok（`api/app/audit/compare/download/install/inventory/model/pathutil/plan`） |
+| `go build -tags legacyps ./...` | BUILD_OK |
+| `go vet -tags legacyps ./...` | VET_OK |
+
+> 非页面型交付：无视觉/页面 smoke 需求。
+
+---
+
+## 10. 第七轮 — 独立全量复审（Round 7，仅看代码）
+
+> 方法（与前六轮同构，但本次按用户要求**不参考前六轮报告 / 不看代码注释**，仅以
+> `cmd/ + internal/ + wpf/ + 脚本` 的源码为准独立重读）：逐文件通读 → 实测文件规模 →
+> 以热核技能维度（抽象 / 大文件 / 意大利面条 / 边界 / 时间与进程 / 复制）新猎问题 →
+> 实机 `go build/vet/test/gofmt`（+ `-tags legacyps`）复验 → 落地行为不变修复 + 单测。
+
+### 10.1 结论速览
+
+代码库整体健康：包边界清晰（`api/app/audit/compare/download/install/inventory/model/
+plan/pathutil`），领域规则走声明式表（`vendorRules` / `driverMatchRules` /
+`softwareRules` / `sectionStartRules` / `fieldExtractRules` / `sourceEvidenceRules`
+/ `sourceCategoryRule`），并行取数与缓存集中（`cachedDriverObjects` +
+`loadDriverListsForOSIDs`）。**没有接近 1000 行的文件**，因此热核技能预设的两条
+阻塞性气味（文件超 1k、朴素意大利面链）**不成立，本轮无阻塞项**。
+
+| ID | 严重度 | 主题 | 一句话 | 状态 |
+| --- | --- | --- | --- | --- |
+| `R7-1` | 中·文件规模 | `app/view.go` 501 行越过 500 上限 | 抽 `ExportGUIView` + `guiExportPayload/guiDriverRow` 入 `export.go`，`view.go` 425 行 | 已落地 |
+| `R7-2` | 中·复制 | 原生证据两条入口各枚举一遍 + 重建索引 | 抽 `evidenceRows()` 单一「枚举+证据+索引」| 已落地 |
+| `R7-3` | 低/中·复制 | `HistoryRecord` 列序在 header/写/读三处各写一遍 | 列序单一来源（后续方向，不阻塞） | 记录 |
+| `R7-4` | 低·一致性 | `expandWindowsEnv` 无界 `for {}`（终止靠 `%` 消耗推断） | 改为显式有界循环（64 次 + 不变量注释）| 已落地 |
+| `R7-5` | 低·跨层复制 | Windows 命令行引号算法在 Go 与 WPF 各一份 | 跨层不可复用，双端均有测试，记录漂移风险 | 记录 |
+
+### 10.2 规模事实（实测）
+
+| 指标 | 数值 |
+|------|------|
+| 最大文件（本轮落地后） | `compare/matching.go` 366、`inventory/native_windows.go` ≈347、`app/app.go` 343、`install/install.go` 358 |
+| `app/view.go` | 501 → **425**（`R7-1` 落地后） |
+| `app/export.go`（新增） | ≈97 |
+| `go build / vet / test / gofmt` | 见 §10.4 |
+
+> 上一标的 `view.go` 恰为 501 行、唯一越 500 上限的 Go 文件；本轮将其对齐关注拆出后，
+> 全仓 Go 文件均回到 500 行以内。
+
+### 10.3 发现清单（按严重度）
+
+#### `R7-1` [中 · 文件规模 · 已落地] `app/view.go` 越过 500 行上限
+
+`internal/app/view.go` 实测 501 行，是**全仓唯一越过 AGENTS.md 第七节「文件 ≤ 500 行」**的
+Go 文件。其尾部约 76 行（`guiExportPayload` / `guiDriverRow` / `ExportGUIView`）是「GUI 导出」这一
+独立关注点，与同文件前半的比较/合并/分区管道职责无关。落地：把这三段整体抽入新的
+`internal/app/export.go`（承同包，`ExportGUIView` 仍由 `app.Run` 调用，线契约与行为不变）；
+`view.go` 501 → 425 行，并顺带移除为此释放的 `encoding/json` 依赖。
+
+#### `R7-2` [中 · 复制 · 已落地] 两个原生证据入口各枚举一遍
+
+`GetDeviceEvidence`（`native_full_windows.go`）与 `GetDeviceDriverVersions`
+（`native_full_windows.go`）都执行同一三段前缀：`enumerateDevices()` → `loadDriverEvidence(rows)` →
+`indexRows(rows)`。落地：抽 `evidenceRows() (map[string]nativeDeviceRow, error)` 为这两处的单一枚举
++ 证据 + 索引来源（不动 `GetNativeDeviceEvidence`，它保留枚举顺序的纯投影无需索引）。行为不变。
+
+#### `R7-3` [低 · 复制 · 记录，不落地] `HistoryRecord` 列序三处手工编排
+
+`historyHeader` 定义列序，`WriteHistoryRecord` 再按字面写一次这 14 个字段，`ReadHistory` 又按列名
+读一遍。若增/删/改一列，三处需同步，否则历史 CSV 静默漂移。非阻塞（当前一致且由
+`ReadHistoryStripsBOM` 兜底），可作为后续「以单一列序切片构造读与写」的方向，本次不改全量以保持
+行为与 CSV 线格式严格不变。
+
+#### `R7-4` [低 · 一致性 · 已落地] `expandWindowsEnv` 无界循环
+
+`native_full_windows.go` 的 `expandWindowsEnv` 用无界 `for {}`，终止只能靠「每次至少消一个 `%`
+对」推断（与 `downloadVerified` 早已收口的有界双遍一致，但本函数当时仍是同一类特例）。落地：改显式
+有界 `for expansion := 0; expansion < maxExpansions; expansion++`（64），每轮消除至少一个
+`%VAR%`；正常路径（无自我注入的 `%`）行为逐字节不变，病理性地「展开值自身含 `%`」时保证终止
+（上限用尽即返回剩余串）。既有 `TestExpandWindowsEnv` 覆盖不变。
+
+#### `R7-5` [低 · 跨层复制 · 记录] 命令行引号两处
+
+`internal/app/helpers.go` 的 `quoteWindowsArgument` 与 `wpf/worker.ps1` 的
+`ConvertTo-CommandLineArgument` 是同一 CMD 引号算法（Go 与 PowerShell 各一份）。跨 Go/WPF 层无法
+直接复用一个函数，两处各有单测；记录为应保持同步的漂移风险（改一边需在 `verify.ps1` 的
+`CLI invalid combination` + `WPF argument quoting` 两处都验证），不阻塞。
+
+### 10.4 验证矩阵（第七轮，落地后）
+
+| 检查 | 结果 |
+| --- | --- |
+| `go build ./...` | BUILD_OK |
+| `go vet ./...` | VET_OK |
+| `go test ./...` | 全部包 ok（`api/app/audit/compare/download/install/inventory/model/pathutil/plan`） |
+| `gofmt -l cmd/ internal/` | 干净（`export.go`/`view.go` 已 `gofmt -w` 后复查） |
+| `go build -tags legacyps ./...` | BUILD_OK |
+| `go vet -tags legacyps ./...` | VET_OK |
+
+> 非页面型交付，无页面/视觉 smoke 需求。

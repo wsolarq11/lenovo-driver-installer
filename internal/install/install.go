@@ -15,6 +15,13 @@ import (
 	"lenovo-driver/internal/model"
 )
 
+// errorSuccessRebootRequired is the Windows installer exit code (3010) for a
+// successful install that requires a reboot. The native DiInstallDriverW path
+// reports it via its reboot flag and pnputil's exit code 1 is normalized to
+// it, so both paths report reboot-required installs identically.
+// compare.InstallSucceeded treats it as success.
+const errorSuccessRebootRequired = 3010
+
 // ProcessResult is the outcome of running one installer sub-process. Callers
 // consume the exit code, the timeout flag, StartErr, and KillErr. Captured
 // sub-process output is deliberately discarded (it is not part of the public
@@ -103,11 +110,21 @@ func RunPnPUtilWithTimeout(infPath, workingDir string) ProcessResult {
 		// A non-start is already a terminal failure; do not mask it as exit 1.
 		return result
 	}
-	if result.ExitCode == 1 {
-		// pnputil returns 1 when a reboot is required for an otherwise successful add.
-		result.ExitCode = 0
-	}
+	// pnputil returns 1 when a reboot is required for an otherwise successful
+	// add; normalize it to the shared reboot code so the pnputil and native
+	// paths report it identically.
+	result.ExitCode = normalizePnPUtilExitCode(result.ExitCode)
 	return result
+}
+
+// normalizePnPUtilExitCode maps pnputil's reboot-required exit code (1) to the
+// shared success-with-reboot code (3010) used by the native DiInstallDriverW
+// path. Kept pure so the mapping is testable offline.
+func normalizePnPUtilExitCode(exitCode int) int {
+	if exitCode == 1 {
+		return errorSuccessRebootRequired
+	}
+	return exitCode
 }
 
 func killTree(pid int) error {
@@ -254,13 +271,16 @@ func installINFPaths(paths []string, workingDir string) (int, error) {
 	return exitCode, nil
 }
 
-// installNativeOrPnPUtil installs one INF through DiInstallDriverW when the
-// native path is available, and falls back to pnputil otherwise or on failure.
+// installNativeOrPnPUtil installs one INF through DiInstallDriverW and falls
+// back to pnputil when the native call fails. Both paths normalize a
+// reboot-required result to errorSuccessRebootRequired (3010).
 func installNativeOrPnPUtil(infPath, workingDir string) (int, error) {
-	if NativeInstallEnabled() && NativeInstallAvailable() {
-		if _, err := InstallNativeINF(infPath); err == nil {
-			return 0, nil
+	reboot, err := InstallNativeINF(infPath)
+	if err == nil {
+		if reboot {
+			return errorSuccessRebootRequired, nil
 		}
+		return 0, nil
 	}
 	result := RunPnPUtilWithTimeout(infPath, workingDir)
 	if result.StartErr != nil {
