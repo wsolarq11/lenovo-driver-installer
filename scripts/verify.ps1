@@ -35,21 +35,8 @@ function Assert-Step {
     }
 }
 
-if (-not $GoExe) {
-    $candidate = Get-Command go.exe -ErrorAction SilentlyContinue
-    if ($candidate) {
-        $GoExe = $candidate.Source
-    } elseif ($env:GOROOT -and (Test-Path -LiteralPath (Join-Path $env:GOROOT 'bin\go.exe'))) {
-        $GoExe = Join-Path $env:GOROOT 'bin\go.exe'
-    } elseif ($env:USERPROFILE -and (Test-Path -LiteralPath "$env:USERPROFILE\.local\go\bin\go.exe")) {
-        $GoExe = "$env:USERPROFILE\.local\go\bin\go.exe"
-    } else {
-        throw 'go.exe not found. Install the official Go toolchain or pass -GoExe.'
-    }
-}
-if (-not (Test-Path -LiteralPath $GoExe)) {
-    throw "Go executable not found: $GoExe"
-}
+. (Join-Path $PSScriptRoot 'lib\go-toolchain.ps1')
+$GoExe = Resolve-GoExe -GoExe $GoExe
 
 Assert-Step 'Go build' {
     & $GoExe build ./...
