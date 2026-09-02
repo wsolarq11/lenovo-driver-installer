@@ -133,25 +133,41 @@ func (a *App) localDriverState(driver *model.Driver, matchedDevices []model.Devi
 	return compare.ResolveLocalDriverVersion(driver, matchedDevices, versions, snapshot)
 }
 
-// deviceVersionIndex resolves the driver version of every matched device
-// across the applicable drivers in a single inventory pass, keyed by PnP
-// device ID. A fetch failure aborts the pass: a whole-tree enumeration that
-// fails for one driver fails for all of them.
-func (a *App) deviceVersionIndex(ctx context.Context, localDevices []model.Device, selected []*model.Driver) (map[string]string, error) {
-	var ids []string
+// matchedByDriver resolves the matching local devices for each applicable
+// driver, returning the per-driver lists (index-aligned with selected) and the
+// deduped union of all matched devices. This is the single place that walks the
+// "applicable drivers and their matched PnP devices" traversal; the version
+// index and the evidence audit both consume its result instead of re-walking
+// the same selected set.
+func matchedByDriver(selected []*model.Driver, localDevices []model.Device) (perDriver [][]model.Device, union []model.Device) {
+	perDriver = make([][]model.Device, len(selected))
 	seen := make(map[string]struct{})
-	for _, driver := range selected {
+	for i, driver := range selected {
 		if driver == nil || !compare.TestDriverApplicable(driver, localDevices) {
 			continue
 		}
-		for _, id := range pnpIDsOf(compare.GetMatchingLocalDevices(driver, localDevices)) {
-			if _, dup := seen[id]; dup {
+		matched := compare.GetMatchingLocalDevices(driver, localDevices)
+		perDriver[i] = matched
+		for _, device := range matched {
+			if device.PnpDeviceID == "" {
 				continue
 			}
-			seen[id] = struct{}{}
-			ids = append(ids, id)
+			if _, dup := seen[device.PnpDeviceID]; dup {
+				continue
+			}
+			seen[device.PnpDeviceID] = struct{}{}
+			union = append(union, device)
 		}
 	}
+	return perDriver, union
+}
+
+// deviceVersionIndex resolves the driver version of every PnP device in the
+// given deduped device set in a single inventory pass, keyed by PnP device ID.
+// A fetch failure aborts the pass: a whole-tree enumeration that fails for one
+// driver fails for all of them.
+func (a *App) deviceVersionIndex(ctx context.Context, devices []model.Device) (map[string]string, error) {
+	ids := pnpIDsOf(devices)
 	if len(ids) == 0 {
 		return map[string]string{}, nil
 	}
@@ -251,18 +267,23 @@ func (a *App) presentDriverView(ctx context.Context, selected []*model.Driver) {
 
 // assessSelectedDrivers resolves the local version, compare status and
 // source-evidence audit for each driver, mutating only that driver's
-// comparison fields. The local version index is fetched once for all
-// applicable drivers instead of per driver. Any alternate-source map needed
-// for source auditing is built lazily and reused across the remaining drivers
-// in the pass.
+// comparison fields. The matched-device traversal, the local version index,
+// and the PnP evidence enumeration are each performed once over the pass
+// instead of once per driver (see matchedByDriver, deviceVersionIndex and
+// buildDeviceEvidenceMap). Any alternate-source map needed for source auditing
+// is built lazily and reused across the remaining drivers in the pass.
 func (a *App) assessSelectedDrivers(ctx context.Context, vc *ViewContext, selected []*model.Driver, currentSourceMap map[string]model.SourceMapEntry, preferredSource string) {
 	var alternateSourceMap map[string]model.SourceMapEntry
-	versionIndex, err := a.deviceVersionIndex(ctx, vc.LocalDevices, selected)
+	matchedForDriver, evidenceUnion := matchedByDriver(selected, vc.LocalDevices)
+	versionIndex, err := a.deviceVersionIndex(ctx, evidenceUnion)
 	if err != nil {
 		a.Log(ctx, "Could not read local driver versions: "+err.Error(), "WARN")
 		return
 	}
-	for _, driver := range selected {
+
+	var evidenceByID map[string]model.Device
+	evidenceBuilt := false
+	for i, driver := range selected {
 		if driver == nil {
 			continue
 		}
@@ -270,7 +291,7 @@ func (a *App) assessSelectedDrivers(ctx context.Context, vc *ViewContext, select
 			driver.CompareStatus = model.StatusNotApplicable
 			continue
 		}
-		matchedDevices := compare.GetMatchingLocalDevices(driver, vc.LocalDevices)
+		matchedDevices := matchedForDriver[i]
 		localVersion, localVendor := a.localDriverState(driver, matchedDevices, versionIndex, &vc.SoftwareSnapshot)
 		driver.LocalVersion = localVersion
 		driver.LocalVendor = localVendor
@@ -281,7 +302,15 @@ func (a *App) assessSelectedDrivers(ctx context.Context, vc *ViewContext, select
 		if driver.CompareStatus == model.StatusLocalNewer && alternateSourceMap == nil {
 			alternateSourceMap = a.initAlternateSourceMap(ctx, vc, vc.CurrentSystemOsID, preferredSource)
 		}
-		driver.SourceAudit = a.resolveDriverSourceAudit(ctx, driver, matchedDevices, vc.History, currentSourceMap, alternateSourceMap)
+		if !evidenceBuilt {
+			evidenceByID, err = a.buildDeviceEvidenceMap(ctx, evidenceUnion)
+			if err != nil {
+				a.Log(ctx, "Device evidence lookup failed: "+err.Error(), "WARN")
+				evidenceByID = nil
+			}
+			evidenceBuilt = true
+		}
+		driver.SourceAudit = a.resolveDriverSourceAudit(driver, matchedDevices, evidenceByID, vc.History, currentSourceMap, alternateSourceMap)
 		if driver.CompareStatus == model.StatusLocalNewer {
 			driver.CompareSource = audit.ResolveDriverSourceLabel(driver, vc.History, alternateSourceMap, driver.SourceAudit)
 			a.Log(ctx, "["+driver.DriverCode+"] "+driver.CompareSource, "WARN")
@@ -403,14 +432,14 @@ func (a *App) initAlternateSourceMap(ctx context.Context, vc *ViewContext, sysID
 }
 
 func (a *App) resolveDriverSourceAudit(
-	ctx context.Context,
 	driver *model.Driver,
 	matchedDevices []model.Device,
+	evidenceByID map[string]model.Device,
 	history []model.HistoryRecord,
 	currentSourceMap map[string]model.SourceMapEntry,
 	alternateSourceMap map[string]model.SourceMapEntry,
 ) *model.SourceAudit {
-	deviceEvidence := a.enrichDeviceEvidence(ctx, matchedDevices)
+	deviceEvidence := projectMatchedEvidence(matchedDevices, evidenceByID)
 	auditResult := audit.ResolveDriverSourceEvidence(driver, deviceEvidence, history, alternateSourceMap, currentSourceMap)
 	return &auditResult
 }

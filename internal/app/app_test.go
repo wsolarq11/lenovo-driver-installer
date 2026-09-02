@@ -201,6 +201,28 @@ func TestSelectByCodesRejectsPartialAndNotApplicable(t *testing.T) {
 	}
 }
 
+func TestAcquireSelectionPreservesExitCodeContract(t *testing.T) {
+	view := &DriverView{
+		Selected: []*model.Driver{
+			{DriverCode: "d1", CompareStatus: model.StatusUpdate},
+		},
+	}
+	// A GUI-code path that matches every requested code selects and returns 0.
+	match := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	matchVC := &ViewContext{Opts: Options{GuiInstallCodes: "d1"}}
+	selected, code := match.acquireSelection(context.Background(), matchVC, view, "42")
+	if code != 0 || len(selected) != 1 || selected[0].DriverCode != "d1" {
+		t.Fatalf("matching codes must select and continue: selected=%#v code=%d", selected, code)
+	}
+	// A GUI-code mismatch must abort with PS1 exit code 3, never 0 or 1.
+	mismatch := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	mismatchVC := &ViewContext{Opts: Options{GuiInstallCodes: "missing"}}
+	selected, code = mismatch.acquireSelection(context.Background(), mismatchVC, view, "42")
+	if code != 3 || selected != nil {
+		t.Fatalf("missing GUI codes must return code 3 with no selection: selected=%#v code=%d", selected, code)
+	}
+}
+
 func TestNextOSLabelIncludesOSID(t *testing.T) {
 	osList := []model.OSListEntry{
 		{OSID: "42", OSName: "Windows 10 64-bit"},
@@ -393,5 +415,32 @@ func TestCloneDriversIsOwnedCopy(t *testing.T) {
 	}
 	if source[0].SourceAudit.Summary != "" {
 		t.Fatalf("nested source audit was not deep-copied: %#v", source[0].SourceAudit)
+	}
+}
+
+// TestProjectMatchedEvidencePreservesPerDriverSemantics locks the batch
+// evidence projection added by the single-pass compare-flow dedup: each driver's
+// source audit must see the same enriched rows a per-driver GetDeviceEvidence
+// call returned, and degrade to the plain matched rows when the batch pass
+// failed.
+func TestProjectMatchedEvidencePreservesPerDriverSemantics(t *testing.T) {
+	matched := []model.Device{
+		{PnpDeviceID: "A", Class: "class-a"},
+		{PnpDeviceID: "B", Class: "class-b"},
+	}
+	// A failed (nil) evidence pass must fall back to the raw matched rows.
+	got := projectMatchedEvidence(matched, nil)
+	if len(got) != 2 || got[0].PnpDeviceID != "A" || got[1].PnpDeviceID != "B" {
+		t.Fatalf("nil evidence map must return the matched rows unchanged: %#v", got)
+	}
+	// A successful pass projects only the matched rows present in the map, in
+	// matched order, carrying the enriched values.
+	byID := map[string]model.Device{
+		"A": {PnpDeviceID: "A", Class: "class-a-enriched", ImportSource: "setupapi"},
+		"X": {PnpDeviceID: "X", Class: "unrelated"},
+	}
+	want := []model.Device{{PnpDeviceID: "A", Class: "class-a-enriched", ImportSource: "setupapi"}}
+	if got := projectMatchedEvidence(matched, byID); !reflect.DeepEqual(got, want) {
+		t.Fatalf("projection must pick enriched in-map rows in matched order: got %#v want %#v", got, want)
 	}
 }

@@ -1,3 +1,3 @@
 module lenovo-driver
 
-go 1.24.4
+go 1.27

@@ -277,7 +277,8 @@ func (a *App) verifyInstalled(ctx context.Context, drivers []*model.Driver) {
 		a.Log(ctx, "Post-install verification failed: "+err.Error(), "ERROR")
 		return
 	}
-	versionIndex, err := a.deviceVersionIndex(ctx, localDevices, drivers)
+	_, union := matchedByDriver(drivers, localDevices)
+	versionIndex, err := a.deviceVersionIndex(ctx, union)
 	if err != nil {
 		a.Log(ctx, "Post-install verification failed: could not read local driver versions: "+err.Error(), "ERROR")
 		return

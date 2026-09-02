@@ -163,17 +163,9 @@ func (a *App) Run(args []string) int {
 		return code
 	}
 
-	listOsID := vc.CurrentSystemOsID
-	if opts.TargetOS != "" {
-		target := compare.ResolveTargetOsEntry(vc.OsList, opts.TargetOS)
-		if target == nil {
-			a.Log(ctx, "Could not resolve -TargetOS '"+opts.TargetOS+"' from the Lenovo OS list for this machine.", "ERROR")
-			return 1
-		}
-		listOsID = target.OSID
-		a.Log(ctx, "Target OS entry : "+target.OSName+" (OSID "+listOsID+")", "INFO")
-	} else if !opts.LatestAcrossOS && !opts.CurrentOSOnly && len(vc.OsList) > 1 {
-		a.Log(ctx, "Current OS mode enabled (default). In the interactive menu, press t to switch supported OS lists.", "INFO")
+	listOsID, code := a.resolveListOS(ctx, vc, opts)
+	if code != 0 {
+		return code
 	}
 
 	view, err := a.CompareOSDriverView(ctx, vc, listOsID)
@@ -186,43 +178,63 @@ func (a *App) Run(args []string) int {
 }
 
 // runSelection dispatches the export, dry-run, and select/install flows that
-// follow a successful comparison view build.
+// follow a successful comparison view build, routing each run to a single
+// named mode handler.
 func (a *App) runSelection(ctx context.Context, vc *ViewContext, view *DriverView, listOsID string) int {
-	if vc.Opts.GuiExportPath != "" {
-		if err := a.ExportGUIView(vc.Opts.GuiExportPath, vc, view); err != nil {
-			a.Log(ctx, "GUI export failed: "+err.Error(), "ERROR")
-			return 1
-		}
-		a.Log(ctx, "GUI export : "+vc.Opts.GuiExportPath, "INFO")
-		return 0
-	}
-
-	if vc.Opts.DryRun {
+	switch {
+	case vc.Opts.GuiExportPath != "":
+		return a.runExport(ctx, vc, view)
+	case vc.Opts.DryRun:
 		a.Log(ctx, "Dry run finished. No files were downloaded or installed.", "INFO")
 		return 0
+	default:
+		return a.runInstallFlow(ctx, vc, view, listOsID)
 	}
+}
 
-	var selected []*model.Driver
-	if vc.Opts.GuiInstallCodes != "" {
-		selection := selectByCodes(view.Selected, vc.Opts.GuiInstallCodes)
-		if len(selection.Missing) > 0 || len(selection.NotApplicable) > 0 || len(selection.Selected) == 0 {
-			a.Log(ctx, "GUI-selected driver codes did not match the current list.", "ERROR")
-			return 3
-		}
-		selected = selection.Selected
-	} else {
-		selection := a.SelectInteractive(ctx, vc, view, listOsID)
-		if selection == nil {
-			return 0
-		}
-		selected = selection
+// runExport writes the WPF-compatible JSON view and exits.
+func (a *App) runExport(ctx context.Context, vc *ViewContext, view *DriverView) int {
+	if err := a.ExportGUIView(vc.Opts.GuiExportPath, vc, view); err != nil {
+		a.Log(ctx, "GUI export failed: "+err.Error(), "ERROR")
+		return 1
 	}
+	a.Log(ctx, "GUI export : "+vc.Opts.GuiExportPath, "INFO")
+	return 0
+}
 
+// runInstallFlow acquires the driver selection and then runs the bounded
+// download/install/verify pass. The exit code from selection (0 for none, 3
+// for a GUI-code mismatch) is returned unchanged.
+func (a *App) runInstallFlow(ctx context.Context, vc *ViewContext, view *DriverView, listOsID string) int {
+	selected, code := a.acquireSelection(ctx, vc, view, listOsID)
+	if code != 0 {
+		return code
+	}
 	if err := a.InstallSelected(ctx, vc, selected, view.Source, listOsID); err != nil {
 		a.Log(ctx, "Install failed: "+err.Error(), "ERROR")
 		return 1
 	}
 	return 0
+}
+
+// acquireSelection resolves the driver set to install from the GUI install
+// codes or the interactive prompt. A nonzero code means the run should abort
+// with that PS1-style exit code (3 for a GUI-code mismatch, 0 for a user
+// cancel with nothing to install).
+func (a *App) acquireSelection(ctx context.Context, vc *ViewContext, view *DriverView, listOsID string) ([]*model.Driver, int) {
+	if vc.Opts.GuiInstallCodes != "" {
+		selection := selectByCodes(view.Selected, vc.Opts.GuiInstallCodes)
+		if len(selection.Missing) > 0 || len(selection.NotApplicable) > 0 || len(selection.Selected) == 0 {
+			a.Log(ctx, "GUI-selected driver codes did not match the current list.", "ERROR")
+			return nil, 3
+		}
+		return selection.Selected, 0
+	}
+	selection := a.SelectInteractive(ctx, vc, view, listOsID)
+	if selection == nil {
+		return nil, 0
+	}
+	return selection, 0
 }
 
 // maybeElevated reports whether the process should relaunch elevated (and, if
@@ -308,6 +320,26 @@ func (a *App) resolveRuntime(ctx context.Context, opts *Options) (*ViewContext, 
 		Machine:           machine,
 		OSInfo:            osInfo,
 	}, 0
+}
+
+// resolveListOS resolves the OS identifier whose driver list will be compared
+// against: the explicit -TargetOS entry, or the current system OS by default.
+// It returns the PS1-style exit code (0 on success). The default OS entry is
+// always a valid fallback, so it never fails on the normal path.
+func (a *App) resolveListOS(ctx context.Context, vc *ViewContext, opts *Options) (string, int) {
+	if opts.TargetOS != "" {
+		target := compare.ResolveTargetOsEntry(vc.OsList, opts.TargetOS)
+		if target == nil {
+			a.Log(ctx, "Could not resolve -TargetOS '"+opts.TargetOS+"' from the Lenovo OS list for this machine.", "ERROR")
+			return "", 1
+		}
+		a.Log(ctx, "Target OS entry : "+target.OSName+" (OSID "+target.OSID+")", "INFO")
+		return target.OSID, 0
+	}
+	if !opts.LatestAcrossOS && !opts.CurrentOSOnly && len(vc.OsList) > 1 {
+		a.Log(ctx, "Current OS mode enabled (default). In the interactive menu, press t to switch supported OS lists.", "INFO")
+	}
+	return vc.CurrentSystemOsID, 0
 }
 
 func (a *App) RelaunchElevated(args []string) (bool, int) {

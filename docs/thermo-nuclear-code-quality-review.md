@@ -824,3 +824,178 @@ Go 文件。其尾部约 76 行（`guiExportPayload` / `guiDriverRow` / `ExportG
 | `go vet -tags legacyps ./...` | VET_OK |
 
 > 非页面型交付，无页面/视觉 smoke 需求。
+---
+
+## 11. 第八轮 — 未提交工作区复审（Round 8，2026）
+
+> 对象：`main` 之上**未提交工作区**（Round 7 之后新增的改动），共 6 文件（+208/−53）：
+> `go.mod`（1.24.4→1.27.0）、`internal/model/model.go`（`DriverAssessment` 嵌入 `Driver`）、
+> `internal/app/app.go`（`resolveListOS`/`runSelection` 拆 `runExport`/`runInstallFlow`/`acquireSelection`）、
+> `internal/app/evidence.go`（`enrichDeviceEvidence` → `buildDeviceEvidenceMap`+`projectMatchedEvidence`）、
+> `internal/app/view.go`（`assessSelectedDrivers` 证据批处理 + `resolveDriverSourceAudit` 签名变更）、
+> `internal/app/app_test.go`（2 组新单测）。方法与前七轮同构：独立通读差异 + 既有上下文 → 以热核技能
+> 维度（抽象 / 简化 / 意大利面 / 边界 / 复制）新猎 → 实机 `go build/vet/test/gofmt` 复核。
+
+### 11.1 结论速览
+
+本轮改动**质量整体中上**：`app.go` 的 `runSelection` → `runExport`/`runInstallFlow`/`acquireSelection`
+提取是干净、行为不变的简化（降低嵌套、职责被命名）；证据批处理（`buildDeviceEvidenceMap` +
+`projectMatchedEvidence`）是**本轮最有价值的部分**——把「每驱动一次全 PnP 枚举 + setupapi 日志重读」
+降为**每 pass 一次**，补齐了 `V6`→`S1` 家族里仅剩的「证据审计」N+1 缺口，且正确降级（枚举失败回
+原始匹配行），两个新单测锁住了正确契约。
+
+但有两处**阻塞级**的结构问题，按技能放行条曾须先修正；**本轮已一并落地**（行为不变，回归红线全绿）：
+
+| ID | 严重度 | 主题 | 一句话 | 状态 |
+| --- | --- | --- | --- | --- |
+| `R8-1` | 高·边界/柔术 | `go.mod` 语言级与嵌入的关系 | 提升字段复合字面量确实需要 go1.27+；最终决定：锁定 **`go 1.27`（Latest stable，不带 patch）**为既定契约，测试字面量用提升缩写，后续不再为此回退 | 已定案（接受） |
+| `R8-2` | 高·复制 | 匹配遍历在 `deviceVersionIndex` 与 `assessSelectedDrivers` 各写一遍 | 抽 `matchedByDriver` 单一遍历源，版本索引与证据审计均消费其结果，评估流对同一 set 只匹配一遍 | 已落地 |
+
+`R8-2` 属「重复逻辑必须抽公共函数」，已柔术落地；`R8-1` 经评审与被裁决后**定案为接受的既定基线**
+（`go 1.27`），不再作为阻塞项。落地细节见 §11.3，复验见 §11.4。
+
+放行条中其余预设气味（>1k 文件、朴素 if 链、伪装抽象、恒等转发壳）**不成立**：最大文件
+`app/view.go` 456 行、`app/app.go` 372 行，均远未到上限；`app.go` 的拆解整体是对轮次的干净推进，
+无新意大利面。
+
+### 11.2 规模事实（实测，本轮范围）
+
+| 指标 | 数值 |
+|------|------|
+| 改动文件 / 行数 | 评审对象 6 文件（+208/−53）；落地后累计 8 文件（本轮新增落地改动 `install.go`/`audit_test.go`/`plan_test.go`/`go.mod`） |
+| 最大文件 | `app/view.go` 456、`app/app.go` 372、`app/app_test.go` 446（均 < 500） |
+| `go build / vet / test / gofmt` | 全绿（见 §11.5） |
+| `go 1.27.0` 语言级 | `go test ./internal/audit|plan` 在 `-lang go1.24` 下**编译失败**——确认依赖提升字段复合字面量 |
+
+### 11.3 发现清单（按严重度）
+
+#### `R8-1` [高 · 边界 · 已定案（接受）] `go.mod` 语言级与嵌入的关系
+
+`go.mod` 由 `go 1.24.4` → `go 1.27.0`。`model.go:43-48` 注释自辩称「嵌入的 assessment struct
+在复合字面量里用提升字段需要 go1.2x+」，并以此为本轮 go.mod 升版背书。
+
+**证据核查：该 go 版本提升只被测试文件需要，生产代码一次都不需要。**
+- 生产侧唯一构造 `model.Driver` 的复合字面量在 `api/parse.go:148`，只用到本结构自有字段（`PartID`
+  等），**从不**用到提升字段（`LocalVersion`/`CompareStatus`）。
+- 用提升字段的复合字面量全在 `*_test.go`：`internal/audit/audit_test.go`（8 处）、`internal/plan/
+  plan_test.go`（~8 处）、`internal/app/app_test.go`、`internal/install/install_test.go`、`internal/
+  compare/compare_test.go`。这些 `&model.Driver{… LocalVersion: "x", CompareStatus: "Update"}` 是该
+  语言版本提升触发的**唯一**原因——只有编译器报「use of promoted field … requires go1.27 or later」。
+
+**最终裁决（被采纳）**：评审判定曾被给出（go1.27 语言级是单向门，仅为测试便利不值得，建议回
+1.24.4）。经用户复核后该建议**未被采纳**；用户决定**锁定 `go 1.27`（Latest stable, 不带 patch）**——即
+「本仓储建立在最新稳定语言级上」是接受的既定契约，不回退。落地取舍：
+- `go.mod` 定为 `go 1.27`（不带 patch；Go 自动解析为当前最新 patch，1.28 发布时只在升级窗口跑一次
+  `go get go@latest`，其余时间不动）；
+- 测试字面量**保留提升字段缩写**（`LocalVersion:`/`CompareStatus:`/`SourceAudit:` 直接写），贴合嵌入
+  设计、更简洁；
+- `model.go` 的 `Driver` 注释按「既定契约」改述事实（见下段）：读取靠提升字段访问、复合字面量靠提升
+  缩写，均需 go1.27+——这是刻意锁定、不回退的基础；
+- 复验：`go build/vet/test ./...` 与 `gofmt -l` 在 `go 1.27` 下全绿（含 `-tags legacyps`），见 §11.4。
+
+**（历史评审建议，未采纳）**：见上方「最终裁决」对应的回退方案——保留嵌入、测试改显式嵌套、go.mod 回 1.24。经用户复核未采纳，最终定案为锁 go 1.27。
+
+**（同段历史落地草稿，未采用）**：
+- 全部 16 处测试里用提升字段的复合字面量改显式嵌套：
+  `internal/audit/audit_test.go`（7 处 `LocalVersion`）、`internal/plan/plan_test.go`
+  （`LocalVersion`/`CompareStatus` 若干）、`internal/app/app_test.go`
+  （`LocalVersion`/`CompareStatus`/`SourceAudit` 若干），形如
+  `&model.Driver{DriverCode: "d1", OSID: "42", DriverAssessment: model.DriverAssessment{LocalVersion: "..."}}`；
+- `go.mod` 回 `go 1.24.4`；
+- `model.go` 的 `Driver` 注释改为陈述「嵌入使 encoding/json 扁平化、线契约不变 + 字段按类型分组」，
+  删除「requires go1.2x+ / pins a recent stable language level」的自辩；
+- 复验：`go build/vet/test ./...` 与 `gofmt -l` 在 `go 1.24.4` 下全绿（含 `-tags legacyps`），见 §11.4。
+
+#### `R8-2` [高 · 柔术 · 已落地] 匹配遍历 duplicated：`deviceVersionIndex` 与 `assessSelectedDrivers`
+
+`view.go` 现有两条几乎逐字相同的遍历：
+
+- `deviceVersionIndex`（`view.go:140-167`）：
+  ```go
+  for _, driver := range selected {
+      if driver == nil || !compare.TestDriverApplicable(driver, localDevices) { continue }
+      for _, id := range pnpIDsOf(compare.GetMatchingLocalDevices(driver, localDevices)) {
+          // dedup by PnpDeviceID
+      }
+  }
+  ```
+- `assessSelectedDrivers` 新增的 evidence 预备遍（`view.go:266-286`）：
+  ```go
+  for i, driver := range selected {
+      if driver == nil || !compare.TestDriverApplicable(driver, localDevices) { continue }
+      matched := compare.GetMatchingLocalDevices(driver, localDevices)
+      matchedForDriver[i] = matched
+      for _, device := range matched { /* dedup by PnpDeviceID */ }
+  }
+  ```
+
+两者对**同一 selected set**执行同一「跳过不可用 → 取匹配设备 → 按 PnP ID 去重」遍历；而
+`assessSelectedDrivers` 开头就调 `deviceVersionIndex`（它内部已完整遍历一遍），随后又自己遍历一遍去拼
+`evidenceUnion`。既**复制了逻辑**，又在评估流里**对同一各匹配集跑了两次匹配**。
+
+**柔化动作（行为不变）**：让 `deviceVersionIndex` 消费 `assessSelectedDrivers` 已算出的
+`matchedForDriver`（每驱动匹配集合）+ 去重 PnP ID 的单一来源，而不是自带一遍遍历。改法（任选其一、
+推荐 1）：
+1. 抽单一 helper `matchedDevicesByDriver(selected, localDevices) ([][]model.Device, []model.Device)`
+   ——返回每驱动匹配表 + 去重 union；`deviceVersionIndex` 改为接收该表（或 union 的 PnP id 列表），
+   `assessSelectedDrivers` 用同一表，阅读即知两处同源。
+2. 或让 `assessSelectedDrivers` 先拼 `matchedForDriver`，再把「全部匹配 PnP id」传给
+   `deviceVersionIndex`（改其签名为接收 ids 或 matched table）。
+
+要点是**踪迹去重/union 只出现一次**，消除「复制匹配逻辑 + 重复匹配」这一对硬伤，仍是行为不变的纯
+结构简化。
+
+**落地（已落地，行为不变）**：
+- `view.go` 新增单一遍历源 `matchedByDriver(selected, localDevices) (perDriver [][]model.Device,
+  union []model.Device)`——承担「跳不可用 → `GetMatchingLocalDevices` → 按 PnP ID 去重（空 ID 过滤）
+  → 拼 union」的全部逻辑；
+- `deviceVersionIndex` 签名简化为 `(ctx, devices []model.Device)`，内部只做 `pnpIDsOf + 单次
+  GetDeviceDriverVersions + 建索引`，不再自带遍历；
+- `assessSelectedDrivers` 先 `matchedForDriver, union := matchedByDriver(...)` 一次拿到每驱动匹配表与
+  union，版本索引与证据审计共用同一结果，对同一 selected set 只遍历一遍；
+- `install.go` 的 post-install 验证流同步改走 `matchedByDriver` 取 union 后喂 `deviceVersionIndex`；
+- 语义核对：旧代码 union 会把空 PnP ID 设备去重成一条，但 `GetDeviceEvidence`/投影均按 PnpDeviceID
+  查表、空 ID 永不命中，故新 helper 跳过空 ID 不改变任何输出——**行为一致**；复验全绿（§11.4）。
+
+#### 更低危观察（不阻塞）
+
+- `DriverAssessment` 嵌入是 `V4`「transport 与 assessment 彻底分离」的**中间态**——它只做了字段归组，
+  没真分离（`Driver` 仍是三人一体的扁 JSON blob，嵌入使 plan/export 线不变）。这是接受的方向，只要
+  `R8-1` 解决；但要如 §7 记下：`Driver` 真正的 transport/assess 分离仍待后续。
+- 证据批改（`buildDeviceEvidenceMap` + `projectMatchedEvidence`）本身行为保持且是把图像正向工程：
+  - union 去重按 PnP ID 安全（同一设备的 PnP 属性在各驱动映射内等价）；每驱动只需投影其匹配行 → 与
+    旧「每驱动枚举」逐行一致；
+  - `localVersion == ""` 驱动的 `continue` 前置意味着若无可用驱动带本地版本，证据永不 build，此时
+    `projectMatchedEvidence(nil)` 回原始匹配行，等价于旧 per-driver 降级——**行为一致**；
+  - setupapi 日志现在只读一遍（`loadDriverImportRecords` 在 union 内一次）vs 旧每驱动一遍——净益。
+  无问题。
+- `app.go` 三种 `switch` 拆 `acquireSelection`（返回 `([]*model.Driver, int)`）把「PS1 退出码契约
+  （3=GUI 码不匹配）」命名的单测 `TestAcquireSelectionPreservesExitCodeContract` 与 `app_test` 的
+  `TestSelectByCodesRejectsPartialAndNotApplicable` 一起收敛得很好。无问题。
+
+### 11.4 验证矩阵（Round 8，落地后）
+
+> 最终状态（`R8-1` 定为 `go 1.27` 既定契约、`R8-2` 落地）实机复核：全绿。
+
+| 检查 | 结果 |
+| --- | --- |
+| `go build ./...` | BUILD_OK |
+| `go vet ./...` | VET_OK |
+| `go test ./...` | 全部包 ok（`api/app/audit/compare/download/install/inventory/model/pathutil/plan`） |
+| `gofmt -l cmd/ internal/` | 干净 |
+| `go build -tags legacyps ./...` | BUILD_OK |
+| `go vet -tags legacyps ./...` | VET_OK |
+| `go.mod` 语言级 | `go 1.27`（Latest stable, 不带 patch；全树在此语言级编译/测试，利用并依赖 go1.27+ 提升字段复合字面量） |
+
+> 落地前的基线证据：`go.mod` 原为 `go 1.27.0` 时，仅在 `go test ./internal/audit ./internal/plan`
+> （`-lang go1.24` 编译级）报「requires go1.27 or later」，生产 `go build` 不受影响——即 `R8-1` 的空洞。
+
+> 非页面型交付：无视觉/页面 smoke 需求。
+
+### 11.5 放行判定
+
+按热核放行条，`R8-1` 与 `R8-2` 评审时为**预设阻塞项**。裁决结果：
+- `R8-2` 已落地（新增 `matchedByDriver` 单一遍历源消除双份匹配与双遍遍历，行为不变）；
+- `R8-1` 经用户复核**定为接受的既定契约**：go.mod 锁 `go 1.27`（Latest stable, 不带 patch），测试字面量保留提升字段缩写，`Driver` 注释陈述「依赖 go1.27+ 提升字段」为不回退基础。
+
+最终状态 §11.4 全绿（含 `-tags legacyps`）。**本轮放行。** 遗留不阻塞方向见下。

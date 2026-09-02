@@ -27,7 +27,32 @@ const (
 	AuditCategoryPreExistingStore    AuditCategory = "Pre-existing DriverStore package"
 )
 
-// Driver is the normalized Lenovo driver row used by all higher layers.
+// DriverAssessment is the comparison and source-audit results computed for a
+// driver after it is selected for the view. It is embedded in Driver so every
+// existing field access keeps working, but the assessment values are logically
+// scoped to the assessed view layer, separating them from the transport payload
+// that comes from the Lenovo API.
+type DriverAssessment struct {
+	LocalVersion  string        `json:"LocalVersion"`
+	LocalVendor   string        `json:"LocalVendor"`
+	CompareStatus CompareStatus `json:"CompareStatus"`
+	CompareSource string        `json:"CompareSource"`
+	SourceAudit   *SourceAudit  `json:"SourceAudit,omitempty"`
+}
+
+// Driver is the normalized Lenovo driver row used by all higher layers. It
+// carries the transport fields from the API (PartID .. SourceAPI) and embeds
+// the assessed results (DriverAssessment). The embedded struct is flattened by
+// encoding/json onto the same wire shape the fields had when declared flat
+// here, so the API payload and the comparison view stay one row whose assessed
+// fields are grouped under one documented type.
+//
+// Reading through the embedded assessment fields uses promoted-field access,
+// and writing them in composite literals uses promoted-field literals, both of
+// which require Go 1.27+. go.mod therefore pins the current latest stable
+// language level (go 1.27, no patch) as an accepted, non-negotiable baseline:
+// this heap is intentionally built on it and should not be downgraded for
+// unrelated refactors.
 type Driver struct {
 	PartID           string    `json:"PartId"`
 	PartName         string    `json:"PartName"`
@@ -51,11 +76,7 @@ type Driver struct {
 	OSName           string    `json:"OsName"`
 	SourceAPI        string    `json:"SourceApi"`
 
-	LocalVersion  string        `json:"LocalVersion"`
-	LocalVendor   string        `json:"LocalVendor"`
-	CompareStatus CompareStatus `json:"CompareStatus"`
-	CompareSource string        `json:"CompareSource"`
-	SourceAudit   *SourceAudit  `json:"SourceAudit,omitempty"`
+	DriverAssessment
 }
 
 // Disabled reports whether the API marks the driver row as disabled or not
