@@ -252,44 +252,19 @@ plan, download, install, and app orchestration. The deterministic core is
 side-effect-free where practical so it can be tested without a real machine or
 network.
 
-Build and verify the Go engine with:
+The full development and build pipeline — fast inner loop, offline acceptance
+gate, real-machine smokes, and CI behavior — is documented in
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). To iterate quickly, run the unified
+loop (build → vet → fmt → test → build `bin\lenovo-driver.exe`):
 
 ```powershell
-go build ./...
-go test ./...
-go vet ./...
-gofmt -w internal cmd
-go build -o bin\lenovo-driver.exe .\cmd\lenovo-driver
+.\scripts\dev.ps1
 ```
 
-Run the full offline acceptance gate with:
+Run the authoritative offline acceptance gate (the same 14-step gate CI runs):
 
 ```powershell
 .\scripts\verify.ps1
-```
-
-Run the opt-in real-machine native inventory quality checks on a Windows
-machine with Lenovo hardware:
-
-```powershell
-$env:LENOVO_NATIVE_SMOKE=1; go test ./internal/inventory/ -run TestNativeSmoke -count=10 -v
-# native-vs-PowerShell equivalence requires the legacyps test oracle tag
-$env:LENOVO_NATIVE_EQUIV_SMOKE=1; go test -tags legacyps ./internal/inventory/ -run TestNativePSEquivalenceSmoke -v
-```
-
-Native install API smoke (does not install a real driver; verifies the
-`DiInstallDriverW` path is callable and the pnputil fallback remains wired):
-
-```powershell
-$env:LENOVO_NATIVE_INSTALL_SMOKE=1; go test ./internal/install/ -run TestNativeInstallSmoke -count=3 -v
-```
-
-Smoke-check the WPF render and the real API bridge after building the Go
-engine:
-
-```powershell
-.\lenovo_driver_wpf.ps1 -SelfTest -NoElevation
-.\lenovo_driver_wpf.ps1 -WorkerSmoke -NoElevation
 ```
 
 The architecture, API contract, installer behavior, and clean-checkout
