@@ -260,7 +260,11 @@ func (a *App) resolveRuntime(ctx context.Context, opts *Options) (*ViewContext, 
 
 	categoryID, err := a.APIClient.ResolveCategoryID(ctx, firstNonEmpty(opts.Model, machine.Model), machine.Serial)
 	if err != nil || categoryID == "" {
-		a.Log(ctx, "Could not resolve the Lenovo machine category. Use -Model \"82JQ\" if the automatic lookup fails: "+errText(err), "ERROR")
+		reason := ""
+		if err != nil {
+			reason = err.Error()
+		}
+		a.Log(ctx, "Could not resolve the Lenovo machine category. Use -Model \"82JQ\" if the automatic lookup fails: "+reason, "ERROR")
 		return nil, 1
 	}
 	a.Log(ctx, "Lenovo category ID : "+categoryID, "INFO")
@@ -324,13 +328,6 @@ func (a *App) RelaunchElevated(args []string) (bool, int) {
 		return true, 1
 	}
 	return true, code
-}
-
-func errText(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }
 
 func firstNonEmpty(values ...string) string {

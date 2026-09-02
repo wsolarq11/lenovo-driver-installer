@@ -77,11 +77,11 @@ func (a *App) promptChoice(view *DriverView, allowToggle bool, nextOSLabel strin
 	if allowToggle {
 		toggleText = ", t to switch to " + nextOSLabel
 	}
+	prompt := "Type a to install the all-applicable set"
 	if hasUpdates {
-		fmt.Fprintf(a.Stdout, "Type y to install the update-only set, a to install the all-applicable set, s to select%s, n to cancel: ", toggleText)
-	} else {
-		fmt.Fprintf(a.Stdout, "Type a to install the all-applicable set, s to select%s, n to cancel: ", toggleText)
+		prompt = "Type y to install the update-only set, a to install the all-applicable set"
 	}
+	fmt.Fprintf(a.Stdout, "%s, s to select%s, n to cancel: ", prompt, toggleText)
 	line, err := readLine(a.Stdin)
 	if err != nil {
 		return SelectionAnswer{Cancel: true}

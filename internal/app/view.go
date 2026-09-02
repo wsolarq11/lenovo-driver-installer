@@ -171,11 +171,11 @@ func (a *App) deviceVersionIndex(ctx context.Context, localDevices []model.Devic
 // failed load is a hard error rather than a tolerated soft miss.
 func (a *App) mustDriverList(ctx context.Context, vc *ViewContext, osID, preferredSource string) (api.SourceDrivers, error) {
 	driverResult, err := a.cachedDriverObjects(ctx, vc, osID, preferredSource)
-	if err != nil || len(driverResult.Drivers) == 0 {
-		if err == nil {
-			err = fmt.Errorf("the official driver list was empty")
-		}
+	if err != nil {
 		return api.SourceDrivers{}, fmt.Errorf("could not load the official driver list from %s or the webpage API: %w", preferredSource, err)
+	}
+	if miss := toleratedDriverListMiss(nil, driverResult); miss != nil {
+		return api.SourceDrivers{}, fmt.Errorf("could not load the official driver list from %s or the webpage API: %w", preferredSource, miss)
 	}
 	return driverResult, nil
 }
