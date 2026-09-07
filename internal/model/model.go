@@ -47,6 +47,13 @@ type DriverAssessment struct {
 // here, so the API payload and the comparison view stay one row whose assessed
 // fields are grouped under one documented type.
 //
+// Fields from DriverAssessment (LocalVersion, LocalVendor, CompareStatus,
+// CompareSource, SourceAudit) are post-hoc evaluation results computed by the
+// compare/audit pipeline. They are NOT present in the Lenovo API response, and
+// consumers that read them must obtain them through the assessment pipeline
+// (app.assessSelectedDrivers) or the GUI export projection (guiDriverRow),
+// not by assuming they exist in the raw transport payload.
+//
 // Reading through the embedded assessment fields uses promoted-field access,
 // and writing them in composite literals uses promoted-field literals, both of
 // which require Go 1.27+. go.mod therefore pins the current latest stable

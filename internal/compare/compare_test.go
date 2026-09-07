@@ -191,3 +191,12 @@ func TestInstallSucceeded(t *testing.T) {
 		}
 	}
 }
+
+func TestDriverMatchRulesHaveSequentialPriority(t *testing.T) {
+	for i, rule := range driverMatchRules {
+		if rule.priority != i+1 {
+			t.Fatalf("driverMatchRules[%d].priority = %d, want %d (slice order must match priority)",
+				i, rule.priority, i+1)
+		}
+	}
+}
