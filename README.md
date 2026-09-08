@@ -261,7 +261,8 @@ loop (build → vet → fmt → test → build `bin\lenovo-driver.exe`):
 .\scripts\dev.ps1
 ```
 
-Run the authoritative offline acceptance gate (the same 14-step gate CI runs):
+Run the authoritative offline acceptance gate (the same gate CI runs; the
+script prints its own step count):
 
 ```powershell
 .\scripts\verify.ps1

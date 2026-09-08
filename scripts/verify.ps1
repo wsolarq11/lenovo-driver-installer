@@ -83,6 +83,29 @@ Assert-Step 'gofmt' {
     if ($unformatted) { throw "gofmt changed: $($unformatted -join ', ')" }
 }
 
+Assert-Step 'Go build (legacyps)' {
+    & $GoExe build -tags legacyps ./...
+    if ($LASTEXITCODE -ne 0) { throw "go build -tags legacyps exited $LASTEXITCODE" }
+}
+
+Assert-Step 'Go vet (legacyps)' {
+    & $GoExe vet -tags legacyps ./...
+    if ($LASTEXITCODE -ne 0) { throw "go vet -tags legacyps exited $LASTEXITCODE" }
+}
+
+Assert-Step 'Go source file size (prod <= 500)' {
+    $over = @()
+    foreach ($dir in @('cmd', 'internal')) {
+        Get-ChildItem -LiteralPath (Join-Path $repoRoot $dir) -Recurse -Filter '*.go' -File |
+            Where-Object { $_.Name -notlike '*_test.go' } |
+            ForEach-Object {
+                $count = @(Get-Content -LiteralPath $_.FullName).Count
+                if ($count -gt 500) { $over += ("{0} = {1} lines" -f $_.FullName, $count) }
+            }
+    }
+    if ($over.Count -gt 0) { throw "production Go file exceeds 500 lines: $($over -join ', ')" }
+}
+
 $psFiles = @(
     'lenovo_driver_wpf.ps1',
     'wpf\ui.ps1',
@@ -110,12 +133,17 @@ Assert-Step 'PowerShell parse' {
     }
 }
 
-Assert-Step 'WPF argument quoting' {
+Assert-Step 'WPF argument quoting (shared golden)' {
     . (Join-Path $repoRoot 'wpf\worker.ps1')
-    $tokens = ConvertTo-ProcessArgumentList -Arguments @('-Model', '82 JQ', '-GuiInstallCodes', 'a"b', '-GuiExportPath')
-    if ($tokens[0] -ne '-Model') { throw "unexpected flag token: $($tokens[0])" }
-    if ($tokens[1] -ne '"82 JQ"') { throw "unexpected space token: $($tokens[1])" }
-    if ($tokens[3] -ne '"a\"b"') { throw "unexpected quote token: $($tokens[3])" }
+    $casesPath = Join-Path $repoRoot 'internal\app\testdata\windows_argument_quoting.json'
+    $cases = @((Get-Content -LiteralPath $casesPath -Raw | ConvertFrom-Json).cases)
+    if ($cases.Count -lt 10) { throw "shared quoting golden too small: $($cases.Count) cases" }
+    foreach ($case in $cases) {
+        $got = ConvertTo-CommandLineArgument -Argument ([string]$case.input)
+        if ($got -ne $case.token) {
+            throw "quoting drift on '$($case.name)': got '$got', want '$($case.token)'"
+        }
+    }
 }
 
 Assert-Step 'Legacy PowerShell files removed' {

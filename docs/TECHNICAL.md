@@ -80,7 +80,7 @@ in `app`, `download`, `install`, and `inventory`.
 ## 4. Prerequisites
 
 - Windows 10 or Windows 11
-- Go 1.24.4 or newer from the official Go toolchain
+- Go 1.27 or newer from the official Go toolchain
 - Windows PowerShell 5.1 for the WPF layer
 - Administrator privileges for driver installation
 - Internet access to the Lenovo official API hosts
@@ -359,7 +359,7 @@ Windows machine and are outside the offline gate.
 
 ## 16. Reproduce From a Clean Checkout
 
-1. Install the official Go 1.24.4 toolchain.
+1. Install the official Go 1.27 (or newer) toolchain.
 2. Clone or copy the repository to a Windows machine.
 3. Open PowerShell in the repository root.
 4. Run `.\scripts\verify.ps1`.

@@ -11,7 +11,7 @@
 | What | Command |
 | --- | --- |
 | Fast inner loop (build → vet → fmt → test → build bin) | `.\scripts\dev.ps1` |
-| Full offline acceptance gate (14 steps) | `.\scripts\verify.ps1` |
+| Full offline acceptance gate (self-counted steps) | `.\scripts\verify.ps1` |
 | Inner loop + full gate in one run | `.\scripts\dev.ps1 -Verify` |
 | Fast loop without rebuilding `bin\lenovo-driver.exe` | `.\scripts\dev.ps1 -SkipBin` |
 | Run every offline step without a shell | push/PR: `scripts/verify.ps1` in CI |
@@ -73,9 +73,10 @@ After building the engine (`scripts/dev.ps1`), smoke-check the WPF surface:
 ## Continuous Integration
 
 `.github/workflows/verify.yml` runs `scripts/verify.ps1` on `windows-latest`
-(Go 1.24.4) for every push and pull request. The tracked CI runs only the
-offline gate — the hardware-dependent native and WPF smokes above are locally
-driven by design.
+(Go 1.27.x, locked to `GOTOOLCHAIN=local` so the CI version always matches
+`go.mod`) for every push and pull request. The tracked CI runs only the offline
+gate — the hardware-dependent native and WPF smokes above are locally driven by
+design.
 
 ---
 

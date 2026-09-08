@@ -96,8 +96,12 @@ function Start-WorkerPolling {
 
 function ConvertTo-CommandLineArgument {
     param([string]$Argument)
+    # Must-quote set and backslash-doubling rules are locked to
+    # internal/app/helpers.go quoteWindowsArgument by the shared golden file
+    # internal/app/testdata/windows_argument_quoting.json, asserted from Go
+    # tests and scripts/verify.ps1.
     if ($Argument -eq '') { return '""' }
-    if ($Argument -notmatch '[\s"]') { return $Argument }
+    if ($Argument -notmatch '[ \t\n\r\v\f"]') { return $Argument }
     $builder = New-Object System.Text.StringBuilder
     [void]$builder.Append('"')
     $backslashes = 0

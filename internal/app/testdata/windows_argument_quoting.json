@@ -1,0 +1,17 @@
+{
+  "_comment": "Single source of truth for Windows command-line argument quoting. Consumed by internal/app tests (quoteWindowsArgument in helpers.go) and by scripts/verify.ps1 (ConvertTo-CommandLineArgument in wpf/worker.ps1). Both implementations must agree with every token; never edit this file for one side only.",
+  "cases": [
+    { "name": "empty", "input": "", "token": "\"\"" },
+    { "name": "plain", "input": "82JQ", "token": "82JQ" },
+    { "name": "space", "input": "82 JQ", "token": "\"82 JQ\"" },
+    { "name": "embedded-quote", "input": "a\"b", "token": "\"a\\\"b\"" },
+    { "name": "path-with-space", "input": "C:\\temp with space\\file", "token": "\"C:\\temp with space\\file\"" },
+    { "name": "tab", "input": "a\tb", "token": "\"a\tb\"" },
+    { "name": "newline", "input": "a\nb", "token": "\"a\nb\"" },
+    { "name": "vtab", "input": "a\u000bb", "token": "\"a\u000bb\"" },
+    { "name": "formfeed", "input": "a\fb", "token": "\"a\fb\"" },
+    { "name": "carriage-return", "input": "a\rb", "token": "\"a\rb\"" },
+    { "name": "trailing-backslash", "input": "trailing\\", "token": "trailing\\" },
+    { "name": "trailing-backslash-quoted", "input": "x \\", "token": "\"x \\\\\"" }
+  ]
+}
