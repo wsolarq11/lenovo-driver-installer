@@ -8,20 +8,20 @@ import (
 )
 
 func TestGetSourceMapMatch(t *testing.T) {
-	driver := &model.Driver{DriverCode: "d1", DriverName: "Audio", LocalVersion: "2.0.0.1"}
+	driver := &model.Driver{DriverCode: "d1", DriverName: "Audio"}
 	sourceMap := map[string]model.SourceMapEntry{
 		"Audio|2.0.0.1": {OSID: "248", OSName: "Windows 11 64-bit"},
 	}
-	match := GetSourceMapMatch(driver, sourceMap, driver.LocalVersion)
+	match := GetSourceMapMatch(driver, sourceMap, "2.0.0.1")
 	if match == nil || match.OSID != "248" {
 		t.Fatalf("source map match failed: %v", match)
 	}
 }
 
 func TestResolveExternalDriverSourceLabel(t *testing.T) {
-	driver := &model.Driver{DriverName: "Audio", DriverCode: "d1", LocalVersion: "2.0.0.1"}
+	driver := &model.Driver{DriverName: "Audio", DriverCode: "d1"}
 	alternate := map[string]model.SourceMapEntry{"Audio|2.0.0.1": {OSID: "248", OSName: "Windows 11 64-bit"}}
-	got := ResolveExternalDriverSourceLabel(driver, alternate)
+	got := ResolveExternalDriverSourceLabel(driver, alternate, "2.0.0.1")
 	if got != "Local newer (source Windows 11 64-bit)" {
 		t.Fatalf("unexpected label: %q", got)
 	}
@@ -59,7 +59,10 @@ func TestConvertFromImportLogText(t *testing.T) {
 }
 
 func TestResolveDriverSourceEvidence(t *testing.T) {
-	driver := &model.Driver{DriverCode: "d1", DriverName: "Audio", LocalVersion: "2.0.0.1", OSID: "42"}
+	driver := &model.AssessedDriver{
+		Driver:           &model.Driver{DriverCode: "d1", DriverName: "Audio", OSID: "42"},
+		DriverAssessment: model.DriverAssessment{LocalVersion: "2.0.0.1"},
+	}
 	device := model.Device{Name: "Audio", DriverVersion: "2.0.0.1", InfName: "oem1.inf"}
 	auditResult := ResolveDriverSourceEvidence(driver, []model.Device{device}, nil, nil, nil)
 	if auditResult.Category != model.AuditCategoryPreExistingStore {
@@ -68,7 +71,10 @@ func TestResolveDriverSourceEvidence(t *testing.T) {
 }
 
 func TestSourceEvidenceHistoryOutranksDevice(t *testing.T) {
-	driver := &model.Driver{DriverCode: "d1", DriverName: "Audio", LocalVersion: "2.0.0.1", OSID: "42"}
+	driver := &model.AssessedDriver{
+		Driver:           &model.Driver{DriverCode: "d1", DriverName: "Audio", OSID: "42"},
+		DriverAssessment: model.DriverAssessment{LocalVersion: "2.0.0.1"},
+	}
 	history := []model.HistoryRecord{{
 		Timestamp: "2026-01-01 00:00:00", DriverCode: "d1", DriverName: "Audio",
 		Version: "2.0.0.1", Result: "Installed", OSID: "42",
@@ -84,7 +90,10 @@ func TestSourceEvidenceHistoryOutranksDevice(t *testing.T) {
 }
 
 func TestSourceEvidenceOfflineImageAvailable(t *testing.T) {
-	driver := &model.Driver{DriverCode: "d1", DriverName: "Audio", LocalVersion: "2.0.0.1", OSID: "42"}
+	driver := &model.AssessedDriver{
+		Driver:           &model.Driver{DriverCode: "d1", DriverName: "Audio", OSID: "42"},
+		DriverAssessment: model.DriverAssessment{LocalVersion: "2.0.0.1"},
+	}
 	device := model.Device{Name: "Audio", DriverVersion: "2.0.0.1", ImportSource: "SW_DVD5", ImportKind: "Offline"}
 	auditResult := ResolveDriverSourceEvidence(driver, []model.Device{device}, nil, nil, nil)
 	if auditResult.Category != model.AuditCategoryOfflineImage {
@@ -96,7 +105,10 @@ func TestSourceEvidenceOfflineImageAvailable(t *testing.T) {
 }
 
 func TestSourceEvidenceDeviceOutranksCurrentOS(t *testing.T) {
-	driver := &model.Driver{DriverCode: "d1", DriverName: "Audio", LocalVersion: "2.0.0.1", OSID: "42"}
+	driver := &model.AssessedDriver{
+		Driver:           &model.Driver{DriverCode: "d1", DriverName: "Audio", OSID: "42"},
+		DriverAssessment: model.DriverAssessment{LocalVersion: "2.0.0.1"},
+	}
 	device := model.Device{Name: "Audio", DriverVersion: "2.0.0.1", InfName: "oem1.inf"}
 	current := map[string]model.SourceMapEntry{"Audio|2.0.0.1": {OSID: "42", OSName: "Windows 10 64-bit"}}
 	auditResult := ResolveDriverSourceEvidence(driver, []model.Device{device}, nil, current, nil)
@@ -106,7 +118,10 @@ func TestSourceEvidenceDeviceOutranksCurrentOS(t *testing.T) {
 }
 
 func TestSourceEvidenceNoMatchFallsBackToUnknown(t *testing.T) {
-	driver := &model.Driver{DriverCode: "d1", DriverName: "Audio", LocalVersion: "2.0.0.1", OSID: "42"}
+	driver := &model.AssessedDriver{
+		Driver:           &model.Driver{DriverCode: "d1", DriverName: "Audio", OSID: "42"},
+		DriverAssessment: model.DriverAssessment{LocalVersion: "2.0.0.1"},
+	}
 	auditResult := ResolveDriverSourceEvidence(driver, nil, nil, nil, nil)
 	if auditResult.Category != model.AuditCategoryUnknown {
 		t.Fatalf("no evidence should be Unknown, got %q", auditResult.Category)

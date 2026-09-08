@@ -63,25 +63,28 @@ func (a *App) ExportGUIView(path string, vc *ViewContext, view *DriverView) erro
 		OsList:        vc.OsList,
 		Drivers:       make([]guiDriverRow, 0, len(view.Selected)),
 	}
-	for _, driver := range view.Selected {
+	for _, ad := range view.Selected {
+		if ad == nil || ad.Driver == nil {
+			continue
+		}
 		sourceAudit := ""
-		if driver.SourceAudit != nil {
-			sourceAudit = string(driver.SourceAudit.Category) + ": " + driver.SourceAudit.Summary
+		if ad.SourceAudit != nil {
+			sourceAudit = string(ad.SourceAudit.Category) + ": " + ad.SourceAudit.Summary
 		}
 		payload.Drivers = append(payload.Drivers, guiDriverRow{
-			DriverCode:    driver.DriverCode,
-			DriverName:    driver.DriverName,
-			Version:       driver.Version,
-			LocalVersion:  driver.LocalVersion,
-			CompareStatus: string(driver.CompareStatus),
+			DriverCode:    ad.DriverCode,
+			DriverName:    ad.DriverName,
+			Version:       ad.Version,
+			LocalVersion:  ad.LocalVersion,
+			CompareStatus: string(ad.CompareStatus),
 			SourceAudit:   sourceAudit,
-			CompareSource: driver.CompareSource,
-			FileName:      driver.FileName,
-			FilePath:      driver.FilePath,
-			FileSize:      driver.FileSize,
-			MD5:           driver.OfficialMD5,
-			IsApplicable:  driver.CompareStatus != model.StatusNotApplicable,
-			IsUpdate:      driver.CompareStatus == model.StatusUpdate,
+			CompareSource: ad.CompareSource,
+			FileName:      ad.FileName,
+			FilePath:      ad.FilePath,
+			FileSize:      ad.FileSize,
+			MD5:           ad.OfficialMD5,
+			IsApplicable:  ad.CompareStatus != model.StatusNotApplicable,
+			IsUpdate:      ad.CompareStatus == model.StatusUpdate,
 		})
 	}
 	data, err := json.MarshalIndent(payload, "", "  ")

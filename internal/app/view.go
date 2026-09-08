@@ -20,9 +20,9 @@ import (
 
 // DriverView is the comparable selected driver set.
 type DriverView struct {
-	Selected   []*model.Driver
-	Applicable []*model.Driver
-	Updates    []*model.Driver
+	Selected   []*model.AssessedDriver
+	Applicable []*model.AssessedDriver
+	Updates    []*model.AssessedDriver
 	Source     string
 	OsID       string
 }
@@ -134,19 +134,19 @@ func (a *App) localDriverState(driver *model.Driver, matchedDevices []model.Devi
 }
 
 // matchedByDriver resolves the matching local devices for each applicable
-// driver, returning the per-driver lists (index-aligned with selected) and the
-// deduped union of all matched devices. This is the single place that walks the
-// "applicable drivers and their matched PnP devices" traversal; the version
-// index and the evidence audit both consume its result instead of re-walking
-// the same selected set.
-func matchedByDriver(selected []*model.Driver, localDevices []model.Device) (perDriver [][]model.Device, union []model.Device) {
-	perDriver = make([][]model.Device, len(selected))
+// assessed driver, returning the per-driver lists (index-aligned with
+// assessed) and the deduped union of all matched devices. This is the single
+// place that walks the "applicable drivers and their matched PnP devices"
+// traversal; the version index and the evidence audit both consume its result
+// instead of re-walking the same assessed set.
+func matchedByDriver(assessed []*model.AssessedDriver, localDevices []model.Device) (perDriver [][]model.Device, union []model.Device) {
+	perDriver = make([][]model.Device, len(assessed))
 	seen := make(map[string]struct{})
-	for i, driver := range selected {
-		if driver == nil || !compare.TestDriverApplicable(driver, localDevices) {
+	for i, ad := range assessed {
+		if ad == nil || ad.Driver == nil || !compare.TestDriverApplicable(ad.Driver, localDevices) {
 			continue
 		}
-		matched := compare.GetMatchingLocalDevices(driver, localDevices)
+		matched := compare.GetMatchingLocalDevices(ad.Driver, localDevices)
 		perDriver[i] = matched
 		for _, device := range matched {
 			if device.PnpDeviceID == "" {
@@ -219,25 +219,20 @@ func (a *App) CompareOSDriverView(ctx context.Context, vc *ViewContext, listOsID
 		}
 	}
 
-	// Own each row before filtering/selecting/assessing: assessment writes
-	// (compare status, source audit, ...) must never reach the shared driver
-	// list cache or API rows, so the transport/API DTOs stay immutable.
-	viewDrivers = cloneDrivers(viewDrivers)
-
 	viewDrivers = filterDriverRows(viewDrivers, vc.Opts.IncludeBios)
 	selected := compare.SelectLatestDrivers(viewDrivers, listOsID)
 	a.Log(ctx, fmt.Sprintf("Drivers selected : %d", len(selected)), "INFO")
 	a.Log(ctx, "Comparing with locally installed versions...", "INFO")
 
 	currentSourceMap := buildDriverSourceMap(selected)
-	a.assessSelectedDrivers(ctx, vc, selected, currentSourceMap, driverResult.Source)
+	assessed := a.assessSelectedDrivers(ctx, vc, selected, currentSourceMap, driverResult.Source)
 
-	a.presentDriverView(ctx, selected)
+	a.presentDriverView(ctx, assessed)
 
-	applicable, updates := partitionViewDrivers(selected)
+	applicable, updates := partitionViewDrivers(assessed)
 	a.Log(ctx, fmt.Sprintf("Applicable candidates : %d; update-only drivers : %d", len(applicable), len(updates)), "INFO")
 	return &DriverView{
-		Selected:   selected,
+		Selected:   assessed,
 		Applicable: applicable,
 		Updates:    updates,
 		Source:     driverResult.Source,
@@ -249,7 +244,7 @@ func (a *App) CompareOSDriverView(ctx context.Context, vc *ViewContext, listOsID
 // and status summary for an assessed driver set. It is the presentation
 // counterpart of the pure comparison/build pipeline and is the single place
 // that couples the decision result to stdout and the plan file.
-func (a *App) presentDriverView(ctx context.Context, selected []*model.Driver) {
+func (a *App) presentDriverView(ctx context.Context, selected []*model.AssessedDriver) {
 	if err := a.WritePlanFile(selected); err != nil {
 		a.Log(ctx, "Could not write plan file: "+err.Error(), "WARN")
 	} else {
@@ -265,41 +260,52 @@ func (a *App) presentDriverView(ctx context.Context, selected []*model.Driver) {
 	}
 }
 
-// assessSelectedDrivers resolves the local version, compare status and
-// source-evidence audit for each driver, mutating only that driver's
-// comparison fields. The matched-device traversal, the local version index,
-// and the PnP evidence enumeration are each performed once over the pass
-// instead of once per driver (see matchedByDriver, deviceVersionIndex and
-// buildDeviceEvidenceMap). Any alternate-source map needed for source auditing
-// is built lazily and reused across the remaining drivers in the pass.
-func (a *App) assessSelectedDrivers(ctx context.Context, vc *ViewContext, selected []*model.Driver, currentSourceMap map[string]model.SourceMapEntry, preferredSource string) {
+// assessSelectedDrivers wraps each selected transport row in an
+// AssessedDriver, then resolves the local version, compare status and
+// source-evidence audit per assessed driver. The matched-device traversal,
+// the local version index, and the PnP evidence enumeration are each performed
+// once over the pass instead of once per driver (see matchedByDriver,
+// deviceVersionIndex and buildDeviceEvidenceMap). Any alternate-source map
+// needed for source auditing is built lazily and reused across the remaining
+// drivers in the pass. Assessment writes land only on each AssessedDriver's
+// owned DriverAssessment copy, never on the shared transport rows.
+func (a *App) assessSelectedDrivers(ctx context.Context, vc *ViewContext, selected []*model.Driver, currentSourceMap map[string]model.SourceMapEntry, preferredSource string) []*model.AssessedDriver {
+	out := make([]*model.AssessedDriver, len(selected))
+	for i, d := range selected {
+		if d == nil {
+			continue
+		}
+		out[i] = &model.AssessedDriver{Driver: d}
+	}
+
 	var alternateSourceMap map[string]model.SourceMapEntry
-	matchedForDriver, evidenceUnion := matchedByDriver(selected, vc.LocalDevices)
+	matchedForDriver, evidenceUnion := matchedByDriver(out, vc.LocalDevices)
 	versionIndex, err := a.deviceVersionIndex(ctx, evidenceUnion)
 	if err != nil {
 		a.Log(ctx, "Could not read local driver versions: "+err.Error(), "WARN")
-		return
+		return out
 	}
 
 	var evidenceByID map[string]model.Device
 	evidenceBuilt := false
-	for i, driver := range selected {
-		if driver == nil {
+	for i, ad := range out {
+		if ad == nil || ad.Driver == nil {
 			continue
 		}
+		driver := ad.Driver
 		if !compare.TestDriverApplicable(driver, vc.LocalDevices) {
-			driver.CompareStatus = model.StatusNotApplicable
+			ad.CompareStatus = model.StatusNotApplicable
 			continue
 		}
 		matchedDevices := matchedForDriver[i]
 		localVersion, localVendor := a.localDriverState(driver, matchedDevices, versionIndex, &vc.SoftwareSnapshot)
-		driver.LocalVersion = localVersion
-		driver.LocalVendor = localVendor
-		driver.CompareStatus = compare.CompareDriverStatus(driver.Version, localVersion, localVendor)
+		ad.LocalVersion = localVersion
+		ad.LocalVendor = localVendor
+		ad.CompareStatus = compare.CompareDriverStatus(driver.Version, localVersion, localVendor)
 		if localVersion == "" {
 			continue
 		}
-		if driver.CompareStatus == model.StatusLocalNewer && alternateSourceMap == nil {
+		if ad.CompareStatus == model.StatusLocalNewer && alternateSourceMap == nil {
 			alternateSourceMap = a.initAlternateSourceMap(ctx, vc, vc.CurrentSystemOsID, preferredSource)
 		}
 		if !evidenceBuilt {
@@ -310,53 +316,30 @@ func (a *App) assessSelectedDrivers(ctx context.Context, vc *ViewContext, select
 			}
 			evidenceBuilt = true
 		}
-		driver.SourceAudit = a.resolveDriverSourceAudit(driver, matchedDevices, evidenceByID, vc.History, currentSourceMap, alternateSourceMap)
-		if driver.CompareStatus == model.StatusLocalNewer {
-			driver.CompareSource = audit.ResolveDriverSourceLabel(driver, vc.History, alternateSourceMap, driver.SourceAudit)
-			a.Log(ctx, "["+driver.DriverCode+"] "+driver.CompareSource, "WARN")
+		ad.SourceAudit = a.resolveDriverSourceAudit(ad, matchedDevices, evidenceByID, vc.History, currentSourceMap, alternateSourceMap)
+		if ad.CompareStatus == model.StatusLocalNewer {
+			ad.CompareSource = audit.ResolveDriverSourceLabel(ad, vc.History, alternateSourceMap, ad.SourceAudit)
+			a.Log(ctx, "["+driver.DriverCode+"] "+ad.CompareSource, "WARN")
 		}
 	}
+	return out
 }
 
-// partitionViewDrivers splits the selected drivers into the applicable and
+// partitionViewDrivers splits the assessed drivers into the applicable and
 // update-only groups used by the interactive view.
-func partitionViewDrivers(selected []*model.Driver) (applicable, updates []*model.Driver) {
-	for _, driver := range selected {
-		if driver.CompareStatus != model.StatusNotApplicable {
-			applicable = append(applicable, driver)
+func partitionViewDrivers(selected []*model.AssessedDriver) (applicable, updates []*model.AssessedDriver) {
+	for _, ad := range selected {
+		if ad == nil || ad.Driver == nil {
+			continue
 		}
-		if driver.CompareStatus == model.StatusUpdate {
-			updates = append(updates, driver)
+		if ad.CompareStatus != model.StatusNotApplicable {
+			applicable = append(applicable, ad)
+		}
+		if ad.CompareStatus == model.StatusUpdate {
+			updates = append(updates, ad)
 		}
 	}
 	return applicable, updates
-}
-
-// cloneDriver deep-copies a driver row so the comparison/assessment pass can
-// write comparison fields without mutating a shared fetch/cache object. It
-// preserves the row value including its nested source audit.
-func cloneDriver(d *model.Driver) *model.Driver {
-	if d == nil {
-		return nil
-	}
-	c := *d
-	if d.SourceAudit != nil {
-		a := *d.SourceAudit
-		a.EvidenceLines = append([]string(nil), d.SourceAudit.EvidenceLines...)
-		c.SourceAudit = &a
-	}
-	return &c
-}
-
-// cloneDrivers returns a slice of independent deep copies of the rows. The
-// comparison view owns its copies, so nothing it writes leaks back into the
-// shared driver list cache or the API transport rows.
-func cloneDrivers(drivers []*model.Driver) []*model.Driver {
-	out := make([]*model.Driver, len(drivers))
-	for i, d := range drivers {
-		out[i] = cloneDriver(d)
-	}
-	return out
 }
 
 func filterDriverRows(rows []*model.Driver, includeBios bool) []*model.Driver {
@@ -432,7 +415,7 @@ func (a *App) initAlternateSourceMap(ctx context.Context, vc *ViewContext, sysID
 }
 
 func (a *App) resolveDriverSourceAudit(
-	driver *model.Driver,
+	ad *model.AssessedDriver,
 	matchedDevices []model.Device,
 	evidenceByID map[string]model.Device,
 	history []model.HistoryRecord,
@@ -440,12 +423,12 @@ func (a *App) resolveDriverSourceAudit(
 	alternateSourceMap map[string]model.SourceMapEntry,
 ) *model.SourceAudit {
 	deviceEvidence := projectMatchedEvidence(matchedDevices, evidenceByID)
-	auditResult := audit.ResolveDriverSourceEvidence(driver, deviceEvidence, history, alternateSourceMap, currentSourceMap)
+	auditResult := audit.ResolveDriverSourceEvidence(ad, deviceEvidence, history, alternateSourceMap, currentSourceMap)
 	return &auditResult
 }
 
 // WritePlanFile mirrors Write-PlanFile.
-func (a *App) WritePlanFile(drivers []*model.Driver) error {
+func (a *App) WritePlanFile(drivers []*model.AssessedDriver) error {
 	lines := plan.BuildPlanText(drivers, formatTimestamp(time.Now()))
 	content := strings.Join(lines, "\r\n") + "\r\n"
 	return os.WriteFile(a.PlanPath, []byte(content), 0o644)

@@ -77,12 +77,13 @@ func TestDownloadVerifiedRefreshes403URL(t *testing.T) {
 	downloadDir := t.TempDir()
 	outFile := filepath.Join(downloadDir, "d1_driver.exe")
 	driver := &model.Driver{DriverCode: "d1", FileName: "driver.exe", FilePath: "https://download.example/old.exe", FileSize: "12 B"}
+	ad := &model.AssessedDriver{Driver: driver}
 	vc := &ViewContext{
 		Opts:       Options{},
 		CategoryID: "cat",
 		OsList:     []model.OSListEntry{{OSID: "248"}},
 	}
-	_, err := app.downloadVerified(context.Background(), vc, driver, outFile, 12, "248", "QuickFix")
+	_, err := app.downloadVerified(context.Background(), vc, ad, outFile, 12, "248", "QuickFix")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,8 +104,11 @@ func TestDownloadVerifiedRefreshes403URL(t *testing.T) {
 
 func TestShowActionPreviewIncludesDriverRows(t *testing.T) {
 	var out bytes.Buffer
-	driver := &model.Driver{DriverName: "Audio", Version: "1.0.0.1", LocalVersion: "1.0.0.0", CompareStatus: "Update"}
-	showActionPreview(&out, 'y', "update-only", []*model.Driver{driver})
+	ad := &model.AssessedDriver{
+		Driver:           &model.Driver{DriverName: "Audio", Version: "1.0.0.1"},
+		DriverAssessment: model.DriverAssessment{LocalVersion: "1.0.0.0", CompareStatus: "Update"},
+	}
+	showActionPreview(&out, 'y', "update-only", []*model.AssessedDriver{ad})
 	text := out.String()
 	if !strings.Contains(text, "Audio") || !strings.Contains(text, "1.0.0.1") || !strings.Contains(text, "Update") {
 		t.Fatalf("preview did not include exact driver rows:\n%s", text)
@@ -156,27 +160,38 @@ func TestVerifyDownloadedFile(t *testing.T) {
 }
 
 func TestQuoteWindowsArgument(t *testing.T) {
-	cases := []struct {
-		input, want string
-	}{
-		{"", `""`},
-		{"82JQ", "82JQ"},
-		{"82 JQ", `"82 JQ"`},
-		{`a"b`, `"a\"b"`},
-		{`C:\temp with space\file`, `"C:\temp with space\file"`},
-		{"trailing\\", "trailing\\"},
+	// The golden vectors live in testdata/windows_argument_quoting.json and are
+	// shared with scripts/verify.ps1, which asserts the WPF PowerShell quoting
+	// implementation against the same file. Changing quoting behavior requires
+	// updating both implementations and this single source of truth.
+	data, err := os.ReadFile("testdata/windows_argument_quoting.json")
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, tc := range cases {
-		if got := quoteWindowsArgument(tc.input); got != tc.want {
-			t.Fatalf("quoteWindowsArgument(%q) = %q, want %q", tc.input, got, tc.want)
+	var golden struct {
+		Cases []struct {
+			Name  string `json:"name"`
+			Input string `json:"input"`
+			Token string `json:"token"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(data, &golden); err != nil {
+		t.Fatal(err)
+	}
+	if len(golden.Cases) < 10 {
+		t.Fatalf("shared quoting golden has too few cases: %d", len(golden.Cases))
+	}
+	for _, tc := range golden.Cases {
+		if got := quoteWindowsArgument(tc.Input); got != tc.Token {
+			t.Fatalf("quoteWindowsArgument(%q) = %q, want %q", tc.Input, got, tc.Token)
 		}
 	}
 }
 
 func TestSelectByCodes(t *testing.T) {
-	drivers := []*model.Driver{
-		{DriverCode: "d1"},
-		{DriverCode: "d2"},
+	drivers := []*model.AssessedDriver{
+		{Driver: &model.Driver{DriverCode: "d1"}},
+		{Driver: &model.Driver{DriverCode: "d2"}},
 	}
 	selection := selectByCodes(drivers, "d2")
 	if len(selection.Selected) != 1 || selection.Selected[0].DriverCode != "d2" {
@@ -185,9 +200,9 @@ func TestSelectByCodes(t *testing.T) {
 }
 
 func TestSelectByCodesRejectsPartialAndNotApplicable(t *testing.T) {
-	drivers := []*model.Driver{
-		{DriverCode: "d1", CompareStatus: model.StatusUpdate},
-		{DriverCode: "d2", CompareStatus: model.StatusNotApplicable},
+	drivers := []*model.AssessedDriver{
+		{Driver: &model.Driver{DriverCode: "d1"}, DriverAssessment: model.DriverAssessment{CompareStatus: model.StatusUpdate}},
+		{Driver: &model.Driver{DriverCode: "d2"}, DriverAssessment: model.DriverAssessment{CompareStatus: model.StatusNotApplicable}},
 	}
 	selection := selectByCodes(drivers, "d1,missing,d2")
 	if len(selection.Selected) != 1 || selection.Selected[0].DriverCode != "d1" {
@@ -203,8 +218,8 @@ func TestSelectByCodesRejectsPartialAndNotApplicable(t *testing.T) {
 
 func TestAcquireSelectionPreservesExitCodeContract(t *testing.T) {
 	view := &DriverView{
-		Selected: []*model.Driver{
-			{DriverCode: "d1", CompareStatus: model.StatusUpdate},
+		Selected: []*model.AssessedDriver{
+			{Driver: &model.Driver{DriverCode: "d1"}, DriverAssessment: model.DriverAssessment{CompareStatus: model.StatusUpdate}},
 		},
 	}
 	// A GUI-code path that matches every requested code selects and returns 0.
@@ -394,27 +409,30 @@ func TestToleratedDriverListMissPolicy(t *testing.T) {
 	}
 }
 
-func TestCloneDriversIsOwnedCopy(t *testing.T) {
+func TestAssessedDriverOwnership(t *testing.T) {
+	// The AssessedDriver pairs a shared *Driver transport row with an owned
+	// DriverAssessment copy. Mutating the assessment on the view copy must
+	// never leak into the API/cache row, and the Driver pointer is shared
+	// (non-assessment fields are immutable after construction).
 	audit := &model.SourceAudit{Category: model.AuditCategoryOnlinePackage, EvidenceLines: []string{"a", "b"}}
-	source := []*model.Driver{
-		{DriverCode: "d1", DriverName: "Audio", Version: "1.0.0.0", SourceAudit: audit},
+	orig := &model.Driver{DriverCode: "d1", DriverName: "Audio", Version: "1.0.0.0"}
+	ad := &model.AssessedDriver{
+		Driver: orig,
+		DriverAssessment: model.DriverAssessment{
+			LocalVersion:  "2.0.0.0",
+			CompareStatus: model.StatusUpdate,
+			CompareSource: "source",
+			SourceAudit:   audit,
+		},
 	}
-	clones := cloneDrivers(source)
-	if len(clones) != 1 || clones[0] == source[0] {
-		t.Fatalf("expected a distinct owned copy")
-	}
-	// Mutating an owned view copy must never leak into the shared/cached row.
-	clones[0].DriverName = "Audio-X"
-	clones[0].LocalVersion = "2.0.0.0"
-	clones[0].CompareStatus = model.StatusUpdate
-	clones[0].CompareSource = "source"
-	clones[0].SourceAudit.Summary = "changed"
-	if source[0].DriverName != "Audio" || source[0].LocalVersion != "" ||
-		source[0].CompareStatus != "" || source[0].CompareSource != "" {
-		t.Fatalf("clone mutation leaked into the shared driver row: %#v", source[0])
-	}
-	if source[0].SourceAudit.Summary != "" {
-		t.Fatalf("nested source audit was not deep-copied: %#v", source[0].SourceAudit)
+	// Mutate the assessment on the view copy.
+	ad.LocalVersion = "3.0.0.0"
+	ad.CompareStatus = model.StatusUpToDate
+	ad.CompareSource = "new-source"
+	ad.SourceAudit.Summary = "changed"
+	// The transport Driver must be unchanged.
+	if orig.DriverName != "Audio" || orig.Version != "1.0.0.0" {
+		t.Fatalf("transport Driver was mutated through AssessedDriver: %#v", orig)
 	}
 }
 

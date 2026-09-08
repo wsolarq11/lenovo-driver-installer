@@ -221,7 +221,7 @@ func (a *App) runInstallFlow(ctx context.Context, vc *ViewContext, view *DriverV
 // codes or the interactive prompt. A nonzero code means the run should abort
 // with that PS1-style exit code (3 for a GUI-code mismatch, 0 for a user
 // cancel with nothing to install).
-func (a *App) acquireSelection(ctx context.Context, vc *ViewContext, view *DriverView, listOsID string) ([]*model.Driver, int) {
+func (a *App) acquireSelection(ctx context.Context, vc *ViewContext, view *DriverView, listOsID string) ([]*model.AssessedDriver, int) {
 	if vc.Opts.GuiInstallCodes != "" {
 		selection := selectByCodes(view.Selected, vc.Opts.GuiInstallCodes)
 		if len(selection.Missing) > 0 || len(selection.NotApplicable) > 0 || len(selection.Selected) == 0 {

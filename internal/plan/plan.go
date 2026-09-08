@@ -10,14 +10,14 @@ import (
 )
 
 // BuildPlanText mirrors Build-PlanText.
-func BuildPlanText(drivers []*model.Driver, generatedAt string) []string {
+func BuildPlanText(drivers []*model.AssessedDriver, generatedAt string) []string {
 	lines := []string{
 		"Lenovo driver plan",
 		"Generated: " + generatedAt,
 		"",
 	}
 	for i, d := range drivers {
-		if d == nil {
+		if d == nil || d.Driver == nil {
 			continue
 		}
 		local := d.LocalVersion
@@ -58,7 +58,7 @@ func BuildPlanText(drivers []*model.Driver, generatedAt string) []string {
 }
 
 // FormatDriverTableLines mirrors Format-DriverTableLines.
-func FormatDriverTableLines(drivers []*model.Driver) []string {
+func FormatDriverTableLines(drivers []*model.AssessedDriver) []string {
 	const (
 		indexWidth  = 3
 		driverWidth = 42
@@ -78,7 +78,7 @@ func FormatDriverTableLines(drivers []*model.Driver) []string {
 		compare.FormatCell("------", statusWidth, false)
 	lines := []string{"", header, separator}
 	for i, d := range drivers {
-		if d == nil {
+		if d == nil || d.Driver == nil {
 			continue
 		}
 		line := compare.FormatCell(strconv.Itoa(i+1), indexWidth, true) + " " +
@@ -93,13 +93,13 @@ func FormatDriverTableLines(drivers []*model.Driver) []string {
 }
 
 // FormatStatusSummaryLines mirrors Format-StatusSummaryLines.
-func FormatStatusSummaryLines(drivers []*model.Driver) []string {
+func FormatStatusSummaryLines(drivers []*model.AssessedDriver) []string {
 	counts := map[model.CompareStatus]int{}
 	for _, status := range []model.CompareStatus{model.StatusUpdate, model.StatusUpToDate, model.StatusNotInstalled, model.StatusLocalNewer, model.StatusUnknown, model.StatusNotApplicable} {
 		counts[status] = 0
 	}
 	for _, d := range drivers {
-		if d == nil {
+		if d == nil || d.Driver == nil {
 			continue
 		}
 		if _, ok := counts[d.CompareStatus]; ok {
@@ -124,7 +124,7 @@ func FormatStatusSummaryLines(drivers []*model.Driver) []string {
 	if counts[model.StatusLocalNewer] > 0 {
 		shown := 0
 		for _, d := range drivers {
-			if d == nil || d.CompareStatus != model.StatusLocalNewer {
+			if d == nil || d.Driver == nil || d.CompareStatus != model.StatusLocalNewer {
 				continue
 			}
 			if shown >= 5 {
@@ -143,8 +143,8 @@ func FormatStatusSummaryLines(drivers []*model.Driver) []string {
 }
 
 // ParseDriverSelectionTokens mirrors Parse-DriverSelectionTokens.
-func ParseDriverSelectionTokens(inputText string, allSelected []*model.Driver) model.SelectionResult {
-	var selected []*model.Driver
+func ParseDriverSelectionTokens(inputText string, allSelected []*model.AssessedDriver) model.SelectionResult {
+	var selected []*model.AssessedDriver
 	var invalid []string
 	var notApplicable []string
 	seen := map[int]bool{}
@@ -178,7 +178,7 @@ func ParseDriverSelectionTokens(inputText string, allSelected []*model.Driver) m
 }
 
 // BuildDriverHistoryRecord mirrors Build-DriverHistoryRecord.
-func BuildDriverHistoryRecord(driver *model.Driver, result, message, verifiedVersion, beforeVersion, timestamp string) model.HistoryRecord {
+func BuildDriverHistoryRecord(driver *model.AssessedDriver, result, message, verifiedVersion, beforeVersion, timestamp string) model.HistoryRecord {
 	return model.HistoryRecord{
 		Timestamp:       timestamp,
 		DriverCode:      driver.DriverCode,

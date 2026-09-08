@@ -19,7 +19,7 @@ import (
 func (a *App) InstallSelected(
 	ctx context.Context,
 	vc *ViewContext,
-	selected []*model.Driver,
+	selected []*model.AssessedDriver,
 	dataSource string,
 	listOsID string,
 ) error {
@@ -32,33 +32,34 @@ func (a *App) InstallSelected(
 	}
 	a.Log(ctx, "Download directory : "+dlDir, "INFO")
 
-	var success []*model.Driver
-	var failed []*model.Driver
-	for _, driver := range selected {
-		if driver == nil {
+	var success []*model.AssessedDriver
+	var failed []*model.AssessedDriver
+	for _, ad := range selected {
+		if ad == nil || ad.Driver == nil {
 			continue
 		}
+		driver := ad.Driver
 		outFile := filepath.Join(dlDir, driver.DriverCode+"_"+driver.FileName)
 		expectedSize, sizeErr := compare.ConvertToBytes(driver.FileSize)
 		if sizeErr != nil {
 			a.Log(ctx, "["+driver.DriverCode+"] Invalid driver file size: "+sizeErr.Error(), "ERROR")
-			failed = append(failed, driver)
+			failed = append(failed, ad)
 			continue
 		}
 		a.Log(ctx, "["+driver.DriverCode+"] Downloading "+driver.FileName, "INFO")
-		downloadedSize, downloadErr := a.downloadVerified(ctx, vc, driver, outFile, expectedSize, listOsID, dataSource)
+		downloadedSize, downloadErr := a.downloadVerified(ctx, vc, ad, outFile, expectedSize, listOsID, dataSource)
 		if downloadErr != nil {
 			_ = os.Remove(outFile)
 			_ = os.Remove(outFile + ".sha256")
 			a.Log(ctx, "["+driver.DriverCode+"] Download failed: "+downloadErr.Error(), "ERROR")
-			failed = append(failed, driver)
+			failed = append(failed, ad)
 			continue
 		}
 
 		if vc.Opts.DownloadOnly {
 			a.Log(ctx, "["+driver.DriverCode+"] Downloaded only.", "INFO")
-			a.writeHistoryRecordChecked(ctx, driver, "Downloaded", fmt.Sprintf("size=%d bytes", downloadedSize), "", "")
-			success = append(success, driver)
+			a.writeHistoryRecordChecked(ctx, ad, "Downloaded", fmt.Sprintf("size=%d bytes", downloadedSize), "", "")
+			success = append(success, ad)
 			continue
 		}
 
@@ -67,31 +68,29 @@ func (a *App) InstallSelected(
 		switch {
 		case code == 0 && installErr == nil:
 			a.Log(ctx, "["+driver.DriverCode+"] Install success.", "INFO")
-			a.writeHistoryRecordChecked(ctx, driver, "Installed", "exit=0", "", "")
-			success = append(success, driver)
+			a.writeHistoryRecordChecked(ctx, ad, "Installed", "exit=0", "", "")
+			success = append(success, ad)
 		case installErr != nil:
-			// Terminal failure with no usable exit code (timeout/unpack/empty INF).
 			message := installErr.Error()
 			a.Log(ctx, "["+driver.DriverCode+"] Install failed: "+message, "ERROR")
-			a.writeHistoryRecordChecked(ctx, driver, "Failed", message, "", "")
-			failed = append(failed, driver)
+			a.writeHistoryRecordChecked(ctx, ad, "Failed", message, "", "")
+			failed = append(failed, ad)
 		case strings.EqualFold(filepath.Ext(outFile), ".exe"):
-			// A silent EXE ran and exited non-zero; offer the user an interactive rerun.
-			if interactiveCode, interactiveErr := a.tryInteractiveExeFallback(driver, outFile, dlDir); interactiveErr == nil {
+			if interactiveCode, interactiveErr := a.tryInteractiveExeFallback(ad, outFile, dlDir); interactiveErr == nil {
 				a.Log(ctx, "["+driver.DriverCode+"] Interactive installer succeeded.", "INFO")
-				a.writeHistoryRecordChecked(ctx, driver, "Installed", "interactive exit=0", "", "")
-				success = append(success, driver)
+				a.writeHistoryRecordChecked(ctx, ad, "Installed", "interactive exit=0", "", "")
+				success = append(success, ad)
 			} else {
 				message := fmt.Sprintf("interactive installer exit %d: %s", interactiveCode, interactiveErr.Error())
 				a.Log(ctx, "["+driver.DriverCode+"] Install failed: "+message, "ERROR")
-				a.writeHistoryRecordChecked(ctx, driver, "Failed", message, "", "")
-				failed = append(failed, driver)
+				a.writeHistoryRecordChecked(ctx, ad, "Failed", message, "", "")
+				failed = append(failed, ad)
 			}
 		default:
 			// Concrete non-zero exit from a non-EXE package.
 			a.Log(ctx, fmt.Sprintf("[%s] Install exit code %d.", driver.DriverCode, code), "ERROR")
-			a.writeHistoryRecordChecked(ctx, driver, "Failed", fmt.Sprintf("exit=%d", code), "", "")
-			failed = append(failed, driver)
+			a.writeHistoryRecordChecked(ctx, ad, "Failed", fmt.Sprintf("exit=%d", code), "", "")
+			failed = append(failed, ad)
 		}
 	}
 
@@ -108,20 +107,20 @@ func (a *App) InstallSelected(
 	return nil
 }
 
-func (a *App) tryInteractiveExeFallback(driver *model.Driver, filePath, workingDir string) (int, error) {
+func (a *App) tryInteractiveExeFallback(ad *model.AssessedDriver, filePath, workingDir string) (int, error) {
 	if !strings.EqualFold(filepath.Ext(filePath), ".exe") {
 		return -2, fmt.Errorf("interactive fallback is only available for EXE packages")
 	}
-	fmt.Fprintf(a.Stdout, "Type r to run %s interactively, or s to skip: ", driver.FileName)
+	fmt.Fprintf(a.Stdout, "Type r to run %s interactively, or s to skip: ", ad.FileName)
 	line, err := readLine(a.Stdin)
 	if err != nil {
-		a.Log(context.Background(), "["+driver.DriverCode+"] No interactive fallback answer was received; skipping.", "WARN")
+		a.Log(context.Background(), "["+ad.DriverCode+"] No interactive fallback answer was received; skipping.", "WARN")
 		return -2, fmt.Errorf("interactive fallback skipped")
 	}
 	answer := strings.ToLower(strings.TrimSpace(line))
 	if answer != "r" {
 		if answer == "" {
-			a.Log(context.Background(), "["+driver.DriverCode+"] No interactive fallback answer was received; skipping.", "WARN")
+			a.Log(context.Background(), "["+ad.DriverCode+"] No interactive fallback answer was received; skipping.", "WARN")
 		}
 		return -2, fmt.Errorf("interactive fallback skipped")
 	}
@@ -135,13 +134,14 @@ func (a *App) tryInteractiveExeFallback(driver *model.Driver, filePath, workingD
 func (a *App) downloadVerified(
 	ctx context.Context,
 	vc *ViewContext,
-	driver *model.Driver,
+	ad *model.AssessedDriver,
 	outFile string,
 	expectedSize int64,
 	listOsID string,
 	dataSource string,
 ) (int64, error) {
 	opts := vc.Opts
+	driver := ad.Driver
 	// At most one URL refresh is attempted, so the loop is bounded to two
 	// passes: an initial download attempt and one retry against a refreshed
 	// URL after a 403. The pass index makes the bound explicit instead of an
@@ -164,7 +164,7 @@ func (a *App) downloadVerified(
 					a.Log(ctx, "["+driver.DriverCode+"] Download URL returned 403; refreshing official URL.", "WARN")
 					_ = os.Remove(outFile)
 					_ = os.Remove(outFile + ".sha256")
-					refreshed, refreshErr := a.refreshDriverURL(ctx, vc, driver, listOsID, dataSource)
+					refreshed, refreshErr := a.refreshDriverURL(ctx, vc, ad, listOsID, dataSource)
 					if refreshErr != nil {
 						a.Log(ctx, "["+driver.DriverCode+"] URL refresh failed: "+refreshErr.Error(), "ERROR")
 						return 0, err
@@ -179,6 +179,93 @@ func (a *App) downloadVerified(
 		return verifyDownloadedFile(outFile, expectedSize, driver.OfficialMD5, opts.SkipHashCheck, needsDownload)
 	}
 	return 0, fmt.Errorf("download did not converge after 2 passes")
+}
+
+func (a *App) refreshDriverURL(ctx context.Context, vc *ViewContext, ad *model.AssessedDriver, listOsID, preferredSource string) (string, error) {
+	osIDs := []string{listOsID}
+	if vc.Opts.LatestAcrossOS {
+		osIDs = append(osIDs, otherOSIDs(vc.OsList, listOsID)...)
+	}
+	// Fetch each candidate OS list in parallel (independent reads), then scan
+	// in OSID order so the first match is selected deterministically.
+	var lastErr error
+	for _, load := range a.loadDriverListsForOSIDs(ctx, vc, osIDs, preferredSource) {
+		if load.err != nil {
+			lastErr = load.err
+			continue
+		}
+		for _, candidate := range load.result.Drivers {
+			if candidate.DriverCode == ad.DriverCode && candidate.FilePath != "" {
+				return candidate.FilePath, nil
+			}
+		}
+		lastErr = fmt.Errorf("driver %s has no refreshed URL for OSID %s", ad.DriverCode, load.osID)
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("driver %s has no refreshed URL", ad.DriverCode)
+	}
+	return "", lastErr
+}
+
+func fileSize(path string) (int64, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, fmt.Errorf("could not stat downloaded file %s: %w", path, err)
+	}
+	return info.Size(), nil
+}
+
+func (a *App) verifyInstalled(ctx context.Context, drivers []*model.AssessedDriver) {
+	a.Log(ctx, "Running post-install verification pass...", "INFO")
+	localDevices, err := inventory.GetLocalDeviceSnapshot(ctx)
+	if err != nil {
+		a.Log(ctx, "Post-install verification failed: "+err.Error(), "ERROR")
+		return
+	}
+	installedApps, err := inventory.GetInstalledApps(ctx)
+	if err != nil {
+		a.Log(ctx, "Post-install verification failed: "+err.Error(), "ERROR")
+		return
+	}
+	snapshot, err := inventory.GetSoftwareSnapshot(ctx, installedApps)
+	if err != nil {
+		a.Log(ctx, "Post-install verification failed: "+err.Error(), "ERROR")
+		return
+	}
+	_, union := matchedByDriver(drivers, localDevices)
+	versionIndex, err := a.deviceVersionIndex(ctx, union)
+	if err != nil {
+		a.Log(ctx, "Post-install verification failed: could not read local driver versions: "+err.Error(), "ERROR")
+		return
+	}
+	for _, ad := range drivers {
+		if ad == nil || ad.Driver == nil {
+			continue
+		}
+		driver := ad.Driver
+		beforeLocal := ad.LocalVersion
+		matched := compare.GetMatchingLocalDevices(driver, localDevices)
+		afterLocal, _ := a.localDriverState(driver, matched, versionIndex, &snapshot)
+		if afterLocal == "" {
+			a.Log(ctx, "["+driver.DriverCode+"] Recheck: version not detectable yet.", "WARN")
+			continue
+		}
+		beforeLabel := beforeLocal
+		if beforeLabel == "" {
+			beforeLabel = "not detected"
+		}
+		if afterLocal == beforeLocal {
+			packageVersion := compare.GetMatchingRemoteComponent(driver.Version, ad.LocalVendor)
+			if packageVersion != nil && packageVersion.String() != afterLocal {
+				a.Log(ctx, fmt.Sprintf("[%s] Recheck: package installed but local driver unchanged (%s); package version %s did not replace it.", driver.DriverCode, afterLocal, packageVersion.String()), "WARN")
+			} else {
+				a.Log(ctx, fmt.Sprintf("[%s] Recheck: unchanged (%s); reboot may be needed.", driver.DriverCode, afterLocal), "WARN")
+			}
+		} else {
+			a.Log(ctx, fmt.Sprintf("[%s] Recheck: %s -> %s", driver.DriverCode, beforeLabel, afterLocal), "INFO")
+		}
+		a.writeHistoryRecordChecked(ctx, ad, "Verified", fmt.Sprintf("local=%s; before=%s", afterLocal, beforeLabel), afterLocal, beforeLocal)
+	}
 }
 
 func inspectCachedFile(outFile string, expectedSize int64, officialMD5 string, skipHashCheck bool) (usable bool, size int64, rejectReason string) {
@@ -224,87 +311,4 @@ func verifyDownloadedFile(outFile string, expectedSize int64, officialMD5 string
 		}
 	}
 	return downloadedSize, nil
-}
-
-func (a *App) refreshDriverURL(ctx context.Context, vc *ViewContext, driver *model.Driver, listOsID, preferredSource string) (string, error) {
-	osIDs := []string{listOsID}
-	if vc.Opts.LatestAcrossOS {
-		osIDs = append(osIDs, otherOSIDs(vc.OsList, listOsID)...)
-	}
-	// Fetch each candidate OS list in parallel (independent reads), then scan
-	// in OSID order so the first match is selected deterministically.
-	var lastErr error
-	for _, load := range a.loadDriverListsForOSIDs(ctx, vc, osIDs, preferredSource) {
-		if load.err != nil {
-			lastErr = load.err
-			continue
-		}
-		for _, candidate := range load.result.Drivers {
-			if candidate.DriverCode == driver.DriverCode && candidate.FilePath != "" {
-				return candidate.FilePath, nil
-			}
-		}
-		lastErr = fmt.Errorf("driver %s has no refreshed URL for OSID %s", driver.DriverCode, load.osID)
-	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("driver %s has no refreshed URL", driver.DriverCode)
-	}
-	return "", lastErr
-}
-
-func fileSize(path string) (int64, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return 0, fmt.Errorf("could not stat downloaded file %s: %w", path, err)
-	}
-	return info.Size(), nil
-}
-
-func (a *App) verifyInstalled(ctx context.Context, drivers []*model.Driver) {
-	a.Log(ctx, "Running post-install verification pass...", "INFO")
-	localDevices, err := inventory.GetLocalDeviceSnapshot(ctx)
-	if err != nil {
-		a.Log(ctx, "Post-install verification failed: "+err.Error(), "ERROR")
-		return
-	}
-	installedApps, err := inventory.GetInstalledApps(ctx)
-	if err != nil {
-		a.Log(ctx, "Post-install verification failed: "+err.Error(), "ERROR")
-		return
-	}
-	snapshot, err := inventory.GetSoftwareSnapshot(ctx, installedApps)
-	if err != nil {
-		a.Log(ctx, "Post-install verification failed: "+err.Error(), "ERROR")
-		return
-	}
-	_, union := matchedByDriver(drivers, localDevices)
-	versionIndex, err := a.deviceVersionIndex(ctx, union)
-	if err != nil {
-		a.Log(ctx, "Post-install verification failed: could not read local driver versions: "+err.Error(), "ERROR")
-		return
-	}
-	for _, driver := range drivers {
-		beforeLocal := driver.LocalVersion
-		matched := compare.GetMatchingLocalDevices(driver, localDevices)
-		afterLocal, _ := a.localDriverState(driver, matched, versionIndex, &snapshot)
-		if afterLocal == "" {
-			a.Log(ctx, "["+driver.DriverCode+"] Recheck: version not detectable yet.", "WARN")
-			continue
-		}
-		beforeLabel := beforeLocal
-		if beforeLabel == "" {
-			beforeLabel = "not detected"
-		}
-		if afterLocal == beforeLocal {
-			packageVersion := compare.GetMatchingRemoteComponent(driver.Version, driver.LocalVendor)
-			if packageVersion != nil && packageVersion.String() != afterLocal {
-				a.Log(ctx, fmt.Sprintf("[%s] Recheck: package installed but local driver unchanged (%s); package version %s did not replace it.", driver.DriverCode, afterLocal, packageVersion.String()), "WARN")
-			} else {
-				a.Log(ctx, fmt.Sprintf("[%s] Recheck: unchanged (%s); reboot may be needed.", driver.DriverCode, afterLocal), "WARN")
-			}
-		} else {
-			a.Log(ctx, fmt.Sprintf("[%s] Recheck: %s -> %s", driver.DriverCode, beforeLabel, afterLocal), "INFO")
-		}
-		a.writeHistoryRecordChecked(ctx, driver, "Verified", fmt.Sprintf("local=%s; before=%s", afterLocal, beforeLabel), afterLocal, beforeLocal)
-	}
 }

@@ -16,7 +16,7 @@ var historyHeader = []string{
 	"VerifiedVersion", "BeforeVersion", "FileName", "MD5", "Source", "Result", "Message",
 }
 
-func (a *App) writeHistoryRecordChecked(ctx context.Context, driver *model.Driver, result, message, verifiedVersion, beforeVersion string) {
+func (a *App) writeHistoryRecordChecked(ctx context.Context, driver *model.AssessedDriver, result, message, verifiedVersion, beforeVersion string) {
 	if err := a.WriteHistoryRecord(driver, result, message, verifiedVersion, beforeVersion); err != nil {
 		a.Log(ctx, "Failed to write history record: "+err.Error(), "ERROR")
 	}
@@ -78,7 +78,7 @@ func (a *App) ReadHistory(ctx context.Context) []model.HistoryRecord {
 }
 
 // WriteHistoryRecord appends one history row.
-func (a *App) WriteHistoryRecord(driver *model.Driver, result, message, verifiedVersion, beforeVersion string) error {
+func (a *App) WriteHistoryRecord(driver *model.AssessedDriver, result, message, verifiedVersion, beforeVersion string) error {
 	if _, err := os.Stat(a.HistoryPath); os.IsNotExist(err) {
 		f, err := os.Create(a.HistoryPath)
 		if err != nil {

@@ -55,8 +55,9 @@ func GetSourceMapMatch(driver *model.Driver, sourceMap map[string]model.SourceMa
 }
 
 // ResolveExternalDriverSourceLabel mirrors Resolve-ExternalDriverSourceLabel.
-func ResolveExternalDriverSourceLabel(driver *model.Driver, alternateSourceMap map[string]model.SourceMapEntry) string {
-	if match := GetSourceMapMatch(driver, alternateSourceMap, driver.LocalVersion); match != nil {
+// localVersion is the driver's assessment local version, not on *model.Driver.
+func ResolveExternalDriverSourceLabel(driver *model.Driver, alternateSourceMap map[string]model.SourceMapEntry, localVersion string) string {
+	if match := GetSourceMapMatch(driver, alternateSourceMap, localVersion); match != nil {
 		if match.OSName != "" {
 			return "Local newer (source " + match.OSName + ")"
 		}
@@ -100,12 +101,11 @@ var fieldExtractRules = []fieldExtractRule{
 		}
 	}},
 	{re: rePublished, set: func(s *model.ImportRecord, line string) {
-		published := strings.TrimSpace(submatch(rePublished, line, "published"))
-		if s.PackageDir == "" && strings.Contains(published, `\`) {
-			s.PackageDir = pathutil.Parent(published)
+		if s.PackageDir == "" {
+			s.PackageDir = strings.TrimSpace(submatch(rePublished, line, "published"))
 		}
 		if s.OemInfName == "" {
-			s.OemInfName = pathutil.Base(strings.TrimSpace(submatch(rePublished, line, "oem")))
+			s.OemInfName = strings.TrimSpace(submatch(rePublished, line, "oem"))
 		}
 	}},
 	{re: reCreatedPackage, set: func(s *model.ImportRecord, line string) {
@@ -115,7 +115,7 @@ var fieldExtractRules = []fieldExtractRule{
 	}},
 	{re: reCreatedInf, set: func(s *model.ImportRecord, line string) {
 		if s.OemInfName == "" {
-			s.OemInfName = pathutil.Base(strings.TrimSpace(submatch(reCreatedInf, line, "oem")))
+			s.OemInfName = strings.TrimSpace(submatch(reCreatedInf, line, "oem"))
 		}
 	}},
 	{re: reRegistered, set: func(s *model.ImportRecord, line string) {
@@ -123,26 +123,22 @@ var fieldExtractRules = []fieldExtractRule{
 			s.PackageDir = strings.TrimSpace(submatch(reRegistered, line, "dir"))
 		}
 		if s.OemInfName == "" {
-			s.OemInfName = pathutil.Base(strings.TrimSpace(submatch(reRegistered, line, "oem")))
+			s.OemInfName = strings.TrimSpace(submatch(reRegistered, line, "oem"))
 		}
 	}},
 	{re: reRegisterPkg, set: func(s *model.ImportRecord, line string) {
 		if s.PackageDir == "" {
-			s.PackageDir = pathutil.Parent(strings.TrimSpace(submatch(reRegisterPkg, line, "path")))
+			s.PackageDir = strings.TrimSpace(submatch(reRegisterPkg, line, "path"))
 		}
 	}},
-	{re: reCoreImport, extra: func(line string) bool { return !reExitOpen.MatchString(line) }, set: func(s *model.ImportRecord, line string) {
+	{re: reCoreImport, set: func(s *model.ImportRecord, line string) {
 		if s.PackageDir == "" {
 			s.PackageDir = strings.TrimSpace(submatch(reCoreImport, line, "pkg"))
 		}
 	}},
 	{re: reStoreFilename, set: func(s *model.ImportRecord, line string) {
-		path := strings.TrimSpace(submatch(reStoreFilename, line, "path"))
 		if s.PackageDir == "" {
-			s.PackageDir = pathutil.Parent(path)
-		}
-		if inf := pathutil.Base(path); strings.HasSuffix(strings.ToLower(inf), ".inf") {
-			s.InfName = inf
+			s.PackageDir = strings.TrimSpace(submatch(reStoreFilename, line, "path"))
 		}
 	}},
 }
@@ -151,53 +147,54 @@ var fieldExtractRules = []fieldExtractRule{
 func ConvertFromImportLogText(lines []string, logPath string) []model.ImportRecord {
 	var rows []model.ImportRecord
 	var section *model.ImportRecord
-	lineNo := 0
-	newSection := func(sourcePath, headerKind string, lineNumber int) *model.ImportRecord {
-		return &model.ImportRecord{
-			SourcePath: sourcePath,
-			InfName:    pathutil.Base(sourcePath),
-			LogPath:    logPath,
-			LineNumber: lineNumber,
-			HeaderKind: headerKind,
+	for lineno, line := range lines {
+		lineNum := lineno + 1
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || reExitOpen.MatchString(trimmed) {
+			continue
 		}
-	}
-	for _, line := range lines {
-		lineNo++
-		started := false
+		isNewSection := false
 		for _, rule := range sectionStartRules {
-			if !rule.re.MatchString(line) || reExitOpen.MatchString(line) {
-				continue
+			if rule.re.MatchString(trimmed) {
+				if rule.updateCurrent && section != nil {
+					// sto/dvs lines inside a section update the current
+					// section's source path instead of starting a new one.
+					if section.SourcePath == "" {
+						section.SourcePath = strings.TrimSpace(submatch(rule.re, trimmed, "source"))
+					}
+					isNewSection = true
+					break
+				}
+				if section != nil {
+					rows = append(rows, *section)
+				}
+				section = &model.ImportRecord{
+					SourcePath: strings.TrimSpace(submatch(rule.re, trimmed, "source")),
+					LogPath:    logPath,
+					LineNumber: lineNum,
+					HeaderKind: rule.kind,
+				}
+				section.InfName = pathutil.Base(section.SourcePath)
+				isNewSection = true
+				break
 			}
-			sourcePath := strings.TrimSpace(submatch(rule.re, line, "source"))
-			if rule.updateCurrent && section != nil && (section.HeaderKind == "DriverInstall" || section.HeaderKind == "DeviceInstall") {
-				section.SourcePath = sourcePath
-				section.InfName = pathutil.Base(sourcePath)
-				section.LineNumber = lineNo
-			} else {
-				section = newSection(sourcePath, rule.kind, lineNo)
-			}
-			started = true
-			break
 		}
-		if started {
+		if isNewSection {
 			continue
 		}
 		if section == nil {
 			continue
 		}
-
-		for _, rule := range fieldExtractRules {
-			if !rule.re.MatchString(line) || (rule.extra != nil && !rule.extra(line)) {
-				continue
-			}
-			rule.set(section, line)
-			break
-		}
-
-		if reSectionEnd.MatchString(line) || (strings.Contains(line, "Import Driver Package") && reExitOpen.MatchString(line)) {
-			row := *section
-			rows = append(rows, row)
+		if reSectionEnd.MatchString(trimmed) {
+			rows = append(rows, *section)
 			section = nil
+			continue
+		}
+		for _, rule := range fieldExtractRules {
+			if rule.re.MatchString(trimmed) {
+				rule.set(section, trimmed)
+				break
+			}
 		}
 	}
 	if section != nil {
@@ -221,7 +218,7 @@ type sourceCategoryRule struct {
 // documented order: install history, matching device, current official OS
 // list, then alternate official OS list.
 func sourceEvidenceRules(
-	driver *model.Driver,
+	driver *model.AssessedDriver,
 	history []model.HistoryRecord,
 	deviceEvidence []model.Device,
 	currentOSMap, alternateSourceMap map[string]model.SourceMapEntry,
@@ -263,7 +260,7 @@ func sourceEvidenceRules(
 		rules = append(rules, rule)
 	}
 
-	if GetSourceMapMatch(driver, currentOSMap, localVersion) != nil {
+	if GetSourceMapMatch(driver.Driver, currentOSMap, localVersion) != nil {
 		rules = append(rules, sourceCategoryRule{
 			name:     "current-os",
 			category: model.AuditCategoryCurrentOfficialOS,
@@ -272,7 +269,7 @@ func sourceEvidenceRules(
 		})
 	}
 
-	if GetSourceMapMatch(driver, alternateSourceMap, localVersion) != nil {
+	if GetSourceMapMatch(driver.Driver, alternateSourceMap, localVersion) != nil {
 		rules = append(rules, sourceCategoryRule{
 			name:     "alternate-os",
 			category: model.AuditCategoryAlternateOfficialOS,
@@ -287,7 +284,7 @@ func sourceEvidenceRules(
 // every matching device), independent of which source ultimately wins the
 // category. The current/alternate OS lines are attached separately when their
 // rule wins, to preserve the first-match summary contract.
-func driverEvidenceLines(driver *model.Driver, deviceEvidence []model.Device, history []model.HistoryRecord) []string {
+func driverEvidenceLines(driver *model.AssessedDriver, deviceEvidence []model.Device, history []model.HistoryRecord) []string {
 	localVersion := driver.LocalVersion
 	var lines []string
 	if latest := latestSourceHistory(history, driver, localVersion); latest != nil {
@@ -309,7 +306,7 @@ func driverEvidenceLines(driver *model.Driver, deviceEvidence []model.Device, hi
 }
 
 // ResolveDriverSourceEvidence mirrors Resolve-DriverSourceEvidence.
-func ResolveDriverSourceEvidence(driver *model.Driver, deviceEvidence []model.Device, history []model.HistoryRecord, alternateSourceMap, currentOSMap map[string]model.SourceMapEntry) model.SourceAudit {
+func ResolveDriverSourceEvidence(driver *model.AssessedDriver, deviceEvidence []model.Device, history []model.HistoryRecord, alternateSourceMap, currentOSMap map[string]model.SourceMapEntry) model.SourceAudit {
 	localVersion := driver.LocalVersion
 	if localVersion == "" {
 		return model.SourceAudit{Category: model.AuditCategoryUnknown, Summary: "No local version evidence"}
@@ -321,11 +318,11 @@ func ResolveDriverSourceEvidence(driver *model.Driver, deviceEvidence []model.De
 		}
 		audit := model.SourceAudit{Category: rule.category, Summary: rule.summary, EvidenceLines: evidence}
 		if rule.category == model.AuditCategoryCurrentOfficialOS {
-			if match := GetSourceMapMatch(driver, currentOSMap, localVersion); match != nil {
+			if match := GetSourceMapMatch(driver.Driver, currentOSMap, localVersion); match != nil {
 				audit.EvidenceLines = append(audit.EvidenceLines, "Official current OS: "+match.OSName+" (OSID "+match.OSID+"); version="+localVersion)
 			}
 		} else if rule.category == model.AuditCategoryAlternateOfficialOS {
-			if match := GetSourceMapMatch(driver, alternateSourceMap, localVersion); match != nil {
+			if match := GetSourceMapMatch(driver.Driver, alternateSourceMap, localVersion); match != nil {
 				audit.EvidenceLines = append(audit.EvidenceLines, "Official alternate OS: "+match.OSName+" (OSID "+match.OSID+"); version="+localVersion)
 			}
 		}
@@ -339,7 +336,7 @@ func ResolveDriverSourceEvidence(driver *model.Driver, deviceEvidence []model.De
 }
 
 // ResolveDriverSourceLabel mirrors Resolve-DriverSourceLabel.
-func ResolveDriverSourceLabel(driver *model.Driver, history []model.HistoryRecord, alternateSourceMap map[string]model.SourceMapEntry, sourceAudit *model.SourceAudit) string {
+func ResolveDriverSourceLabel(driver *model.AssessedDriver, history []model.HistoryRecord, alternateSourceMap map[string]model.SourceMapEntry, sourceAudit *model.SourceAudit) string {
 	if latest := latestSourceHistory(history, driver, driver.LocalVersion); latest != nil {
 		sourceOSID := latest.OSID
 		sourceOSName := latest.OSName
@@ -365,10 +362,10 @@ func ResolveDriverSourceLabel(driver *model.Driver, history []model.HistoryRecor
 			return "Local newer (source pre-existing DriverStore package)"
 		}
 	}
-	return ResolveExternalDriverSourceLabel(driver, alternateSourceMap)
+	return ResolveExternalDriverSourceLabel(driver.Driver, alternateSourceMap, driver.LocalVersion)
 }
 
-func latestSourceHistory(history []model.HistoryRecord, driver *model.Driver, localVersion string) *model.HistoryRecord {
+func latestSourceHistory(history []model.HistoryRecord, driver *model.AssessedDriver, localVersion string) *model.HistoryRecord {
 	var matches []model.HistoryRecord
 	for _, h := range history {
 		if h.Result != "Installed" && h.Result != "Verified" {

@@ -28,10 +28,9 @@ const (
 )
 
 // DriverAssessment is the comparison and source-audit results computed for a
-// driver after it is selected for the view. It is embedded in Driver so every
-// existing field access keeps working, but the assessment values are logically
-// scoped to the assessed view layer, separating them from the transport payload
-// that comes from the Lenovo API.
+// driver after it is selected for the view. It is a separate type from Driver
+// so the transport payload from the Lenovo API is never mutated by assessment
+// code; an AssessedDriver pairs the two.
 type DriverAssessment struct {
 	LocalVersion  string        `json:"LocalVersion"`
 	LocalVendor   string        `json:"LocalVendor"`
@@ -40,26 +39,9 @@ type DriverAssessment struct {
 	SourceAudit   *SourceAudit  `json:"SourceAudit,omitempty"`
 }
 
-// Driver is the normalized Lenovo driver row used by all higher layers. It
-// carries the transport fields from the API (PartID .. SourceAPI) and embeds
-// the assessed results (DriverAssessment). The embedded struct is flattened by
-// encoding/json onto the same wire shape the fields had when declared flat
-// here, so the API payload and the comparison view stay one row whose assessed
-// fields are grouped under one documented type.
-//
-// Fields from DriverAssessment (LocalVersion, LocalVendor, CompareStatus,
-// CompareSource, SourceAudit) are post-hoc evaluation results computed by the
-// compare/audit pipeline. They are NOT present in the Lenovo API response, and
-// consumers that read them must obtain them through the assessment pipeline
-// (app.assessSelectedDrivers) or the GUI export projection (guiDriverRow),
-// not by assuming they exist in the raw transport payload.
-//
-// Reading through the embedded assessment fields uses promoted-field access,
-// and writing them in composite literals uses promoted-field literals, both of
-// which require Go 1.27+. go.mod therefore pins the current latest stable
-// language level (go 1.27, no patch) as an accepted, non-negotiable baseline:
-// this heap is intentionally built on it and should not be downgraded for
-// unrelated refactors.
+// Driver is the normalized Lenovo driver row from the API. It carries only
+// transport fields; assessment results (version compare, source audit) live in
+// DriverAssessment, paired through AssessedDriver.
 type Driver struct {
 	PartID           string    `json:"PartId"`
 	PartName         string    `json:"PartName"`
@@ -82,8 +64,6 @@ type Driver struct {
 	OSID             string    `json:"OSID"`
 	OSName           string    `json:"OsName"`
 	SourceAPI        string    `json:"SourceApi"`
-
-	DriverAssessment
 }
 
 // Disabled reports whether the API marks the driver row as disabled or not
@@ -94,6 +74,14 @@ func (d *Driver) Disabled() bool {
 		return true
 	}
 	return (d.Status != "" && d.Status == "0") || (d.IsEnable != "" && d.IsEnable == "0")
+}
+
+// AssessedDriver pairs a transport Driver with its computed assessment. The
+// Driver is never mutated after construction; assessment fields are promoted
+// from DriverAssessment so consumers read them as flat fields.
+type AssessedDriver struct {
+	*Driver
+	DriverAssessment
 }
 
 // Device is a normalized PnP device row supplied by inventory.
@@ -195,7 +183,7 @@ type ImportRecord struct {
 
 // SelectionResult is the parsed manual selection result.
 type SelectionResult struct {
-	Selected      []*Driver
+	Selected      []*AssessedDriver
 	Invalid       []string
 	NotApplicable []string
 }

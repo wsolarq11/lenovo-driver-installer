@@ -13,7 +13,7 @@ import (
 
 // SelectionAnswer is the parsed interactive answer.
 type SelectionAnswer struct {
-	Drivers []*model.Driver
+	Drivers []*model.AssessedDriver
 	Toggle  bool
 	Cancel  bool
 }
@@ -24,7 +24,7 @@ func (a *App) SelectInteractive(
 	vc *ViewContext,
 	view *DriverView,
 	listOsID string,
-) []*model.Driver {
+) []*model.AssessedDriver {
 	currentView := view
 	currentListOsID := listOsID
 	for {
@@ -107,7 +107,7 @@ func (a *App) promptChoice(view *DriverView, allowToggle bool, nextOSLabel strin
 	return SelectionAnswer{Cancel: true}
 }
 
-func showActionPreview(w io.Writer, key rune, label string, drivers []*model.Driver) {
+func showActionPreview(w io.Writer, key rune, label string, drivers []*model.AssessedDriver) {
 	fmt.Fprintf(w, "  %c = %s (%d)\n", key, label, len(drivers))
 	for _, line := range plan.FormatDriverTableLines(drivers) {
 		fmt.Fprintln(w, line)
@@ -150,7 +150,7 @@ func nextOSLabel(osList []model.OSListEntry, currentID string) string {
 	return osList[idx].OSName + " (OSID " + osList[idx].OSID + ")"
 }
 
-func readDriverSelection(reader *bufio.Reader, writer io.Writer, view *DriverView) []*model.Driver {
+func readDriverSelection(reader *bufio.Reader, writer io.Writer, view *DriverView) []*model.AssessedDriver {
 	if view == nil || len(view.Selected) == 0 {
 		return nil
 	}

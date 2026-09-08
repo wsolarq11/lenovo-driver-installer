@@ -51,7 +51,7 @@ func openAppend(path string) (*os.File, error) {
 }
 
 type codeSelection struct {
-	Selected      []*model.Driver
+	Selected      []*model.AssessedDriver
 	Missing       []string
 	NotApplicable []string
 }
@@ -60,7 +60,7 @@ func quoteWindowsArgument(arg string) string {
 	if arg == "" {
 		return `""`
 	}
-	if !strings.ContainsAny(arg, " \t\n\v\"") {
+	if !strings.ContainsAny(arg, " \t\n\r\v\f\"") {
 		return arg
 	}
 	var b strings.Builder
@@ -86,7 +86,7 @@ func quoteWindowsArgument(arg string) string {
 	return b.String()
 }
 
-func selectByCodes(drivers []*model.Driver, codes string) codeSelection {
+func selectByCodes(drivers []*model.AssessedDriver, codes string) codeSelection {
 	requested := map[string]bool{}
 	for _, token := range strings.Split(codes, ",") {
 		code := strings.TrimSpace(token)
@@ -98,16 +98,16 @@ func selectByCodes(drivers []*model.Driver, codes string) codeSelection {
 	// One pass over drivers in list order keeps Selected in the same order as
 	// the caller sees them, while a requested set gives O(1) membership and
 	// missing lookups (no nested rescans).
-	for _, driver := range drivers {
-		if driver == nil || !requested[driver.DriverCode] {
+	for _, ad := range drivers {
+		if ad == nil || ad.Driver == nil || !requested[ad.DriverCode] {
 			continue
 		}
-		requested[driver.DriverCode] = false // consumed
-		if driver.CompareStatus == model.StatusNotApplicable {
-			selection.NotApplicable = append(selection.NotApplicable, driver.DriverCode)
+		requested[ad.DriverCode] = false
+		if ad.CompareStatus == model.StatusNotApplicable {
+			selection.NotApplicable = append(selection.NotApplicable, ad.DriverCode)
 			continue
 		}
-		selection.Selected = append(selection.Selected, driver)
+		selection.Selected = append(selection.Selected, ad)
 	}
 	for code, wanted := range requested {
 		if wanted {
