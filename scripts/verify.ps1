@@ -174,6 +174,27 @@ Assert-Step 'CLI help' {
     if ($LASTEXITCODE -ne 0) { throw "Help exited $LASTEXITCODE" }
 }
 
+Assert-Step 'CLI exit codes match docs contract' {
+    # Single source of truth: internal/app/help.go HelpText. docs/spec/contracts.md
+    # must carry the same numeric codes; drift fails the gate.
+    $help = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\help.go') -Raw
+    if ($help -notmatch '(?ms)Exit codes:\r?\n(.*?)(\r?\n\r?\n)') {
+        throw "help.go exit-code block not found"
+    }
+    $helpCodes = @([regex]::Matches($Matches[1], '(?m)^\s*(\d)\s+') | ForEach-Object { $_.Groups[1].Value })
+
+    $contract = Get-Content -LiteralPath (Join-Path $repoRoot 'docs\spec\contracts.md') -Raw
+    $contractCodes = @([regex]::Matches($contract, '(?m)^\|\s*`(\d)`\s*\|') | ForEach-Object { $_.Groups[1].Value })
+
+    if ($helpCodes.Count -eq 0) { throw "help.go parsed zero exit codes" }
+    if ($contractCodes.Count -eq 0) { throw "contracts.md parsed zero exit codes" }
+    $diff = Compare-Object -ReferenceObject $helpCodes -DifferenceObject $contractCodes
+    if ($diff) {
+        $detail = ($diff | ForEach-Object { "$($_.SideIndicator)$($_.InputObject)" }) -join ','
+        throw "exit-code drift (help vs contract): $detail"
+    }
+}
+
 $invalidCombinations = @(
     @('-CurrentOSOnly', '-LatestAcrossOS'),
     @('-CurrentOSOnly', '-TargetOS', '248'),
