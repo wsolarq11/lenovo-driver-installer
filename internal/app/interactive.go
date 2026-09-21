@@ -112,6 +112,9 @@ func showActionPreview(w io.Writer, key rune, label string, drivers []*model.Ass
 	for _, line := range plan.FormatDriverTableLines(drivers) {
 		fmt.Fprintln(w, line)
 	}
+	for _, line := range plan.FormatAttentionNotes(drivers) {
+		fmt.Fprintln(w, line)
+	}
 }
 
 func readLine(reader *bufio.Reader) (string, error) {

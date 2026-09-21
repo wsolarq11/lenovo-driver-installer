@@ -77,31 +77,23 @@ func (a *App) ReadHistory(ctx context.Context) []model.HistoryRecord {
 	return records
 }
 
-// WriteHistoryRecord appends one history row.
+// WriteHistoryRecord appends one history row, creating the header on the first
+// write. The record is written in the same open operation as the header so a
+// fresh ledger never drops its first entry.
 func (a *App) WriteHistoryRecord(driver *model.AssessedDriver, result, message, verifiedVersion, beforeVersion string) error {
-	if _, err := os.Stat(a.HistoryPath); os.IsNotExist(err) {
-		f, err := os.Create(a.HistoryPath)
-		if err != nil {
-			return err
-		}
-		writer := csv.NewWriter(f)
-		writeErr := writer.Write(historyHeader)
-		writer.Flush()
-		flushErr := writer.Error()
-		closeErr := f.Close()
-		if writeErr != nil {
-			return writeErr
-		}
-		if flushErr != nil {
-			return flushErr
-		}
-		return closeErr
-	}
-	f, err := os.OpenFile(a.HistoryPath, os.O_APPEND|os.O_WRONLY, 0o644)
+	_, statErr := os.Stat(a.HistoryPath)
+	creating := os.IsNotExist(statErr)
+	f, err := os.OpenFile(a.HistoryPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+	writer := csv.NewWriter(f)
+	if creating {
+		if err := writer.Write(historyHeader); err != nil {
+			return err
+		}
+	}
 	record := plan.BuildDriverHistoryRecord(
 		driver,
 		result,
@@ -110,7 +102,6 @@ func (a *App) WriteHistoryRecord(driver *model.AssessedDriver, result, message, 
 		beforeVersion,
 		formatTimestamp(time.Now()),
 	)
-	writer := csv.NewWriter(f)
 	if err := writer.Write([]string{
 		record.Timestamp, record.DriverCode, record.OSID, record.OSName, record.DriverName,
 		record.Version, record.VerifiedVersion, record.BeforeVersion, record.FileName,

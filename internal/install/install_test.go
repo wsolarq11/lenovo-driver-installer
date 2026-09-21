@@ -28,7 +28,7 @@ func TestExtractedDriverFallbackPrefersLogDir(t *testing.T) {
 	if err := os.WriteFile(logPath, []byte("Destination: "+extractDir+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	driver := &model.Driver{DriverCode: "d1", DriverName: "Test Driver"}
+	driver := &model.Driver{DriverCode: "d1", DriverName: "Test Driver", InstallParameter: "/VERYSILENT"}
 	_, used := ExtractedDriverFallback(driver, work)
 	if !used {
 		t.Fatal("fallback should use the log-pinned extraction directory")
@@ -50,7 +50,7 @@ func TestInstallEXETimeoutAttemptsFallback(t *testing.T) {
 	fallbackCalled := false
 	code, err := installEXE(
 		"d1.exe",
-		&model.Driver{DriverCode: "d1"},
+		&model.Driver{DriverCode: "d1", InstallParameter: "/VERYSILENT"},
 		t.TempDir(),
 		func(filePath string, args []string, timeoutSeconds int, workingDirectory string) ProcessResult {
 			return ProcessResult{ExitCode: -1, TimedOut: true}
@@ -74,7 +74,7 @@ func TestInstallEXETimeoutAttemptsFallback(t *testing.T) {
 func TestInstallEXESurfacesCleanExitWhenFallbackUnused(t *testing.T) {
 	code, err := installEXE(
 		"d1.exe",
-		&model.Driver{DriverCode: "d1"},
+		&model.Driver{DriverCode: "d1", InstallParameter: "/VERYSILENT"},
 		t.TempDir(),
 		func(filePath string, args []string, timeoutSeconds int, workingDirectory string) ProcessResult {
 			return ProcessResult{ExitCode: 1603}
@@ -94,7 +94,7 @@ func TestInstallEXESurfacesCleanExitWhenFallbackUnused(t *testing.T) {
 func TestInstallEXETimeoutWithoutFallbackIsHardError(t *testing.T) {
 	code, err := installEXE(
 		"d1.exe",
-		&model.Driver{DriverCode: "d1"},
+		&model.Driver{DriverCode: "d1", InstallParameter: "/VERYSILENT"},
 		t.TempDir(),
 		func(filePath string, args []string, timeoutSeconds int, workingDirectory string) ProcessResult {
 			return ProcessResult{ExitCode: -1, TimedOut: true}
@@ -188,5 +188,79 @@ func TestNormalizePnPUtilExitCode(t *testing.T) {
 		if got := normalizePnPUtilExitCode(code); got != want {
 			t.Fatalf("normalizePnPUtilExitCode(%d) = %d, want %d", code, got, want)
 		}
+	}
+}
+
+func TestSilentInstallerArgsDoesNotGuessFamily(t *testing.T) {
+	driver := &model.Driver{
+		DriverCode:       "d1",
+		InstallParameter: "/VERYSILENT /NORESTART",
+	}
+	args, ok := silentInstallerArgs(driver, `C:\tmp\d1.log`)
+	if !ok {
+		t.Fatal("official Inno parameters should be usable")
+	}
+	joined := strings.Join(args, " ")
+	if strings.Contains(joined, "/SUPPRESSMSGBOXES") {
+		t.Fatalf("Inno default should not be injected: %#v", args)
+	}
+	if !strings.Contains(joined, "/LOG=") {
+		t.Fatalf("Inno log flag should be appended for /VERYSILENT: %#v", args)
+	}
+	if !strings.Contains(joined, "/VERYSILENT") || !strings.Contains(joined, "/NORESTART") {
+		t.Fatalf("official parameters should be preserved: %#v", args)
+	}
+}
+
+func TestSilentInstallerArgsRejectsUnknownFamily(t *testing.T) {
+	args, ok := silentInstallerArgs(&model.Driver{DriverCode: "d1"}, "")
+	if ok || len(args) != 0 {
+		t.Fatalf("empty official parameters must not produce silent args: args=%#v ok=%v", args, ok)
+	}
+	_, ok = silentInstallerArgs(&model.Driver{DriverCode: "d1", InstallParameter: "/S"}, "")
+	if !ok {
+		t.Fatal("an NSIS /S parameter is official and should be used verbatim")
+	}
+}
+
+func TestInstallEXESurfacesRebootRequired(t *testing.T) {
+	code, err := installEXE(
+		"d1.exe",
+		&model.Driver{DriverCode: "d1", InstallParameter: "/VERYSILENT"},
+		t.TempDir(),
+		func(filePath string, args []string, timeoutSeconds int, workingDirectory string) ProcessResult {
+			return ProcessResult{ExitCode: 3010}
+		},
+		func(driver *model.Driver, workingDir string) (int, bool) {
+			return 0, false
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != 3010 {
+		t.Fatalf("installEXE must preserve reboot-required code: got %d, want 3010", code)
+	}
+}
+
+func TestInstallEXENoParamsIsTerminal(t *testing.T) {
+	called := false
+	code, err := installEXE(
+		"d1.exe",
+		&model.Driver{DriverCode: "d1", FileName: "d1.exe"},
+		t.TempDir(),
+		func(filePath string, args []string, timeoutSeconds int, workingDirectory string) ProcessResult {
+			called = true
+			return ProcessResult{ExitCode: 0}
+		},
+		func(driver *model.Driver, workingDir string) (int, bool) {
+			return 0, false
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "no official silent install parameters") {
+		t.Fatalf("missing silent parameters should be a terminal error: code=%d err=%v", code, err)
+	}
+	if called {
+		t.Fatal("installEXE must not launch an EXE without official silent parameters")
 	}
 }

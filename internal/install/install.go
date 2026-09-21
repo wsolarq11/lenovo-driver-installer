@@ -161,7 +161,7 @@ func InstallDriverFile(filePath string, driver *model.Driver, workingDir string)
 			return -1, timeoutErr("MSI", result)
 		}
 		if compare.InstallSucceeded(result.ExitCode) {
-			return 0, nil
+			return result.ExitCode, nil
 		}
 		return result.ExitCode, nil
 	case ".inf":
@@ -204,7 +204,10 @@ func InstallDriverFile(filePath string, driver *model.Driver, workingDir string)
 
 func installEXE(filePath string, driver *model.Driver, workingDir string, run processRunner, fallback exeFallback) (int, error) {
 	logPath := filepath.Join(workingDir, driver.DriverCode+".log")
-	args := silentInstallerArgs(driver, logPath)
+	args, ok := silentInstallerArgs(driver, logPath)
+	if !ok {
+		return -2, fmt.Errorf("no official silent install parameters for %s", driver.FileName)
+	}
 	result := run(filePath, args, 900, workingDir)
 	if result.TimedOut {
 		// No exit code was produced; a used fallback may still recover, otherwise
@@ -212,7 +215,7 @@ func installEXE(filePath string, driver *model.Driver, workingDir string, run pr
 		return finishEXEFallback(driver, workingDir, fallback, "EXE install timed out", -1)
 	}
 	if compare.InstallSucceeded(result.ExitCode) {
-		return 0, nil
+		return result.ExitCode, nil
 	}
 	// The silent installer ran and exited non-zero. Report the concrete exit
 	// code (nil error) so the caller can decide on an interactive rerun, after
@@ -239,19 +242,45 @@ func finishEXEFallback(driver *model.Driver, workingDir string, fallback exeFall
 	return silentCode, fmt.Errorf("%s", silentErr)
 }
 
-func silentInstallerArgs(driver *model.Driver, logPath string) []string {
-	args := []string{"/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"}
-	if logPath != "" {
+// silentInstallerArgs builds the silent-EXE command line from the official
+// package parameters only. It never injects a family-specific silent default.
+// The only family signal honored is the Inno-only /VERYSILENT flag, whose
+// presence is the evidence that justifies appending the Inno /LOG flag.
+// ok=false means the package has no usable silent parameters, and the caller
+// must not launch it as a silent install.
+func silentInstallerArgs(driver *model.Driver, logPath string) ([]string, bool) {
+	raw := driver.InstallParameter
+	if raw == "" {
+		raw = driver.InstallCode
+	}
+	if raw == "" || strings.HasPrefix(strings.ToLower(raw), "/add-driver") {
+		return nil, false
+	}
+	args := strings.Fields(raw)
+	if logPath != "" && hasInnoFlag(args) {
 		args = append(args, "/LOG="+logPath)
 	}
-	installCode := driver.InstallParameter
-	if installCode == "" {
-		installCode = driver.InstallCode
+	return args, true
+}
+
+// hasInnoFlag reports whether the official parameters contain /VERYSILENT,
+// which is an Inno-only switch. Its presence is the evidence that permits the
+// Inno-specific /LOG flag; its absence means no family assumption is made.
+func hasInnoFlag(args []string) bool {
+	for _, arg := range args {
+		if strings.EqualFold(arg, "/VERYSILENT") {
+			return true
+		}
 	}
-	if installCode != "" && !strings.HasPrefix(strings.ToLower(installCode), "/add-driver") {
-		args = append(args, strings.Fields(installCode)...)
-	}
-	return args
+	return false
+}
+
+// HasSilentParameters reports whether a driver carries official silent
+// installer parameters, so orchestration can choose between the silent path
+// and an interactive fallback without guessing an installer family.
+func HasSilentParameters(driver *model.Driver) bool {
+	_, ok := silentInstallerArgs(driver, "")
+	return ok
 }
 
 func installINFPaths(paths []string, workingDir string) (int, error) {

@@ -1,0 +1,35 @@
+{
+  "StatusCode": "200",
+  "Message": "ok",
+  "Data": {
+    "partList": [
+      {"PartID": "P-FN", "PartName": "Lenovo Fn and Function Keys"}
+    ],
+    "osList": [
+      {"OSID": "248", "OSName": "Windows 11 64-bit"}
+    ],
+    "driverList": [
+      {
+        "PartID": "P-FN",
+        "DriverName": "Lenovo Fn and Function Keys",
+        "DriverCode": "DRV202009030023",
+        "DriverEdtionId": "1678",
+        "Version": "2.0.0.25",
+        "FileName": "Fn-01LF0AAFAR2W6JB0.exe",
+        "FilePath": "https://fixture.invalid/download/driversdetail/Fn-01LF0AAFAR2W6JB0.exe",
+        "FileSize": "12 MB",
+        "FileType": "exe",
+        "InstallCode": "",
+        "Parameter": "/VERYSILENT /NORESTART",
+        "Bootfile": "0",
+        "HardwareId": "FIXTURE_HWID",
+        "MD5": "ABCDEF1234567890",
+        "Status": "1",
+        "IsEnable": "1",
+        "DriverIssuedDateTime": "",
+        "PubTime": "2026/5/1 10:00:00",
+        "UpdateTime": "2026/6/1 10:00:00"
+      }
+    ]
+  }
+}

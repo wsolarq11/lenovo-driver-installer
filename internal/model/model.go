@@ -14,17 +14,34 @@ const (
 	StatusNotApplicable CompareStatus = "Not applicable"
 )
 
+// StatusEvidenceBasis classifies how strongly a comparison status is backed by
+// measured evidence. It is the single projection used by plan text, console
+// summary, interactive prompts, and GUI export so the fact/inference/
+// undetermined wording never drifts between consumers.
+//
+//	fact:         both remote and local versions were measured and compared.
+//	inference:    the status depends on source audit or the absence of a local match.
+//	undetermined: the comparison could not reach a decision.
+func StatusEvidenceBasis(status CompareStatus) string {
+	switch status {
+	case StatusUpdate, StatusUpToDate:
+		return "fact"
+	case StatusNotInstalled, StatusLocalNewer:
+		return "inference"
+	default:
+		return "undetermined"
+	}
+}
+
 // AuditCategory is the resolved source-evidence category.
 type AuditCategory string
 
 const (
 	AuditCategoryUnknown             AuditCategory = "Unknown"
 	AuditCategoryInstallHistory      AuditCategory = "Install history"
-	AuditCategoryOfflineImage        AuditCategory = "Offline image integration"
-	AuditCategoryOnlinePackage       AuditCategory = "Online package installation"
 	AuditCategoryCurrentOfficialOS   AuditCategory = "Current official OS"
 	AuditCategoryAlternateOfficialOS AuditCategory = "Alternate official OS"
-	AuditCategoryPreExistingStore    AuditCategory = "Pre-existing DriverStore package"
+	AuditCategoryExternal            AuditCategory = "External"
 )
 
 // DriverAssessment is the comparison and source-audit results computed for a
@@ -37,6 +54,19 @@ type DriverAssessment struct {
 	CompareStatus CompareStatus `json:"CompareStatus"`
 	CompareSource string        `json:"CompareSource"`
 	SourceAudit   *SourceAudit  `json:"SourceAudit,omitempty"`
+	// DeviceProblem is the collapsed problem-code summary for the matched local
+	// devices, or "" when every matched device is healthy. It is derived from
+	// Windows CM_Get_DevNode_Status, not from the driver version comparison.
+	DeviceProblem string `json:"DeviceProblem,omitempty"`
+	// NonMatchReason explains why a driver was assessed Not applicable. It is
+	// populated from compare.DiagnoseDriverNonMatch so the plan and GUI export
+	// surface the actual mismatch instead of the generic "hardware not detected".
+	NonMatchReason string `json:"NonMatchReason,omitempty"`
+	// BeforeInfName is the published INF name (e.g. oem42.inf) of the matched
+	// device captured before this tool installs anything. It is the restore
+	// target a rollback hint can reference when a post-install device problem
+	// appears; it is read-only evidence, never a rollback trigger.
+	BeforeInfName string `json:"BeforeInfName,omitempty"`
 }
 
 // Driver is the normalized Lenovo driver row from the API. It carries only
@@ -104,6 +134,11 @@ type Device struct {
 	ImportLog           string
 	ImportLine          int
 	ImportKind          string
+
+	// StatusFlags is the raw CM_Get_DevNode_Status status bitmask.
+	StatusFlags uint32
+	// ProblemNumber is the Windows device problem code; 0 means no problem.
+	ProblemNumber int
 }
 
 // InstalledApp is one installed application row.

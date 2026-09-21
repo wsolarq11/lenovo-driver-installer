@@ -13,7 +13,14 @@ import (
 	"lenovo-driver/internal/install"
 	"lenovo-driver/internal/inventory"
 	"lenovo-driver/internal/model"
+	"lenovo-driver/internal/trust"
 )
+
+// verifyFileSignature is the process-wide Authenticode verification hook. It
+// defaults to the Windows WinVerifyTrust implementation and is a package
+// variable only so the offline gate can stub the real trust call for unsigned
+// fixture files. Production code never overrides it.
+var verifyFileSignature = trust.VerifyFileSignature
 
 // InstallSelected downloads and installs the selected drivers, mirroring the PS1 main loop.
 func (a *App) InstallSelected(
@@ -34,7 +41,9 @@ func (a *App) InstallSelected(
 
 	var success []*model.AssessedDriver
 	var failed []*model.AssessedDriver
-	for _, ad := range selected {
+	var deferred []*model.AssessedDriver
+installLoop:
+	for i, ad := range selected {
 		if ad == nil || ad.Driver == nil {
 			continue
 		}
@@ -63,35 +72,54 @@ func (a *App) InstallSelected(
 			continue
 		}
 
+		isEXE := strings.EqualFold(filepath.Ext(outFile), ".exe")
+		if isEXE && !install.HasSilentParameters(driver) {
+			a.Log(ctx, "["+driver.DriverCode+"] No official silent install parameters; using interactive install.", "WARN")
+			a.handleInteractiveExe(ctx, ad, outFile, dlDir, &success, &failed)
+			continue
+		}
+
 		a.Log(ctx, "["+driver.DriverCode+"] Installing "+driver.FileName, "INFO")
 		code, installErr := install.InstallDriverFile(outFile, driver, dlDir)
-		switch {
-		case code == 0 && installErr == nil:
+		switch classifyInstallResult(code, installErr, isEXE) {
+		case outcomeRebootRequired:
+			// Reboot-required installs are success, but every later install must
+			// wait for that reboot. Stop the pass and defer the rest instead of
+			// chaining installs across an uncommitted driver state.
+			a.Log(ctx, fmt.Sprintf("[%s] Installed; reboot required (exit %d). Deferring remaining drivers.", driver.DriverCode, code), "WARN")
+			a.writeHistoryRecordChecked(ctx, ad, "Installed", fmt.Sprintf("exit=%d reboot-required", code), "", "")
+			success = append(success, ad)
+			deferred = append(deferred, selected[i+1:]...)
+			break installLoop
+		case outcomeSuccess:
 			a.Log(ctx, "["+driver.DriverCode+"] Install success.", "INFO")
 			a.writeHistoryRecordChecked(ctx, ad, "Installed", "exit=0", "", "")
 			success = append(success, ad)
-		case installErr != nil:
-			message := installErr.Error()
-			a.Log(ctx, "["+driver.DriverCode+"] Install failed: "+message, "ERROR")
-			a.writeHistoryRecordChecked(ctx, ad, "Failed", message, "", "")
-			failed = append(failed, ad)
-		case strings.EqualFold(filepath.Ext(outFile), ".exe"):
-			if interactiveCode, interactiveErr := a.tryInteractiveExeFallback(ad, outFile, dlDir); interactiveErr == nil {
-				a.Log(ctx, "["+driver.DriverCode+"] Interactive installer succeeded.", "INFO")
-				a.writeHistoryRecordChecked(ctx, ad, "Installed", "interactive exit=0", "", "")
-				success = append(success, ad)
-			} else {
-				message := fmt.Sprintf("interactive installer exit %d: %s", interactiveCode, interactiveErr.Error())
+		case outcomeEXERetry:
+			a.handleInteractiveExe(ctx, ad, outFile, dlDir, &success, &failed)
+		case outcomeFailed:
+			if installErr != nil {
+				message := installErr.Error()
 				a.Log(ctx, "["+driver.DriverCode+"] Install failed: "+message, "ERROR")
 				a.writeHistoryRecordChecked(ctx, ad, "Failed", message, "", "")
 				failed = append(failed, ad)
+			} else {
+				// Concrete non-zero exit from a non-EXE package.
+				a.Log(ctx, fmt.Sprintf("[%s] Install exit code %d.", driver.DriverCode, code), "ERROR")
+				a.writeHistoryRecordChecked(ctx, ad, "Failed", fmt.Sprintf("exit=%d", code), "", "")
+				failed = append(failed, ad)
 			}
-		default:
-			// Concrete non-zero exit from a non-EXE package.
-			a.Log(ctx, fmt.Sprintf("[%s] Install exit code %d.", driver.DriverCode, code), "ERROR")
-			a.writeHistoryRecordChecked(ctx, ad, "Failed", fmt.Sprintf("exit=%d", code), "", "")
-			failed = append(failed, ad)
 		}
+	}
+
+	for _, ad := range deferred {
+		if ad == nil || ad.Driver == nil {
+			continue
+		}
+		a.writeHistoryRecordChecked(ctx, ad, "Deferred", "reboot required by earlier install", "", "")
+	}
+	if len(deferred) > 0 {
+		a.Log(ctx, fmt.Sprintf("Deferred %d driver(s) until after reboot.", len(deferred)), "WARN")
 	}
 
 	if len(success) > 0 && !vc.Opts.DownloadOnly {
@@ -99,7 +127,7 @@ func (a *App) InstallSelected(
 	}
 
 	elapsed := time.Since(a.startedAt).Minutes()
-	a.Log(ctx, fmt.Sprintf("Finished: success=%d, failed=%d, elapsed=%.2f min", len(success), len(failed), elapsed), "INFO")
+	a.Log(ctx, fmt.Sprintf("Finished: success=%d, failed=%d, deferred=%d, elapsed=%.2f min", len(success), len(failed), len(deferred), elapsed), "INFO")
 	a.Log(ctx, "Log file: "+a.LogPath, "INFO")
 	if len(failed) > 0 {
 		return fmt.Errorf("%d driver(s) failed", len(failed))
@@ -131,6 +159,22 @@ func (a *App) tryInteractiveExeFallback(ad *model.AssessedDriver, filePath, work
 	return result.ExitCode, fmt.Errorf("interactive installer exit %d", result.ExitCode)
 }
 
+// handleInteractiveExe runs the interactive EXE fallback and records the result
+// into the shared success/failed collections. It exists so the no-silent-
+// parameters path and the silent-failure path share one outcome policy.
+func (a *App) handleInteractiveExe(ctx context.Context, ad *model.AssessedDriver, outFile, dlDir string, success, failed *[]*model.AssessedDriver) {
+	if interactiveCode, interactiveErr := a.tryInteractiveExeFallback(ad, outFile, dlDir); interactiveErr == nil {
+		a.Log(ctx, "["+ad.DriverCode+"] Interactive installer succeeded.", "INFO")
+		a.writeHistoryRecordChecked(ctx, ad, "Installed", "interactive exit=0", "", "")
+		*success = append(*success, ad)
+	} else {
+		message := fmt.Sprintf("interactive installer exit %d: %s", interactiveCode, interactiveErr.Error())
+		a.Log(ctx, "["+ad.DriverCode+"] Install failed: "+message, "ERROR")
+		a.writeHistoryRecordChecked(ctx, ad, "Failed", message, "", "")
+		*failed = append(*failed, ad)
+	}
+}
+
 func (a *App) downloadVerified(
 	ctx context.Context,
 	vc *ViewContext,
@@ -148,7 +192,7 @@ func (a *App) downloadVerified(
 	// unbounded "for" whose termination the reader must infer from returns.
 	for pass := 0; pass < 2; pass++ {
 		needsDownload := true
-		usable, existingSize, rejectReason := inspectCachedFile(outFile, expectedSize, driver.OfficialMD5, opts.SkipHashCheck)
+		usable, existingSize, rejectReason := inspectCachedFile(outFile, expectedSize, driver.OfficialMD5, opts.SkipHashCheck, opts.SkipSignatureCheck)
 		if usable {
 			needsDownload = false
 			a.Log(ctx, fmt.Sprintf("[%s] Using verified cached file (%d bytes).", driver.DriverCode, existingSize), "INFO")
@@ -176,7 +220,7 @@ func (a *App) downloadVerified(
 				return 0, err
 			}
 		}
-		return verifyDownloadedFile(outFile, expectedSize, driver.OfficialMD5, opts.SkipHashCheck, needsDownload)
+		return verifyDownloadedFile(outFile, expectedSize, driver.OfficialMD5, opts.SkipHashCheck, opts.SkipSignatureCheck, needsDownload)
 	}
 	return 0, fmt.Errorf("download did not converge after 2 passes")
 }
@@ -215,6 +259,55 @@ func fileSize(path string) (int64, error) {
 	return info.Size(), nil
 }
 
+type installOutcome int
+
+const (
+	outcomeSuccess installOutcome = iota
+	outcomeRebootRequired
+	outcomeEXERetry
+	outcomeFailed
+)
+
+// classifyInstallResult maps one InstallDriverFile result to the install-loop
+// outcome. Kept pure so the reboot-deferral decision is testable offline
+// without downloading or installing anything.
+func classifyInstallResult(code int, installErr error, isEXE bool) installOutcome {
+	if compare.TestRebootExitCode(code) {
+		return outcomeRebootRequired
+	}
+	if installErr != nil {
+		return outcomeFailed
+	}
+	if code == 0 {
+		return outcomeSuccess
+	}
+	if isEXE {
+		return outcomeEXERetry
+	}
+	return outcomeFailed
+}
+
+// installBindingLabel classifies a post-install recheck into one of four
+// outcomes. "bound" means the active local version is now the package version;
+// "staged" means the version moved but has not reached the package version;
+// "unchanged" means the installer ran without replacing the active driver; and
+// "undetected" means the local version still cannot be read. The label is pure
+// so the wording never drifts between the log and the history record.
+func installBindingLabel(before, after, packageVersion string) string {
+	switch {
+	case after == "":
+		return "undetected"
+	case after == packageVersion && before == packageVersion:
+		return "unchanged"
+	case after == packageVersion:
+		return "bound"
+	case before == after:
+		return "unchanged"
+	default:
+		return "staged"
+	}
+}
+
 func (a *App) verifyInstalled(ctx context.Context, drivers []*model.AssessedDriver) {
 	a.Log(ctx, "Running post-install verification pass...", "INFO")
 	localDevices, err := inventory.GetLocalDeviceSnapshot(ctx)
@@ -238,6 +331,15 @@ func (a *App) verifyInstalled(ctx context.Context, drivers []*model.AssessedDriv
 		a.Log(ctx, "Post-install verification failed: could not read local driver versions: "+err.Error(), "ERROR")
 		return
 	}
+	// Re-read enriched device evidence so the recheck can distinguish a bound
+	// healthy device from one that still reports a Windows problem code. A
+	// failed evidence pass degrades to version-only verification, mirroring the
+	// compare pass behavior.
+	evidenceByID, evErr := a.buildDeviceEvidenceMap(ctx, union)
+	if evErr != nil {
+		a.Log(ctx, "Post-install device evidence lookup failed: "+evErr.Error(), "WARN")
+		evidenceByID = nil
+	}
 	for _, ad := range drivers {
 		if ad == nil || ad.Driver == nil {
 			continue
@@ -246,29 +348,61 @@ func (a *App) verifyInstalled(ctx context.Context, drivers []*model.AssessedDriv
 		beforeLocal := ad.LocalVersion
 		matched := compare.GetMatchingLocalDevices(driver, localDevices)
 		afterLocal, _ := a.localDriverState(driver, matched, versionIndex, &snapshot)
-		if afterLocal == "" {
-			a.Log(ctx, "["+driver.DriverCode+"] Recheck: version not detectable yet.", "WARN")
-			continue
-		}
+		projected := projectMatchedEvidence(matched, evidenceByID)
+		afterProblem := model.DeviceProblemSummary(projected)
+		afterInf := firstInfName(projected)
+		beforeInf := ad.BeforeInfName
 		beforeLabel := beforeLocal
 		if beforeLabel == "" {
 			beforeLabel = "not detected"
 		}
-		if afterLocal == beforeLocal {
+		problemLabel := afterProblem
+		if problemLabel == "" {
+			problemLabel = "none"
+		}
+		binding := installBindingLabel(beforeLocal, afterLocal, driver.Version)
+		message := fmt.Sprintf("binding=%s; local=%s; before=%s; problem=%s", binding, afterLocal, beforeLabel, problemLabel)
+		if afterProblem != "" && afterInf != "" {
+			rollback := manualRollbackGuidance(beforeInf)
+			message += "; rollback=" + rollback
+			a.Log(ctx, fmt.Sprintf("[%s] Rollback hint: %s", driver.DriverCode, rollback), "WARN")
+		}
+		switch binding {
+		case "bound":
+			if afterProblem != "" {
+				a.Log(ctx, fmt.Sprintf("[%s] Recheck: bound at %s; device problem persists (%s).", driver.DriverCode, afterLocal, afterProblem), "WARN")
+			} else {
+				a.Log(ctx, fmt.Sprintf("[%s] Recheck: bound at %s; no device problem.", driver.DriverCode, afterLocal), "INFO")
+			}
+		case "staged":
+			a.Log(ctx, fmt.Sprintf("[%s] Recheck: staged %s -> %s; package %s not yet bound (reboot may be needed).", driver.DriverCode, beforeLabel, afterLocal, driver.Version), "WARN")
+		case "unchanged":
 			packageVersion := compare.GetMatchingRemoteComponent(driver.Version, ad.LocalVendor)
 			if packageVersion != nil && packageVersion.String() != afterLocal {
 				a.Log(ctx, fmt.Sprintf("[%s] Recheck: package installed but local driver unchanged (%s); package version %s did not replace it.", driver.DriverCode, afterLocal, packageVersion.String()), "WARN")
 			} else {
 				a.Log(ctx, fmt.Sprintf("[%s] Recheck: unchanged (%s); reboot may be needed.", driver.DriverCode, afterLocal), "WARN")
 			}
-		} else {
-			a.Log(ctx, fmt.Sprintf("[%s] Recheck: %s -> %s", driver.DriverCode, beforeLabel, afterLocal), "INFO")
+		default:
+			a.Log(ctx, "["+driver.DriverCode+"] Recheck: version not detectable yet.", "WARN")
 		}
-		a.writeHistoryRecordChecked(ctx, ad, "Verified", fmt.Sprintf("local=%s; before=%s", afterLocal, beforeLabel), afterLocal, beforeLocal)
+		a.writeHistoryRecordChecked(ctx, ad, "Verified", message, afterLocal, beforeLocal)
 	}
 }
 
-func inspectCachedFile(outFile string, expectedSize int64, officialMD5 string, skipHashCheck bool) (usable bool, size int64, rejectReason string) {
+// manualRollbackGuidance builds the human instruction for a post-install device
+// problem. Device rollback is a per-device operation, not package deletion:
+// deleting the active package does not restore the previous driver and can
+// leave the device without one, so the tool never runs pnputil /delete-driver
+// as a rollback action.
+func manualRollbackGuidance(previousInf string) string {
+	if previousInf == "" {
+		previousInf = "unknown"
+	}
+	return fmt.Sprintf("Device Manager -> device -> Driver -> Roll Back Driver (previous INF %s); do not run pnputil /delete-driver", previousInf)
+}
+
+func inspectCachedFile(outFile string, expectedSize int64, officialMD5 string, skipHashCheck, skipSignatureCheck bool) (usable bool, size int64, rejectReason string) {
 	info, err := os.Stat(outFile)
 	if err != nil || info.IsDir() {
 		return false, 0, ""
@@ -283,10 +417,15 @@ func inspectCachedFile(outFile string, expectedSize int64, officialMD5 string, s
 	if officialMD5 != "" && !skipHashCheck && download.FileMD5(outFile) != officialMD5 {
 		return false, size, "Cached file MD5 mismatch"
 	}
+	if !skipSignatureCheck {
+		if err := verifyFileSignature(outFile); err != nil {
+			return false, size, "Cached file signature invalid"
+		}
+	}
 	return true, size, ""
 }
 
-func verifyDownloadedFile(outFile string, expectedSize int64, officialMD5 string, skipHashCheck, createCompanion bool) (int64, error) {
+func verifyDownloadedFile(outFile string, expectedSize int64, officialMD5 string, skipHashCheck, skipSignatureCheck, createCompanion bool) (int64, error) {
 	downloadedSize, err := fileSize(outFile)
 	if err != nil {
 		return 0, err
@@ -298,6 +437,11 @@ func verifyDownloadedFile(outFile string, expectedSize int64, officialMD5 string
 		actualMD5 := download.FileMD5(outFile)
 		if actualMD5 == "" || actualMD5 != officialMD5 {
 			return 0, fmt.Errorf("official MD5 mismatch: expected %s, got %s", officialMD5, actualMD5)
+		}
+	}
+	if !skipSignatureCheck {
+		if err := verifyFileSignature(outFile); err != nil {
+			return 0, fmt.Errorf("file signature invalid: %w", err)
 		}
 	}
 	if createCompanion && !skipHashCheck {

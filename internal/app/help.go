@@ -5,8 +5,8 @@ const HelpText = `Lenovo driver installer (Go migration)
 
 Usage:
   lenovo-driver [-DryRun] [-CurrentOSOnly] [-LatestAcrossOS] [-TargetOS <OSID|OSName>]
-                [-SkipHashCheck] [-IncludeBios] [-DownloadOnly] [-DownloadDir <path>]
-                [-Model <model>] [-Help]
+                [-SkipHashCheck] [-SkipSignatureCheck] [-IncludeBios] [-DownloadOnly]
+                [-DownloadDir <path>] [-Model <model>] [-Help]
   lenovo-driver -GuiExportPath <path> [-Model <model>]
   lenovo-driver -GuiInstallCodes <code1,code2,...>
 
@@ -15,8 +15,9 @@ Options:
   -CurrentOSOnly   Disable the interactive t action that switches supported OS lists.
   -LatestAcrossOS  Select the newest driver across all supported OS lists (explicit and experimental).
   -TargetOS        Select drivers for a specific Lenovo OS ID or OS name.
-  -SkipHashCheck   Skip local SHA-256 companion and official MD5 verification.
-  -IncludeBios     Include BIOS/EC packages. Default is to skip them.
+  -SkipHashCheck       Skip local SHA-256 companion and official MD5 verification.
+  -SkipSignatureCheck  Skip Authenticode signature verification of downloaded files.
+  -IncludeBios         Include firmware packages (BIOS/EC/ME/TPM/Thunderbolt/UEFI). Default skips them.
   -DownloadOnly    Download verified files without installing.
   -DownloadDir     Download directory. Default is %TEMP%\LenovoDrivers.
   -Model           Lenovo machine model override when automatic lookup fails.
@@ -46,7 +47,7 @@ Exit codes:
   3  GUI driver code mismatch.
 
 Artifacts:
-  %TEMP%\lenovo_driver_install.log
-  %TEMP%\lenovo_driver_plan.txt
-  %TEMP%\lenovo_driver_history.csv
+  %LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_install.log
+  %LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_history.csv
+  %LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_plan.txt (per-run plan view)
 `

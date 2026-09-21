@@ -56,9 +56,28 @@ func TestFormatStatusSummaryLines(t *testing.T) {
 		{Driver: &model.Driver{}, DriverAssessment: model.DriverAssessment{CompareStatus: "Update"}},
 		{Driver: &model.Driver{}, DriverAssessment: model.DriverAssessment{CompareStatus: "Not applicable"}},
 	}
-	lines := FormatStatusSummaryLines(drivers)
-	if !strings.Contains(strings.Join(lines, "\n"), "Update         : 2") {
-		t.Fatalf("summary count missing: %#v", lines)
+	text := strings.Join(FormatStatusSummaryLines(drivers), "\n")
+	if !strings.Contains(text, "Update         : 2") {
+		t.Fatalf("summary count missing: %s", text)
+	}
+	if !strings.Contains(text, "Evidence basis : fact=2 inference=0 undetermined=1") {
+		t.Fatalf("evidence basis count missing: %s", text)
+	}
+}
+
+func TestFormatAttentionNotes(t *testing.T) {
+	drivers := []*model.AssessedDriver{
+		{Driver: &model.Driver{DriverName: "Audio"}, DriverAssessment: model.DriverAssessment{CompareStatus: "Update"}},
+		{Driver: &model.Driver{DriverName: "Fn"}, DriverAssessment: model.DriverAssessment{CompareStatus: "Not installed", DeviceProblem: "Code 43: unknown problem"}},
+		{Driver: &model.Driver{DriverName: "Unknown"}, DriverAssessment: model.DriverAssessment{CompareStatus: "Unknown"}},
+	}
+	notes := FormatAttentionNotes(drivers)
+	text := strings.Join(notes, "\n")
+	if !strings.Contains(text, "Fn") || !strings.Contains(text, "device problem") {
+		t.Fatalf("problem note missing: %s", text)
+	}
+	if !strings.Contains(text, "Unknown is undetermined") {
+		t.Fatalf("evidence note missing: %s", text)
 	}
 }
 

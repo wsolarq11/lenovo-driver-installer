@@ -28,7 +28,16 @@ type DriverView struct {
 }
 
 var (
-	reBios          = regexp.MustCompile(`(?i)BIOS|EC Version`)
+	// reFirmware names firmware-flashing packages. It deliberately covers more
+	// than BIOS/EC because Management Engine, TPM, Thunderbolt, and generic
+	// "Firmware" packages flash non-driver firmware and are just as risky to
+	// run silently.
+	//
+	// Lenovo driver rows expose no firmware category field (only FileType
+	// exe/inf/zip/cab plus Bootfile), so this name match is the current
+	// evidence-based heuristic, not a durable classification. If a future API
+	// adds a category field, switch this filter to that field instead.
+	reFirmware      = regexp.MustCompile(`(?i)\bBIOS\b|\bUEFI\b|\bFirmware\b|\bEC\b|\bManagement Engine\b|\bTPM\b|\bThunderbolt\b`)
 	installableExts = map[string]bool{".exe": true, ".msi": true, ".zip": true, ".inf": true, ".cab": true}
 )
 
@@ -295,6 +304,7 @@ func (a *App) assessSelectedDrivers(ctx context.Context, vc *ViewContext, select
 		driver := ad.Driver
 		if !compare.TestDriverApplicable(driver, vc.LocalDevices) {
 			ad.CompareStatus = model.StatusNotApplicable
+			ad.NonMatchReason = compare.DiagnoseDriverNonMatch(driver, vc.LocalDevices)
 			continue
 		}
 		matchedDevices := matchedForDriver[i]
@@ -317,6 +327,8 @@ func (a *App) assessSelectedDrivers(ctx context.Context, vc *ViewContext, select
 			evidenceBuilt = true
 		}
 		ad.SourceAudit = a.resolveDriverSourceAudit(ad, matchedDevices, evidenceByID, vc.History, currentSourceMap, alternateSourceMap)
+		ad.DeviceProblem = model.DeviceProblemSummary(projectMatchedEvidence(matchedDevices, evidenceByID))
+		ad.BeforeInfName = firstInfName(projectMatchedEvidence(matchedDevices, evidenceByID))
 		if ad.CompareStatus == model.StatusLocalNewer {
 			ad.CompareSource = audit.ResolveDriverSourceLabel(ad, vc.History, alternateSourceMap, ad.SourceAudit)
 			a.Log(ctx, "["+driver.DriverCode+"] "+ad.CompareSource, "WARN")
@@ -344,7 +356,7 @@ func partitionViewDrivers(selected []*model.AssessedDriver) (applicable, updates
 
 func filterDriverRows(rows []*model.Driver, includeBios bool) []*model.Driver {
 	var out []*model.Driver
-	biosSkipped := 0
+	firmwareSkipped := 0
 	extSkipped := 0
 	for _, driver := range rows {
 		if driver == nil {
@@ -353,8 +365,8 @@ func filterDriverRows(rows []*model.Driver, includeBios bool) []*model.Driver {
 		if driver.Disabled() {
 			continue
 		}
-		if !includeBios && reBios.MatchString(driver.DriverName) {
-			biosSkipped++
+		if !includeBios && reFirmware.MatchString(driver.DriverName) {
+			firmwareSkipped++
 			continue
 		}
 		if !installableExts[strings.ToLower(filepath.Ext(driver.FileName))] {
@@ -427,9 +439,11 @@ func (a *App) resolveDriverSourceAudit(
 	return &auditResult
 }
 
-// WritePlanFile mirrors Write-PlanFile.
+// WritePlanFile mirrors Write-PlanFile. The UTF-8 BOM is deliberate: the plan
+// is opened in Notepad on Chinese-locale Windows, and without the BOM Notepad
+// decodes the UTF-8 bytes as GBK, garbling every Chinese driver name.
 func (a *App) WritePlanFile(drivers []*model.AssessedDriver) error {
 	lines := plan.BuildPlanText(drivers, formatTimestamp(time.Now()))
-	content := strings.Join(lines, "\r\n") + "\r\n"
+	content := "\uFEFF" + strings.Join(lines, "\r\n") + "\r\n"
 	return os.WriteFile(a.PlanPath, []byte(content), 0o644)
 }

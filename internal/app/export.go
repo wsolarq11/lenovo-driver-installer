@@ -30,20 +30,23 @@ type guiExportPayload struct {
 
 // guiDriverRow is the WPF-facing projection of one assessed driver.
 type guiDriverRow struct {
-	Selected      bool   `json:"Selected"`
-	DriverCode    string `json:"DriverCode"`
-	DriverName    string `json:"DriverName"`
-	Version       string `json:"Version"`
-	LocalVersion  string `json:"LocalVersion"`
-	CompareStatus string `json:"CompareStatus"`
-	SourceAudit   string `json:"SourceAudit"`
-	CompareSource string `json:"CompareSource"`
-	FileName      string `json:"FileName"`
-	FilePath      string `json:"FilePath"`
-	FileSize      string `json:"FileSize"`
-	MD5           string `json:"MD5"`
-	IsApplicable  bool   `json:"IsApplicable"`
-	IsUpdate      bool   `json:"IsUpdate"`
+	Selected       bool   `json:"Selected"`
+	DriverCode     string `json:"DriverCode"`
+	DriverName     string `json:"DriverName"`
+	Version        string `json:"Version"`
+	LocalVersion   string `json:"LocalVersion"`
+	CompareStatus  string `json:"CompareStatus"`
+	SourceAudit    string `json:"SourceAudit"`
+	CompareSource  string `json:"CompareSource"`
+	DeviceProblem  string `json:"DeviceProblem,omitempty"`
+	EvidenceBasis  string `json:"EvidenceBasis"`
+	NonMatchReason string `json:"NonMatchReason,omitempty"`
+	FileName       string `json:"FileName"`
+	FilePath       string `json:"FilePath"`
+	FileSize       string `json:"FileSize"`
+	MD5            string `json:"MD5"`
+	IsApplicable   bool   `json:"IsApplicable"`
+	IsUpdate       bool   `json:"IsUpdate"`
 }
 
 // ExportGUIView writes the WPF-compatible JSON view.
@@ -72,19 +75,22 @@ func (a *App) ExportGUIView(path string, vc *ViewContext, view *DriverView) erro
 			sourceAudit = string(ad.SourceAudit.Category) + ": " + ad.SourceAudit.Summary
 		}
 		payload.Drivers = append(payload.Drivers, guiDriverRow{
-			DriverCode:    ad.DriverCode,
-			DriverName:    ad.DriverName,
-			Version:       ad.Version,
-			LocalVersion:  ad.LocalVersion,
-			CompareStatus: string(ad.CompareStatus),
-			SourceAudit:   sourceAudit,
-			CompareSource: ad.CompareSource,
-			FileName:      ad.FileName,
-			FilePath:      ad.FilePath,
-			FileSize:      ad.FileSize,
-			MD5:           ad.OfficialMD5,
-			IsApplicable:  ad.CompareStatus != model.StatusNotApplicable,
-			IsUpdate:      ad.CompareStatus == model.StatusUpdate,
+			DriverCode:     ad.DriverCode,
+			DriverName:     ad.DriverName,
+			Version:        ad.Version,
+			LocalVersion:   ad.LocalVersion,
+			CompareStatus:  string(ad.CompareStatus),
+			SourceAudit:    sourceAudit,
+			CompareSource:  ad.CompareSource,
+			DeviceProblem:  ad.DeviceProblem,
+			EvidenceBasis:  model.StatusEvidenceBasis(ad.CompareStatus),
+			NonMatchReason: ad.NonMatchReason,
+			FileName:       ad.FileName,
+			FilePath:       ad.FilePath,
+			FileSize:       ad.FileSize,
+			MD5:            ad.OfficialMD5,
+			IsApplicable:   ad.CompareStatus != model.StatusNotApplicable,
+			IsUpdate:       ad.CompareStatus == model.StatusUpdate,
 		})
 	}
 	data, err := json.MarshalIndent(payload, "", "  ")

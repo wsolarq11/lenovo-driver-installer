@@ -59,11 +59,11 @@ func GetSourceMapMatch(driver *model.Driver, sourceMap map[string]model.SourceMa
 func ResolveExternalDriverSourceLabel(driver *model.Driver, alternateSourceMap map[string]model.SourceMapEntry, localVersion string) string {
 	if match := GetSourceMapMatch(driver, alternateSourceMap, localVersion); match != nil {
 		if match.OSName != "" {
-			return "Local newer (source " + match.OSName + ")"
+			return "Local newer (version matches " + match.OSName + " list)"
 		}
-		return "Local newer (source OSID " + match.OSID + ")"
+		return "Local newer (version matches OSID " + match.OSID + " list)"
 	}
-	return "Local newer (source unknown)"
+	return "Local newer (source external/unknown)"
 }
 
 type sectionStartRule struct {
@@ -245,17 +245,20 @@ func sourceEvidenceRules(
 		if device.DriverVersion != localVersion {
 			continue
 		}
+		// Device evidence comes from shared setupapi logs and the DriverStore,
+		// which record a mechanism (offline image, online package, pre-existing
+		// store) but not an attributable provenance. The category is therefore
+		// External rather than a claim about who installed the driver; the
+		// mechanism stays in the summary and the raw evidence lines.
 		rule := sourceCategoryRule{name: "device:" + device.Name, match: true}
+		rule.category = model.AuditCategoryExternal
 		switch {
 		case device.ImportSource != "" && device.ImportKind == "Offline":
-			rule.category = model.AuditCategoryOfflineImage
-			rule.summary = "Offline image integration source: " + device.ImportSource
+			rule.summary = "External source (offline image integration): " + device.ImportSource
 		case device.ImportSource != "":
-			rule.category = model.AuditCategoryOnlinePackage
-			rule.summary = "Online package installation source: " + device.ImportSource
+			rule.summary = "External source (online package installation): " + device.ImportSource
 		default:
-			rule.category = model.AuditCategoryPreExistingStore
-			rule.summary = "Active driver came from a pre-existing DriverStore package, not current install history"
+			rule.summary = "External source (pre-existing DriverStore package)"
 		}
 		rules = append(rules, rule)
 	}
@@ -350,17 +353,8 @@ func ResolveDriverSourceLabel(driver *model.AssessedDriver, history []model.Hist
 			return "Local newer (same current OS source)"
 		}
 	}
-	if sourceAudit != nil {
-		switch sourceAudit.Category {
-		case model.AuditCategoryOfflineImage:
-			return "Local newer (source offline image integration)"
-		case model.AuditCategoryOnlinePackage:
-			return "Local newer (source online package installation)"
-		case model.AuditCategoryCurrentOfficialOS:
-			return "Local newer (source current OS official list)"
-		case model.AuditCategoryPreExistingStore:
-			return "Local newer (source pre-existing DriverStore package)"
-		}
+	if sourceAudit != nil && sourceAudit.Category == model.AuditCategoryCurrentOfficialOS {
+		return "Local newer (version matches current OS official list)"
 	}
 	return ResolveExternalDriverSourceLabel(driver.Driver, alternateSourceMap, driver.LocalVersion)
 }

@@ -79,7 +79,7 @@ func TestDownloadVerifiedRefreshes403URL(t *testing.T) {
 	driver := &model.Driver{DriverCode: "d1", FileName: "driver.exe", FilePath: "https://download.example/old.exe", FileSize: "12 B"}
 	ad := &model.AssessedDriver{Driver: driver}
 	vc := &ViewContext{
-		Opts:       Options{},
+		Opts:       Options{SkipSignatureCheck: true},
 		CategoryID: "cat",
 		OsList:     []model.OSListEntry{{OSID: "248"}},
 	}
@@ -136,11 +136,11 @@ func TestInspectCachedFileRejectsMismatch(t *testing.T) {
 	if err := os.WriteFile(path, content, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	usable, size, reason := inspectCachedFile(path, int64(len(content)), "", true)
+	usable, size, reason := inspectCachedFile(path, int64(len(content)), "", true, true)
 	if !usable || size != int64(len(content)) || reason != "" {
 		t.Fatalf("cached file should be usable: usable=%v size=%d reason=%q", usable, size, reason)
 	}
-	usable, _, reason = inspectCachedFile(path, int64(len(content)+2000), "", true)
+	usable, _, reason = inspectCachedFile(path, int64(len(content)+2000), "", true, true)
 	if usable || reason != "Cached file size mismatch" {
 		t.Fatalf("cached file mismatch should reject: usable=%v reason=%q", usable, reason)
 	}
@@ -153,7 +153,7 @@ func TestVerifyDownloadedFile(t *testing.T) {
 	if err := os.WriteFile(path, content, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	size, err := verifyDownloadedFile(path, int64(len(content)), "", true, false)
+	size, err := verifyDownloadedFile(path, int64(len(content)), "", true, true, false)
 	if err != nil || size != int64(len(content)) {
 		t.Fatalf("verifyDownloadedFile = %d, err=%v", size, err)
 	}
@@ -414,7 +414,7 @@ func TestAssessedDriverOwnership(t *testing.T) {
 	// DriverAssessment copy. Mutating the assessment on the view copy must
 	// never leak into the API/cache row, and the Driver pointer is shared
 	// (non-assessment fields are immutable after construction).
-	audit := &model.SourceAudit{Category: model.AuditCategoryOnlinePackage, EvidenceLines: []string{"a", "b"}}
+	audit := &model.SourceAudit{Category: model.AuditCategoryExternal, EvidenceLines: []string{"a", "b"}}
 	orig := &model.Driver{DriverCode: "d1", DriverName: "Audio", Version: "1.0.0.0"}
 	ad := &model.AssessedDriver{
 		Driver: orig,
@@ -460,5 +460,116 @@ func TestProjectMatchedEvidencePreservesPerDriverSemantics(t *testing.T) {
 	want := []model.Device{{PnpDeviceID: "A", Class: "class-a-enriched", ImportSource: "setupapi"}}
 	if got := projectMatchedEvidence(matched, byID); !reflect.DeepEqual(got, want) {
 		t.Fatalf("projection must pick enriched in-map rows in matched order: got %#v want %#v", got, want)
+	}
+}
+
+func TestInspectCachedFileRejectsInvalidSignature(t *testing.T) {
+	original := verifyFileSignature
+	defer func() { verifyFileSignature = original }()
+	verifyFileSignature = func(string) error { return errors.New("unsigned") }
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "driver.exe")
+	if err := os.WriteFile(path, []byte("bytes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	usable, _, reason := inspectCachedFile(path, 5, "", true, false)
+	if usable || reason != "Cached file signature invalid" {
+		t.Fatalf("cached file with invalid signature should reject: usable=%v reason=%q", usable, reason)
+	}
+}
+
+func TestVerifyDownloadedFileRejectsInvalidSignature(t *testing.T) {
+	original := verifyFileSignature
+	defer func() { verifyFileSignature = original }()
+	verifyFileSignature = func(string) error { return errors.New("unsigned") }
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "driver.exe")
+	if err := os.WriteFile(path, []byte("bytes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := verifyDownloadedFile(path, 5, "", true, false, false); err == nil || !strings.Contains(err.Error(), "signature invalid") {
+		t.Fatalf("verifyDownloadedFile should reject invalid signature, got %v", err)
+	}
+}
+
+func TestFilterDriverRowsFirmwareWhitelist(t *testing.T) {
+	rows := []*model.Driver{
+		{DriverName: "BIOS Update", FileName: "bios.exe"},
+		{DriverName: "Intel Management Engine Firmware", FileName: "me.exe"},
+		{DriverName: "Thunderbolt Firmware", FileName: "tb.exe"},
+		{DriverName: "TPM Firmware", FileName: "tpm.exe"},
+		{DriverName: "EC Version", FileName: "ec.exe"},
+		{DriverName: "Realtek Audio", FileName: "audio.exe"},
+	}
+	got := filterDriverRows(rows, false)
+	if len(got) != 1 || got[0].DriverName != "Realtek Audio" {
+		t.Fatalf("firmware whitelist should skip all firmware rows, got %#v", got)
+	}
+	if all := filterDriverRows(rows, true); len(all) != len(rows) {
+		t.Fatalf("IncludeBios should keep firmware rows: got %d, want %d", len(all), len(rows))
+	}
+}
+
+func TestParseOptionsSignatureFlag(t *testing.T) {
+	opts, err := ParseOptions([]string{"-SkipSignatureCheck"})
+	if err != nil || !opts.SkipSignatureCheck {
+		t.Fatalf("SkipSignatureCheck should parse: opts=%#v err=%v", opts, err)
+	}
+}
+
+func TestInstallBindingLabel(t *testing.T) {
+	cases := []struct {
+		name, before, after, pkg, want string
+	}{
+		{"bound", "1.0", "2.0", "2.0", "bound"},
+		{"already bound", "2.0", "2.0", "2.0", "unchanged"},
+		{"staged", "1.0", "1.5", "2.0", "staged"},
+		{"unchanged", "1.0", "1.0", "2.0", "unchanged"},
+		{"undetected", "1.0", "", "2.0", "undetected"},
+	}
+	for _, tc := range cases {
+		if got := installBindingLabel(tc.before, tc.after, tc.pkg); got != tc.want {
+			t.Fatalf("%s: installBindingLabel(%q, %q, %q) = %q, want %q", tc.name, tc.before, tc.after, tc.pkg, got, tc.want)
+		}
+	}
+}
+
+func TestClassifyInstallResult(t *testing.T) {
+	cases := []struct {
+		name  string
+		code  int
+		err   error
+		isEXE bool
+		want  installOutcome
+	}{
+		{"reboot 3010", 3010, nil, false, outcomeRebootRequired},
+		{"reboot 1641", 1641, nil, false, outcomeRebootRequired},
+		{"terminal error", -2, errors.New("boom"), false, outcomeFailed},
+		{"success", 0, nil, false, outcomeSuccess},
+		{"exe retry", 1603, nil, true, outcomeEXERetry},
+		{"non-exe fail", 1603, nil, false, outcomeFailed},
+	}
+	for _, tc := range cases {
+		if got := classifyInstallResult(tc.code, tc.err, tc.isEXE); got != tc.want {
+			t.Fatalf("%s: classifyInstallResult = %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestManualRollbackGuidance(t *testing.T) {
+	guidance := manualRollbackGuidance("oem57.inf")
+	if !strings.Contains(guidance, "Roll Back Driver") {
+		t.Fatalf("guidance should prescribe device-level rollback: %q", guidance)
+	}
+	if !strings.Contains(guidance, "do not run pnputil /delete-driver") {
+		t.Fatalf("guidance should forbid package deletion as rollback: %q", guidance)
+	}
+	if !strings.Contains(guidance, "oem57.inf") {
+		t.Fatalf("guidance should name the previous INF: %q", guidance)
+	}
+	if got := manualRollbackGuidance(""); !strings.Contains(got, "unknown") {
+		t.Fatalf("guidance should mark unknown previous INF: %q", got)
 	}
 }

@@ -1,0 +1,38 @@
+{
+  "statusCode": "200",
+  "message": "ok",
+  "data": {
+    "localOSID": "248",
+    "osList": [
+      {"OSID": "248", "OSName": "Windows 11 64-bit"}
+    ],
+    "partList": [
+      {
+        "PartID": "P-AUDIO",
+        "drivelist": [
+          {
+            "PartID": "P-AUDIO",
+            "DriverName": "Realtek Audio",
+            "DriverCode": "DRV202102040011",
+            "DriverEditionId": "1722",
+            "Version": "6.0.9363.1",
+            "FileName": "audio-2GY507AFZLL741C0.exe",
+            "FilePath": "https://fixture.invalid/download/driversdetail/audio.exe",
+            "FileSize": "13 MB",
+            "FileType": "exe",
+            "InstallCode": "/VERYSILENT",
+            "Parameter": "",
+            "Bootfile": "0",
+            "HardwareId": "FIXTURE_HWID",
+            "MD5": "",
+            "Status": "1",
+            "IsEnable": "1",
+            "DriverIssuedDateTime": "2026/5/1",
+            "PubTime": "",
+            "UpdateTime": ""
+          }
+        ]
+      }
+    ]
+  }
+}

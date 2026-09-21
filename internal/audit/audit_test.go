@@ -22,7 +22,7 @@ func TestResolveExternalDriverSourceLabel(t *testing.T) {
 	driver := &model.Driver{DriverName: "Audio", DriverCode: "d1"}
 	alternate := map[string]model.SourceMapEntry{"Audio|2.0.0.1": {OSID: "248", OSName: "Windows 11 64-bit"}}
 	got := ResolveExternalDriverSourceLabel(driver, alternate, "2.0.0.1")
-	if got != "Local newer (source Windows 11 64-bit)" {
+	if got != "Local newer (version matches Windows 11 64-bit list)" {
 		t.Fatalf("unexpected label: %q", got)
 	}
 }
@@ -65,7 +65,7 @@ func TestResolveDriverSourceEvidence(t *testing.T) {
 	}
 	device := model.Device{Name: "Audio", DriverVersion: "2.0.0.1", InfName: "oem1.inf"}
 	auditResult := ResolveDriverSourceEvidence(driver, []model.Device{device}, nil, nil, nil)
-	if auditResult.Category != model.AuditCategoryPreExistingStore {
+	if auditResult.Category != model.AuditCategoryExternal {
 		t.Fatalf("unexpected audit category: %q", auditResult.Category)
 	}
 }
@@ -96,11 +96,11 @@ func TestSourceEvidenceOfflineImageAvailable(t *testing.T) {
 	}
 	device := model.Device{Name: "Audio", DriverVersion: "2.0.0.1", ImportSource: "SW_DVD5", ImportKind: "Offline"}
 	auditResult := ResolveDriverSourceEvidence(driver, []model.Device{device}, nil, nil, nil)
-	if auditResult.Category != model.AuditCategoryOfflineImage {
-		t.Fatalf("offline image should win, got %q", auditResult.Category)
+	if auditResult.Category != model.AuditCategoryExternal {
+		t.Fatalf("offline image should be External, got %q", auditResult.Category)
 	}
-	if !strings.Contains(auditResult.Summary, "SW_DVD5") {
-		t.Fatalf("offline summary missing source: %q", auditResult.Summary)
+	if !strings.Contains(auditResult.Summary, "offline image integration") || !strings.Contains(auditResult.Summary, "SW_DVD5") {
+		t.Fatalf("offline summary missing mechanism/source: %q", auditResult.Summary)
 	}
 }
 
@@ -112,7 +112,7 @@ func TestSourceEvidenceDeviceOutranksCurrentOS(t *testing.T) {
 	device := model.Device{Name: "Audio", DriverVersion: "2.0.0.1", InfName: "oem1.inf"}
 	current := map[string]model.SourceMapEntry{"Audio|2.0.0.1": {OSID: "42", OSName: "Windows 10 64-bit"}}
 	auditResult := ResolveDriverSourceEvidence(driver, []model.Device{device}, nil, current, nil)
-	if auditResult.Category != model.AuditCategoryPreExistingStore {
+	if auditResult.Category != model.AuditCategoryExternal {
 		t.Fatalf("device evidence should outrank current OS list, got %q", auditResult.Category)
 	}
 }

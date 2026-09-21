@@ -1,6 +1,7 @@
 package compare
 
 import (
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
@@ -49,6 +50,7 @@ func matchVendor(value string) string {
 // by a regression test.
 type driverMatchRule struct {
 	priority    int
+	key         string
 	driver      *regexp.Regexp
 	class       *regexp.Regexp
 	device      *regexp.Regexp
@@ -109,18 +111,18 @@ func (r *driverMatchRule) matchingDevices(localDevices []model.Device) []model.D
 }
 
 var driverMatchRules = []driverMatchRule{
-	{priority: 1, driver: regexp.MustCompile(`(?i)BlueTooth.*8852AE`), class: regexp.MustCompile(`(?i)Bluetooth`), device: regexp.MustCompile(`(?i)Realtek`), name: regexp.MustCompile(`(?i)Realtek.*Bluetooth|Bluetooth.*Realtek`)},
-	{priority: 2, driver: regexp.MustCompile(`(?i)Camera`), class: regexp.MustCompile(`(?i)Camera|Image`), device: regexp.MustCompile(`(?i)Camera|Webcam`), name: regexp.MustCompile(`(?i)Camera|Integrated Webcam`), classOrName: true},
-	{priority: 3, driver: regexp.MustCompile(`(?i)Cardreader`), device: regexp.MustCompile(`(?i)Card Reader|Cardreader|SD|MMC`), name: regexp.MustCompile(`(?i)Card Reader|Cardreader`)},
-	{priority: 4, driver: regexp.MustCompile(`(?i)Wlan`), class: regexp.MustCompile(`(?i)Net`), device: regexp.MustCompile(`(?i)Intel|Realtek|MediaTek|MTK|Wireless|Wi-Fi|WLAN`), name: regexp.MustCompile(`(?i)Wireless-AC|Wireless LAN|Wi-Fi|WLAN|AX20|8852AE|8822CE|MT7921|MediaTek.*Wi`), exclude: reVirtual},
-	{priority: 5, driver: regexp.MustCompile(`(?i)BlueTooth`), class: regexp.MustCompile(`(?i)Bluetooth`), device: regexp.MustCompile(`(?i)Intel|Realtek|MediaTek|MTK|Bluetooth`), name: regexp.MustCompile(`(?i)Bluetooth`)},
-	{priority: 6, driver: regexp.MustCompile(`(?i)Realtek Audio`), class: regexp.MustCompile(`(?i)MEDIA|AudioEndpoint`), device: regexp.MustCompile(`(?i)Realtek|Audio`), name: regexp.MustCompile(`(?i)Realtek.*Audio|High Definition Audio`), classOrName: true},
-	{priority: 7, driver: regexp.MustCompile(`(?i)AMD VGA`), class: regexp.MustCompile(`(?i)Display`), device: regexp.MustCompile(`(?i)AMD|Radeon`), name: regexp.MustCompile(`(?i)AMD Radeon|Radeon.*Graphics|AMD.*Display`)},
-	{priority: 8, driver: regexp.MustCompile(`(?i)NVIDIA VGA`), class: regexp.MustCompile(`(?i)Display`), device: regexp.MustCompile(`(?i)NVIDIA`), name: regexp.MustCompile(`(?i)NVIDIA GeForce|NVIDIA.*Display`)},
-	{priority: 9, driver: regexp.MustCompile(`(?i)Realtek Lan`), class: regexp.MustCompile(`(?i)Net`), device: regexp.MustCompile(`(?i)Realtek`), name: regexp.MustCompile(`(?i)Realtek.*Ethernet|Realtek.*PCIe|Realtek.*Gbe`)},
-	{priority: 10, driver: regexp.MustCompile(`(?i)Serial-IO`), device: regexp.MustCompile(`(?i)Serial IO|Serial-IO|I2C|AMD.*IO`), name: regexp.MustCompile(`(?i)Serial IO|Serial-IO|AMD.*IO`)},
-	{priority: 11, driver: regexp.MustCompile(`(?i)AMD Power`), device: regexp.MustCompile(`(?i)AMD`), name: regexp.MustCompile(`(?i)AMD Power|Power Processor`)},
-	{priority: 12, driver: regexp.MustCompile(`(?i)Lenovo Energy|Lenovo Fn|X-Rite`), always: true, name: regexp.MustCompile(`(?i)Lenovo Fn|LHK2019|Lenovo Energy|Lenovo Utility|X-Rite`)},
+	{priority: 1, key: "Bluetooth 8852AE", driver: regexp.MustCompile(`(?i)BlueTooth.*8852AE`), class: regexp.MustCompile(`(?i)Bluetooth`), device: regexp.MustCompile(`(?i)Realtek`), name: regexp.MustCompile(`(?i)Realtek.*Bluetooth|Bluetooth.*Realtek`)},
+	{priority: 2, key: "Camera", driver: regexp.MustCompile(`(?i)Camera`), class: regexp.MustCompile(`(?i)Camera|Image`), device: regexp.MustCompile(`(?i)Camera|Webcam`), name: regexp.MustCompile(`(?i)Camera|Integrated Webcam`), classOrName: true},
+	{priority: 3, key: "Card reader", driver: regexp.MustCompile(`(?i)Cardreader`), device: regexp.MustCompile(`(?i)Card Reader|Cardreader|SD|MMC`), name: regexp.MustCompile(`(?i)Card Reader|Cardreader`)},
+	{priority: 4, key: "WLAN", driver: regexp.MustCompile(`(?i)Wlan`), class: regexp.MustCompile(`(?i)Net`), device: regexp.MustCompile(`(?i)Intel|Realtek|MediaTek|MTK|Wireless|Wi-Fi|WLAN`), name: regexp.MustCompile(`(?i)Wireless-AC|Wireless LAN|Wi-Fi|WLAN|AX20|8852AE|8822CE|MT7921|MediaTek.*Wi`), exclude: reVirtual},
+	{priority: 5, key: "Bluetooth", driver: regexp.MustCompile(`(?i)BlueTooth`), class: regexp.MustCompile(`(?i)Bluetooth`), device: regexp.MustCompile(`(?i)Intel|Realtek|MediaTek|MTK|Bluetooth`), name: regexp.MustCompile(`(?i)Bluetooth`)},
+	{priority: 6, key: "Realtek Audio", driver: regexp.MustCompile(`(?i)Realtek Audio`), class: regexp.MustCompile(`(?i)MEDIA|AudioEndpoint`), device: regexp.MustCompile(`(?i)Realtek|Audio`), name: regexp.MustCompile(`(?i)Realtek.*Audio|High Definition Audio`), classOrName: true},
+	{priority: 7, key: "AMD VGA", driver: regexp.MustCompile(`(?i)AMD VGA`), class: regexp.MustCompile(`(?i)Display`), device: regexp.MustCompile(`(?i)AMD|Radeon`), name: regexp.MustCompile(`(?i)AMD Radeon|Radeon.*Graphics|AMD.*Display`)},
+	{priority: 8, key: "NVIDIA VGA", driver: regexp.MustCompile(`(?i)NVIDIA VGA`), class: regexp.MustCompile(`(?i)Display`), device: regexp.MustCompile(`(?i)NVIDIA`), name: regexp.MustCompile(`(?i)NVIDIA GeForce|NVIDIA.*Display`)},
+	{priority: 9, key: "Realtek LAN", driver: regexp.MustCompile(`(?i)Realtek Lan`), class: regexp.MustCompile(`(?i)Net`), device: regexp.MustCompile(`(?i)Realtek`), name: regexp.MustCompile(`(?i)Realtek.*Ethernet|Realtek.*PCIe|Realtek.*Gbe`)},
+	{priority: 10, key: "Serial-IO", driver: regexp.MustCompile(`(?i)Serial-IO`), device: regexp.MustCompile(`(?i)Serial IO|Serial-IO|I2C|AMD.*IO`), name: regexp.MustCompile(`(?i)Serial IO|Serial-IO|AMD.*IO`)},
+	{priority: 11, key: "AMD Power", driver: regexp.MustCompile(`(?i)AMD Power`), device: regexp.MustCompile(`(?i)AMD`), name: regexp.MustCompile(`(?i)AMD Power|Power Processor`)},
+	{priority: 12, key: "Lenovo software", driver: regexp.MustCompile(`(?i)Lenovo Energy|Lenovo Fn|X-Rite`), always: true, name: regexp.MustCompile(`(?i)Lenovo Fn|LHK2019|Lenovo Energy|Lenovo Utility|X-Rite`)},
 }
 
 // TestHardwareMatch mirrors Test-HardwareMatch.
@@ -192,6 +194,49 @@ func TestDriverApplicable(driver *model.Driver, localDevices []model.Device) boo
 		return rule.applicable(driver, localDevices)
 	}
 	return false
+}
+
+// DiagnoseDriverNonMatch explains why a driver is Not applicable. It names the
+// evidence actually checked (hardware id, matching rule, or the absence of a
+// rule) so a plan reader can tell an honest hardware mismatch apart from a
+// missing rule instead of collapsing every case into "hardware not detected".
+func DiagnoseDriverNonMatch(driver *model.Driver, localDevices []model.Device) string {
+	if driver == nil {
+		return "driver is nil"
+	}
+	if driver.HardwareID != "" {
+		return hardwareIDNonMatchReason(driver.HardwareID)
+	}
+	for _, rule := range driverMatchRules {
+		if !rule.matches(driver.DriverName) {
+			continue
+		}
+		return fmt.Sprintf("driver name matched rule %q but no local device satisfied it", rule.key)
+	}
+	return fmt.Sprintf("no matching rule for driver name %q", driver.DriverName)
+}
+
+// hardwareIDNonMatchReason summarizes an unmatched hardware id list without
+// dumping every vendor/device pair into the plan. The full list already lives
+// in the source driver row, so the note keeps the first two ids plus the total
+// count for a readable, still-honest diagnosis.
+func hardwareIDNonMatchReason(raw string) string {
+	var ids []string
+	for _, token := range reListSplit.Split(raw, -1) {
+		if token = strings.TrimSpace(token); token != "" {
+			ids = append(ids, token)
+		}
+	}
+	switch len(ids) {
+	case 0:
+		return "hardware id matched no local PnP/device ID"
+	case 1:
+		return fmt.Sprintf("hardware id %s matched no local PnP/device ID", ids[0])
+	case 2:
+		return fmt.Sprintf("hardware ids %s, %s matched no local PnP/device ID", ids[0], ids[1])
+	default:
+		return fmt.Sprintf("hardware ids %s, %s, ... (%d ids) matched no local PnP/device ID", ids[0], ids[1], len(ids))
+	}
 }
 
 // GetDeviceVendor mirrors Get-DeviceVendor.

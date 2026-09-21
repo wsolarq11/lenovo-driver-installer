@@ -91,6 +91,24 @@ function Add-DriverGridColumns {
     $source.Width = 330
     $source.Binding = New-Object System.Windows.Data.Binding -ArgumentList 'SourceAudit'
     $Grid.Columns.Add($source) | Out-Null
+
+    $evidence = New-Object System.Windows.Controls.DataGridTextColumn
+    $evidence.Header = '证据分级'
+    $evidence.Width = 100
+    $evidence.Binding = New-Object System.Windows.Data.Binding -ArgumentList 'EvidenceBasis'
+    $Grid.Columns.Add($evidence) | Out-Null
+
+    $problem = New-Object System.Windows.Controls.DataGridTextColumn
+    $problem.Header = '设备问题'
+    $problem.Width = 160
+    $problem.Binding = New-Object System.Windows.Data.Binding -ArgumentList 'DeviceProblem'
+    $Grid.Columns.Add($problem) | Out-Null
+
+    $nonMatch = New-Object System.Windows.Controls.DataGridTextColumn
+    $nonMatch.Header = '不适用原因'
+    $nonMatch.Width = 260
+    $nonMatch.Binding = New-Object System.Windows.Data.Binding -ArgumentList 'NonMatchReason'
+    $Grid.Columns.Add($nonMatch) | Out-Null
 }
 
 function Set-LenovoDriverRows {
@@ -161,7 +179,11 @@ function New-LenovoDriverWindow {
         Start-InstallAction -Kind Selected -DownloadOnly
     })
     $script:Ui['OpenPlanButton'].Add_Click({
-        $plan = Join-Path $env:TEMP 'lenovo_driver_plan.txt'
+        if ($env:LOCALAPPDATA) {
+            $plan = Join-Path $env:LOCALAPPDATA 'Lenovo\DriverInstaller\lenovo_driver_plan.txt'
+        } else {
+            $plan = Join-Path $env:TEMP 'lenovo_driver_plan.txt'
+        }
         if (Test-Path -LiteralPath $plan) {
             Start-Process -FilePath 'notepad.exe' -ArgumentList $plan
         } else {

@@ -21,7 +21,7 @@ func formatTimestamp(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
-// Log writes one line to TEMP log and mirrors it to stdout.
+// Log writes one line to the stable operation log and mirrors it to stdout.
 func (a *App) Log(ctx context.Context, message, level string) {
 	logMu.Lock()
 	defer logMu.Unlock()

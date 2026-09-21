@@ -67,6 +67,19 @@ func (a *App) buildDeviceEvidenceMap(ctx context.Context, union []model.Device) 
 	return byID, nil
 }
 
+// firstInfName returns the published INF leaf (e.g. oem42.inf) of the first
+// enriched device that has one. The leaf identifies the newly bound package in
+// the recheck evidence; it is used only to signal a device-level rollback, not
+// as a package-deletion argument.
+func firstInfName(devices []model.Device) string {
+	for _, device := range devices {
+		if leaf := pathutil.Base(device.InfName); leaf != "" {
+			return leaf
+		}
+	}
+	return ""
+}
+
 // projectMatchedEvidence returns the enriched evidence rows for the matched
 // devices that the evidence scan found, in matched order. When the evidence
 // map is nil (the evidence pass failed), it returns the plain matched rows so

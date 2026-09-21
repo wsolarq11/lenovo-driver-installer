@@ -40,6 +40,7 @@ type nativeProcSet struct {
 	destroyDeviceInfoList  *syscall.LazyProc
 	getDeviceInstanceID    *syscall.LazyProc
 	cmGetDeviceID          *syscall.LazyProc
+	cmGetDevNodeStatus     *syscall.LazyProc
 	getDevRegProp          *syscall.LazyProc
 	getDeviceProperty      *syscall.LazyProc
 	regOpenKeyEx           *syscall.LazyProc
@@ -68,6 +69,7 @@ func loadNativeAPI() nativeProcSet {
 		destroyDeviceInfoList:  setupapi.NewProc("SetupDiDestroyDeviceInfoList"),
 		getDeviceInstanceID:    setupapi.NewProc("SetupDiGetDeviceInstanceIdW"),
 		cmGetDeviceID:          cfgmgr32.NewProc("CM_Get_Device_IDW"),
+		cmGetDevNodeStatus:     cfgmgr32.NewProc("CM_Get_DevNode_Status"),
 		getDevRegProp:          setupapi.NewProc("SetupDiGetDeviceRegistryPropertyW"),
 		getDeviceProperty:      setupapi.NewProc("SetupDiGetDevicePropertyW"),
 		regOpenKeyEx:           advapi.NewProc("RegOpenKeyExW"),
@@ -96,6 +98,8 @@ type nativeDeviceRow struct {
 	infName       string
 	providerName  string
 	installDate   string
+	statusFlags   uint32
+	problemNumber uint32
 }
 
 // enumerateDevices scans the present PnP tree once, collecting identity
@@ -123,12 +127,15 @@ func enumerateDevices() ([]nativeDeviceRow, error) {
 		if err != nil || instanceID == "" {
 			continue
 		}
+		status, problem := nativeDevNodeStatus(dev.devInst)
 		row := nativeDeviceRow{
-			instanceID:  instanceID,
-			name:        nativeDeviceRegistryString(hdev, dev, spdrpDeviceDesc),
-			deviceID:    nativeDeviceRegistryString(hdev, dev, spdrpHardwareID),
-			class:       nativeDeviceRegistryString(hdev, dev, spdrpClass),
-			installDate: readDeviceInstallDate(hdev, dev),
+			instanceID:    instanceID,
+			name:          nativeDeviceRegistryString(hdev, dev, spdrpDeviceDesc),
+			deviceID:      nativeDeviceRegistryString(hdev, dev, spdrpHardwareID),
+			class:         nativeDeviceRegistryString(hdev, dev, spdrpClass),
+			installDate:   readDeviceInstallDate(hdev, dev),
+			statusFlags:   status,
+			problemNumber: problem,
 		}
 		out = append(out, row)
 	}
@@ -178,6 +185,8 @@ func (row nativeDeviceRow) applyTo(dev *model.Device) {
 	dev.InfName = row.infName
 	dev.ProviderName = row.providerName
 	dev.InstallDate = row.installDate
+	dev.StatusFlags = row.statusFlags
+	dev.ProblemNumber = int(row.problemNumber)
 }
 
 // fillDriverClassProperties resolves the device's Driver class key and fills
@@ -289,6 +298,22 @@ func nativeInstanceID(hdev uintptr, dev *spDevInfoData) (string, error) {
 		return "", fmt.Errorf("SetupDiGetDeviceInstanceIdW failed: %v", errno)
 	}
 	return syscall.UTF16ToString(buf), nil
+}
+
+// nativeDevNodeStatus reads the device status bitmask and problem code through
+// CfgMgr32. A nonzero ConfigRet leaves both values zero, so a transient read
+// failure degrades to "no problem observed" rather than a fabricated code.
+func nativeDevNodeStatus(devInst uint32) (status, problem uint32) {
+	var s, p uint32
+	r, _, _ := nativeAPI.cmGetDevNodeStatus.Call(
+		uintptr(unsafe.Pointer(&s)),
+		uintptr(unsafe.Pointer(&p)),
+		uintptr(devInst),
+		0)
+	if r != 0 {
+		return 0, 0
+	}
+	return s, p
 }
 
 // nativeDeviceRegistryString reads a string device property. REG_MULTI_SZ and

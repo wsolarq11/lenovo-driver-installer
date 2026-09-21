@@ -67,6 +67,9 @@
                     LocalVersion  = [string]$d.LocalVersion
                     CompareStatus = [string]$d.CompareStatus
                     SourceAudit   = if ($d.SourceAudit) { [string]$d.SourceAudit } else { [string]$d.CompareSource }
+                    EvidenceBasis = [string]$d.EvidenceBasis
+                    DeviceProblem = [string]$d.DeviceProblem
+                    NonMatchReason = [string]$d.NonMatchReason
                     FileName      = [string]$d.FileName
                     FilePath      = [string]$d.FilePath
                     FileSize      = [string]$d.FileSize

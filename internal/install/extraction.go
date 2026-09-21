@@ -94,19 +94,22 @@ func installExtractedDir(driver *model.Driver, dir, workingDir string) (int, boo
 	if strings.EqualFold(filepath.Base(dir), "Display.Driver") {
 		dir = filepath.Dir(dir)
 	}
-	for _, name := range []string{"setup.exe", "nvsetup.exe"} {
-		path := filepath.Join(dir, name)
-		if !fileExists(path) {
-			continue
+	args, hasArgs := silentInstallerArgs(driver, "")
+	if hasArgs {
+		for _, name := range []string{"setup.exe", "nvsetup.exe"} {
+			path := filepath.Join(dir, name)
+			if !fileExists(path) {
+				continue
+			}
+			result := RunProcessWithTimeout(path, args, 900, dir)
+			if result.TimedOut {
+				return -1, true
+			}
+			if compare.InstallSucceeded(result.ExitCode) {
+				return result.ExitCode, true
+			}
+			return result.ExitCode, true
 		}
-		result := RunProcessWithTimeout(path, silentInstallerArgs(driver, ""), 900, dir)
-		if result.TimedOut {
-			return -1, true
-		}
-		if compare.InstallSucceeded(result.ExitCode) {
-			return 0, true
-		}
-		return result.ExitCode, true
 	}
 	infs, _ := collectINFs(dir)
 	if len(infs) > 0 {

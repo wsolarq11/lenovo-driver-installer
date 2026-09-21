@@ -21,19 +21,20 @@ import (
 
 // Options mirrors the public CLI contract.
 type Options struct {
-	DryRun          bool
-	IncludeBios     bool
-	LatestAcrossOS  bool
-	CurrentOSOnly   bool
-	TargetOS        string
-	DownloadOnly    bool
-	SkipHashCheck   bool
-	Elevated        bool
-	Help            bool
-	Model           string
-	DownloadDir     string
-	GuiExportPath   string
-	GuiInstallCodes string
+	DryRun             bool
+	IncludeBios        bool
+	LatestAcrossOS     bool
+	CurrentOSOnly      bool
+	TargetOS           string
+	DownloadOnly       bool
+	SkipHashCheck      bool
+	SkipSignatureCheck bool
+	Elevated           bool
+	Help               bool
+	Model              string
+	DownloadDir        string
+	GuiExportPath      string
+	GuiInstallCodes    string
 }
 
 // ViewContext carries the resolved runtime inputs shared by comparison,
@@ -75,15 +76,37 @@ type App struct {
 	osDriverCacheMu sync.Mutex
 }
 
-// New returns a configured app using TEMP artifact paths.
+// artifactBaseDir returns the stable per-user directory for the operation log
+// and install history. It prefers the LocalAppData cache root so the audit
+// artifacts survive TEMP cleanup, falling back to TEMP when the cache root is
+// unavailable. The directory is created eagerly so later appends never race a
+// first-write MkdirAll.
+func artifactBaseDir() string {
+	base, err := os.UserCacheDir()
+	if err != nil || base == "" {
+		return os.TempDir()
+	}
+	dir := filepath.Join(base, "Lenovo", "DriverInstaller")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return os.TempDir()
+	}
+	return dir
+}
+
+// New returns a configured app. The log, history ledger, and the regenerated
+// plan view all live under the stable per-user artifact directory so none of
+// the three disappears on a TEMP cleanup. The plan is still a per-run view, not
+// a persistent audit ledger: it is overwritten on every run and the WPF layer
+// reads the same stable path instead of hardcoding %TEMP%.
 func New(stdout, stderr io.Writer, stdin io.Reader) *App {
+	base := artifactBaseDir()
 	return &App{
 		Stdout:      stdout,
 		Stderr:      stderr,
 		Stdin:       bufio.NewReader(stdin),
-		LogPath:     filepath.Join(os.TempDir(), "lenovo_driver_install.log"),
-		PlanPath:    filepath.Join(os.TempDir(), "lenovo_driver_plan.txt"),
-		HistoryPath: filepath.Join(os.TempDir(), "lenovo_driver_history.csv"),
+		LogPath:     filepath.Join(base, "lenovo_driver_install.log"),
+		PlanPath:    filepath.Join(base, "lenovo_driver_plan.txt"),
+		HistoryPath: filepath.Join(base, "lenovo_driver_history.csv"),
 		APIClient:   api.NewClient(),
 		Downloader:  download.NewDownloader(),
 		startedAt:   time.Now(),
@@ -102,6 +125,7 @@ func ParseOptions(args []string) (*Options, error) {
 	fs.StringVar(&opts.TargetOS, "TargetOS", "", "")
 	fs.BoolVar(&opts.DownloadOnly, "DownloadOnly", false, "")
 	fs.BoolVar(&opts.SkipHashCheck, "SkipHashCheck", false, "")
+	fs.BoolVar(&opts.SkipSignatureCheck, "SkipSignatureCheck", false, "")
 	fs.BoolVar(&opts.Elevated, "Elevated", false, "")
 	fs.BoolVar(&opts.Help, "Help", false, "")
 	fs.StringVar(&opts.Model, "Model", "", "")

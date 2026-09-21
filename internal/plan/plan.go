@@ -29,7 +29,11 @@ func BuildPlanText(drivers []*model.AssessedDriver, generatedAt string) []string
 			"  Remote : "+d.Version,
 			"  Local  : "+local,
 			"  Status : "+string(d.CompareStatus),
+			"  Evidence : "+model.StatusEvidenceBasis(d.CompareStatus),
 		)
+		if d.DeviceProblem != "" {
+			lines = append(lines, "  Device health : "+d.DeviceProblem)
+		}
 		if d.CompareSource != "" {
 			lines = append(lines, "  Source note : "+d.CompareSource)
 		}
@@ -115,11 +119,51 @@ func FormatStatusSummaryLines(drivers []*model.AssessedDriver) []string {
 		fmt.Sprintf("  Unknown        : %d", counts[model.StatusUnknown]),
 		fmt.Sprintf("  Not applicable : %d", counts[model.StatusNotApplicable]),
 	}
+	factCount, inferenceCount, undeterminedCount := 0, 0, 0
+	for _, d := range drivers {
+		if d == nil || d.Driver == nil {
+			continue
+		}
+		switch model.StatusEvidenceBasis(d.CompareStatus) {
+		case "fact":
+			factCount++
+		case "inference":
+			inferenceCount++
+		case "undetermined":
+			undeterminedCount++
+		}
+	}
+	lines = append(lines, fmt.Sprintf("  Evidence basis : fact=%d inference=%d undetermined=%d", factCount, inferenceCount, undeterminedCount))
+	if inferenceCount > 0 || undeterminedCount > 0 {
+		lines = append(lines, "  Note: inference = source audit or absence-based; undetermined = no confident decision.")
+	}
 	if counts[model.StatusUnknown] > 0 {
 		lines = append(lines, "  Note: Unknown = multi-vendor package, no matching local component found.")
 	}
 	if counts[model.StatusNotApplicable] > 0 {
 		lines = append(lines, "  Note: Not applicable = hardware not detected on this machine.")
+		shown := 0
+		for _, d := range drivers {
+			if d == nil || d.Driver == nil || d.CompareStatus != model.StatusNotApplicable {
+				continue
+			}
+			if shown >= 5 {
+				break
+			}
+			reason := d.NonMatchReason
+			if reason == "" {
+				reason = "no local device match"
+			}
+			label := d.DriverName
+			if label == "" {
+				label = d.DriverCode
+			}
+			if label == "" {
+				label = "driver"
+			}
+			lines = append(lines, "  Note: "+label+": "+reason)
+			shown++
+		}
 	}
 	if counts[model.StatusLocalNewer] > 0 {
 		shown := 0
@@ -138,7 +182,55 @@ func FormatStatusSummaryLines(drivers []*model.AssessedDriver) []string {
 			shown++
 		}
 	}
+	if problem := formatProblemNotes(drivers); len(problem) > 0 {
+		lines = append(lines, problem...)
+	}
 	lines = append(lines, "")
+	return lines
+}
+
+// FormatAttentionNotes lists the drivers that need explicit user attention
+// before installation: matched devices with a problem code, or comparison
+// results that are not a direct version fact. Each category is capped so the
+// interactive prompt stays scannable.
+func FormatAttentionNotes(drivers []*model.AssessedDriver) []string {
+	var lines []string
+	problemShown, evidenceShown := 0, 0
+	for _, d := range drivers {
+		if d == nil || d.Driver == nil {
+			continue
+		}
+		if d.DeviceProblem != "" && problemShown < 5 {
+			lines = append(lines, "  attention: "+d.DriverName+": device problem ("+d.DeviceProblem+")")
+			problemShown++
+			continue
+		}
+		if model.StatusEvidenceBasis(d.CompareStatus) != "fact" && evidenceShown < 5 {
+			lines = append(lines, "  attention: "+d.DriverName+": "+string(d.CompareStatus)+" is "+model.StatusEvidenceBasis(d.CompareStatus))
+			evidenceShown++
+		}
+	}
+	return lines
+}
+
+// formatProblemNotes lists drivers whose matched devices report a Windows
+// problem code, capped at five rows to keep the summary scannable.
+func formatProblemNotes(drivers []*model.AssessedDriver) []string {
+	var lines []string
+	shown := 0
+	for _, d := range drivers {
+		if d == nil || d.Driver == nil || d.DeviceProblem == "" {
+			continue
+		}
+		if shown >= 5 {
+			break
+		}
+		lines = append(lines, "  Note: "+d.DriverName+": device problem ("+d.DeviceProblem+")")
+		shown++
+	}
+	if len(lines) > 0 {
+		lines = append([]string{"  Note: matched devices report problems; review before installing."}, lines...)
+	}
 	return lines
 }
 
