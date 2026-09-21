@@ -206,3 +206,11 @@
 10. 回滚语义修正（2026-09-20）：`pnputil /delete-driver oemN.inf /uninstall /force` 是从 Driver Store 删除包，不会把设备切回旧驱动，删除活动包可能让设备失去当前驱动。设备级回退只能走设备管理器“回退驱动程序”或重装旧包 INF。引擎不再自动删除包，只输出人工回退指引并写账本；`RemoveDriverPackage` 保留为包清理原语，注释明确不是回退。
 
 11. 健康判定边界（2026-09-20）：`CM_Get_DevNode_Status` 问题码为 0 只表示未观察到问题，不证明功能正常；间歇性崩溃、功耗、睡眠、性能回退不在其覆盖范围。计划不把“无问题码”写成“正常”，已固化为不变量 3。
+
+12. 签名者与撤销（2026-09）：Authenticode 校验从“仅验证签名有效”收紧为“签名链有效 + 撤销检查开启 + 签名者组织必须为 Lenovo”。实测官方包 `DRV202009030023_FN-01LF02AFAR2W6JB0.exe` 的签名者 Subject 为 `CN=Lenovo, OU=G09, O=Lenovo, L=Morrisville, S=North Carolina, C=US`（Issuer 为 `Symantec Class 3 SHA256 Code Signing CA - G2`），通过 WinVerifyTrust（含撤销检查）与 Lenovo 组织白名单；组织级匹配兼容 `Lenovo (Beijing) Limited` 等多个主体，不用单一精确主体。撤销检查离线（`CRYPT_E_REVOCATION_OFFLINE`，Symantec CRL 已随 CA 迁移腐烂）时降级为“链验证 + 签发者白名单”并记 WARN，不拒死；被吊销证书（`CRYPT_E_REVOKED`）仍拒绝。拦截面用 `node.exe`（OpenJS Foundation 有效签名）实测被拒。
+
+13. 下载域名白名单（2026-09）：下载前校验 `FilePath` 的 host 必须属于 `lenovo.com` 或 `lenovo.com.cn`（含子域），否则在请求第一个字节前拒绝并记日志。实测 82JQ 全部 23 个驱动的真实 `FilePath` 指向 `newdriverdl.lenovo.com.cn`，落白名单内，不误拒官方 CDN。任何指向第三方域的被劫持 URL 失败关闭。扩白名单须按 AGENTS.md 走差异/理由/影响/测试/回滚/过期记录，缺一即缺陷。
+
+14. 接口契约漂移监测（2026-09）：QuickFix/Web 返回非空列表但解析后 0 行（`FileName`/`FilePath` 必需字段缺失）时，报 `ContractDriftError`，区分“接口结构变了”与“真的无驱动”，不再静默降级；首选源漂移降级到备用源时，日志输出 WARN 漂移警告。空列表仍按“无驱动”处理，不误报漂移。HTTP 非 2xx、响应非预期 JSON、或顶层字段全空（`{"code":401}` 类认证改写）时，报 `InterfaceGateError`，区分“接口被认证/封禁/限流”与“字段漂移”，不静默降级为“无驱动”。
+
+15. 接口死亡逃生舱 + 端到端验证（2026-09）：上次成功获取的驱动列表持久化到本地缓存（`driver_list_<osid>.json`，UTC 时间戳），两个联想接口都失效时降级用缓存并标注过期，工具不直接归零。真机 dry-run（82JQ / serial PF2SBWJA / 分类 3124166 / OSID 42）端到端跑通：机器→分类→OS→23 驱动→比较→计划全链路成功，9 Local newer / 1 Not installed / 1 Up to date / 12 Not applicable，fact=1 inference=10 undetermined=12，符合事实分级。真实 CDN 域名另见 `driverdl.lenovo.com.cn`（与 `newdriverdl.lenovo.com.cn` 同为 `lenovo.com.cn` 子域，均落白名单）。

@@ -74,6 +74,11 @@ type App struct {
 	// guards the map so independent OS lists can be fetched in parallel.
 	osDriverCache   map[string]api.SourceDrivers
 	osDriverCacheMu sync.Mutex
+
+	// driverListCacheDir is where the last-good driver list escape hatch is
+	// persisted. It defaults to the stable audit artifact dir; tests override
+	// it to t.TempDir() so cache writes never pollute the real directory.
+	driverListCacheDir string
 }
 
 // artifactBaseDir returns the stable per-user directory for the operation log
@@ -110,6 +115,8 @@ func New(stdout, stderr io.Writer, stdin io.Reader) *App {
 		APIClient:   api.NewClient(),
 		Downloader:  download.NewDownloader(),
 		startedAt:   time.Now(),
+
+		driverListCacheDir: base,
 	}
 }
 

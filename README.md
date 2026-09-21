@@ -164,8 +164,23 @@ fails fast with exit code `2`.
   are also checked against it before reuse.
 - Fresh downloads receive a local `.sha256` companion file, and cached files
   are validated before reuse.
-- Downloaded files are Authenticode-verified through WinVerifyTrust. Use
+- Downloaded files are Authenticode-verified through WinVerifyTrust with
+  revocation checking enabled, and the signing certificate must belong to
+  Lenovo: a valid signature from an unrelated publisher is rejected. If
+  revocation status is offline (CRL unreachable), verification degrades to
+  chain + signer checking rather than rejecting a valid official package. Use
   `-SkipSignatureCheck` only for diagnostic unsigned fixtures.
+- Download URLs must resolve to a Lenovo-owned domain (`lenovo.com` or
+  `lenovo.com.cn`, including subdomains). A URL pointing at any other host is
+  refused before a single byte is requested.
+- When the Lenovo API returns rows whose shape no longer matches the parser
+  contract, the run reports interface drift instead of silently degrading to
+  "no drivers". A gated or blocked private endpoint (HTTP errors, non-JSON
+  bodies, or missing top-level fields) surfaces as an explicit interface-gate
+  error.
+- If both Lenovo endpoints are unavailable, the run falls back to the last
+  successfully fetched driver list (persisted locally and clearly marked
+  stale) instead of failing outright.
 - `-SkipHashCheck` bypasses SHA-256 and official MD5 validation but still
   enforces non-empty files and size checks when available.
 - Expired Lenovo CDN URLs are refreshed from the current driver list before

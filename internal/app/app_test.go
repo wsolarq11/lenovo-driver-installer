@@ -55,7 +55,7 @@ func TestDownloadVerifiedRefreshes403URL(t *testing.T) {
 					"driverList": []map[string]any{{
 						"DriverCode": "d1",
 						"FileName":   "driver.exe",
-						"FilePath":   "https://download.example/new.exe",
+						"FilePath":   "https://newdriverdl.lenovo.com.cn/new.exe",
 					}},
 				},
 			}
@@ -74,9 +74,10 @@ func TestDownloadVerifiedRefreshes403URL(t *testing.T) {
 	app.APIClient.HTTP = client
 	app.Downloader = download.NewDownloader()
 	app.Downloader.Client = client
+	app.driverListCacheDir = t.TempDir()
 	downloadDir := t.TempDir()
 	outFile := filepath.Join(downloadDir, "d1_driver.exe")
-	driver := &model.Driver{DriverCode: "d1", FileName: "driver.exe", FilePath: "https://download.example/old.exe", FileSize: "12 B"}
+	driver := &model.Driver{DriverCode: "d1", FileName: "driver.exe", FilePath: "https://newdriverdl.lenovo.com.cn/old.exe", FileSize: "12 B"}
 	ad := &model.AssessedDriver{Driver: driver}
 	vc := &ViewContext{
 		Opts:       Options{SkipSignatureCheck: true},
@@ -97,7 +98,7 @@ func TestDownloadVerifiedRefreshes403URL(t *testing.T) {
 	if downloadCalls != 4 {
 		t.Fatalf("download calls = %d, want 4 (3 old URL retries + refreshed URL)", downloadCalls)
 	}
-	if driver.FilePath != "https://download.example/new.exe" {
+	if driver.FilePath != "https://newdriverdl.lenovo.com.cn/new.exe" {
 		t.Fatalf("driver URL was not refreshed: %q", driver.FilePath)
 	}
 }
@@ -297,6 +298,7 @@ func TestCachedDriverObjectsDoesNotCacheFailure(t *testing.T) {
 	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
 	app.APIClient = api.NewClient()
 	app.APIClient.HTTP = client
+	app.driverListCacheDir = t.TempDir()
 	vc := &ViewContext{CategoryID: "cat"}
 	_, err := app.cachedDriverObjects(context.Background(), vc, "248", "QuickFix")
 	if err == nil {

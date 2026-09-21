@@ -186,6 +186,11 @@ func (a *App) downloadVerified(
 ) (int64, error) {
 	opts := vc.Opts
 	driver := ad.Driver
+	// Record revocation-check degradation per download using this run's context;
+	// the fallback itself happens inside trust.VerifyFileSignature.
+	trust.RevocationFallback = func(path string) {
+		a.Log(ctx, "Revocation check unavailable for "+path+"; fell back to chain + signer verification.", "WARN")
+	}
 	// At most one URL refresh is attempted, so the loop is bounded to two
 	// passes: an initial download attempt and one retry against a refreshed
 	// URL after a 403. The pass index makes the bound explicit instead of an

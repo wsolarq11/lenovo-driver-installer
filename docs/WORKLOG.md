@@ -191,3 +191,141 @@ now clean.
 ### Status
 
 [OK] **Completed** and pushed to `origin/main`.
+
+---
+
+## Session: Harden trust boundary — signer, download origin, interface drift
+
+**Branch**: `main`
+
+### Summary
+
+Closed three silent-drift gaps surfaced by the fact-standard review: the
+Authenticode check now enforces a Lenovo signer plus revocation checking,
+downloads refuse non-Lenovo origins, and the API layer reports interface drift
+instead of silently degrading to "no drivers".
+
+### Main Changes
+
+- `internal/trust`: `VerifyFileSignature` runs WinVerifyTrust with
+  `WTD_REVOKE_WHOLECHAIN` and requires the signing certificate subject to name
+  Lenovo (organization-level match via `CertEnumCertificatesInStore` +
+  `CertGetNameStringW`). Added cross-platform `isLenovoSubject` and a
+  Windows-only `LENOVO_TRUST_SMOKE=1` smoke over the real cached Lenovo package.
+- `internal/download`: added `TrustedHost` allowlist (`lenovo.com` /
+  `lenovo.com.cn` suffixes); `downloadOnce` refuses any other host before
+  requesting a byte.
+- `internal/api`: added `ContractDriftError` (non-empty list but zero parsed
+  rows) and threaded `SourceDrivers.DriftWarning` so a preferred source's drift
+  is logged when the caller falls back.
+- `internal/app`: log the drift warning in `cachedDriverObjects`.
+
+### Testing
+
+- [OK] `scripts/verify.ps1` 17/17 VERIFY_OK.
+- [OK] `LENOVO_TRUST_SMOKE=1 go test ./internal/trust/ -run TestVerifyLenovoPackageSmoke` PASS on the real cached Lenovo EXE (`DRV202009030023_FN-01LF02AFAR2W6JB0.exe`).
+- [OK] `go build/vet/test/gofmt` clean; new unit tests for `isLenovoSubject`, `TrustedHost`, `ContractDriftError`, and drift-on-fallback.
+
+### Status
+
+[OK] **Completed**
+
+---
+
+## Session: Give the hardening a fallback path — revocation degrade, gate detection, live CDN proof
+
+**Branch**: `main`
+
+### Summary
+
+Closed the "tightening without a fallback" gap from the prior session: the
+revocation check now degrades to chain + signer verification instead of
+rejecting on offline CRL, the API layer now reports interface gating (auth /
+rate-limit / blocking) distinctly from field drift, and a live query proved the
+real CDN host is inside the download whitelist.
+
+### Main Changes
+
+- `internal/trust`: split `WinVerifyTrust` into an injectable `winVerifyTrustFn`
+  seam and added two-stage verification — `CRYPT_E_REVOCATION_OFFLINE` degrades
+  to chain-only plus the Lenovo signer check (still rejecting third-party
+  signers) and fires `RevocationFallback`; non-revocation failures still
+  hard-fail. `internal/app` records the degradation as a WARN.
+- `internal/api`: added `InterfaceGateError` for HTTP non-2xx, non-JSON bodies,
+  and "expected fields all empty" responses (e.g. `{"code":401}`) so a gated or
+  blocked private interface surfaces as such instead of degrading to "no
+  drivers".
+- `internal/trust` smoke: added a reproducible interception-face test
+  (`TestVerifyRejectsNonLenovoSignerSmoke`) that rejects a valid non-Lenovo
+  signature (verified live against `node.exe`).
+
+### Evidence
+
+- [实测] Live query of 82JQ returned 23 drivers, every `FilePath` on host
+  `newdriverdl.lenovo.com.cn` — inside the `lenovo.com.cn` whitelist, so the
+  download whitelist does not false-reject the official CDN.
+- [实测] The cached Lenovo package used by the old smoke no longer exists in
+  %TEMP%, which is exactly the reproducibility gap the interception-face smoke
+  now closes.
+
+### Testing
+
+- [OK] `scripts/verify.ps1` 17/17 VERIFY_OK.
+- [OK] `go build/vet/test/gofmt` clean; new tests for revocation fallback,
+  interface gating, and the interception-face smoke.
+- [OK] `LENOVO_TRUST_SMOKE=1 LENOVO_TRUST_SMOKE_FILE=...node.exe go test
+  ./internal/trust/ -run TestVerifyRejectsNonLenovoSignerSmoke` PASS.
+
+### Status
+
+[OK] **Completed**
+
+---
+
+## Session: Escape hatch for interface death + end-to-end dry-run proof
+
+**Branch**: `main`
+
+### Summary
+
+Added the missing survival layer: when both Lenovo endpoints die or are gated,
+the tool now falls back to a persisted last-good driver list (clearly marked
+stale) instead of failing outright. Ran the first real end-to-end dry-run on
+the 82JQ machine and proved the full pipeline works.
+
+### Main Changes
+
+- `internal/app/drivercache.go`: last-good driver list escape hatch —
+  `saveDriverListCache` / `loadDriverListCache` persist the previous successful
+  `SourceDrivers` with a UTC timestamp under the stable audit artifact dir
+  (`driver_list_<osid>.json`); a stale load carries a `DriftWarning`.
+- `internal/app/view.go`: `cachedDriverObjects` now writes the cache on success
+  and reads it (with a WARN) when `GetDriverObjects` fails on both sources.
+- `internal/app/app.go`: `driverListCacheDir` field so tests isolate cache
+  writes to `t.TempDir()` instead of polluting the real directory.
+- `internal/api/client.go`: `InterfaceGateError` now also sets the fallback
+  `DriftWarning`, closing the gap where a gated preferred source was silent when
+  the backup source succeeded.
+
+### Evidence
+
+- [实测] End-to-end `-DryRun` on 82JQ (serial PF2SBWJA, category 3124166, OSID
+  42) completed: 23 drivers, 9 Local newer / 1 Not installed / 1 Up to date /
+  12 Not applicable, fact=1 inference=10 undetermined=12. No files downloaded
+  or installed.
+- [实测] Escape-hatch cache written at
+  `...\Lenovo\DriverInstaller\driver_list_42.json` (29 KB) during the dry-run,
+  and `driver_list_248.json` from the cross-OS comparison.
+- [实测] A second real CDN host `driverdl.lenovo.com.cn` observed alongside
+  `newdriverdl.lenovo.com.cn`; both are `lenovo.com.cn` subdomains inside the
+  whitelist.
+
+### Testing
+
+- [OK] `scripts/verify.ps1` 17/17 VERIFY_OK.
+- [OK] `go build/vet/test/gofmt` clean; new tests for cache round-trip / miss /
+  OSID mismatch / empty, and gate-on-fallback drift warning.
+
+### Status
+
+[OK] **Completed**

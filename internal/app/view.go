@@ -54,7 +54,23 @@ func (a *App) cachedDriverObjects(ctx context.Context, vc *ViewContext, osID, pr
 
 	result, err := a.APIClient.GetDriverObjects(ctx, vc.CategoryID, osID, preferredSource)
 	if err != nil {
+		// Escape hatch: both Lenovo endpoints are dead or gated, fall back to
+		// the last-good persisted list (clearly marked stale) instead of
+		// failing outright.
+		if cached, ok := loadDriverListCache(a.driverListCachePath(osID), osID); ok {
+			a.Log(ctx, "Driver list for OSID "+osID+": "+cached.DriftWarning, "WARN")
+			a.osDriverCacheMu.Lock()
+			a.osDriverCache[key] = cached
+			a.osDriverCacheMu.Unlock()
+			return cached, nil
+		}
 		return api.SourceDrivers{}, err
+	}
+	if saveErr := saveDriverListCache(a.driverListCachePath(osID), osID, result); saveErr != nil {
+		a.Log(ctx, "Could not persist driver list cache for OSID "+osID+": "+saveErr.Error(), "WARN")
+	}
+	if result.DriftWarning != "" {
+		a.Log(ctx, "Driver list for OSID "+osID+": "+result.DriftWarning+" (fell back to "+result.Source+")", "WARN")
 	}
 	a.osDriverCacheMu.Lock()
 	a.osDriverCache[key] = result

@@ -56,3 +56,26 @@ func TestFileMD5(t *testing.T) {
 		t.Fatalf("MD5 length = %d", len(sum))
 	}
 }
+
+func TestTrustedHost(t *testing.T) {
+	cases := []struct {
+		host string
+		want bool
+	}{
+		{"download.lenovo.com", true},
+		{"download.lenovo.com.cn", true},
+		{"lenovo.com", true},
+		{"lenovo.com.cn", true},
+		{"ptstpd.lenovo.com.cn", true},
+		{"newdriverdl.lenovo.com.cn", true}, // verified live CDN host (2026-09)
+		{"cdn.example.com", false},
+		{"lenovo.com.evil.com", false},
+		{"evillenovo.com", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		if got := TrustedHost(tc.host); got != tc.want {
+			t.Fatalf("TrustedHost(%q) = %v, want %v", tc.host, got, tc.want)
+		}
+	}
+}
