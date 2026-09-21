@@ -82,7 +82,8 @@
 | 设备状态枚举 | `SetupDiGetClassDevs` + `SetupDiEnumDeviceInfo` / CIM `Win32_PnPEntity` | shell 到 PowerShell WMI | SetupAPI 或 `CM_*`(CfgMgr32) |
 | 驱动版本/日期/provider/inf | `DEVPKEY_Device_DriverVersion` 等（`SetupDiGetDeviceProperty`） | `Get-PnpDeviceProperty`(PS) | SetupAPI `SetupDiGetDeviceProperty` |
 | 安装 INF | `pnputil /add-driver`；原生=`SetupCopyOEMInf` 或 `SetupDiCallClassInstaller DIF_INSTALLDEVICE` | `pnputil` 子进程 | 原生 API/库 |
-| 卸载/回滚 | `pnputil /delete-driver` / `SetupDiCallClassInstaller DIF_REMOVE` | 无 | 原生 |
+| 卸载包 | `pnputil /delete-driver` / `SetupDiCallClassInstaller DIF_REMOVE` | 无 | 原生 |
+| 设备回滚 | 设备管理器“回退驱动程序”/ 重装旧 INF | 无 | 无公开 SetupAPI 原生回退，转人工 |
 | 驱动目录查找 | DriverStore(`C:\Windows\System32\DriverStore\FileRepository`) | 读历史/不管理 | `SetupDiGetRegisteredDeviceInfo`+目录枚举/DISM |
 | 系统更新驱动 | Windows Update Agent (WUA) API `IUpdateSearcher`+`UpdateCategory=Driver` | ❌ 无 | WUA(COM) |
 | 离线/在线驱动库 | DISM `/Add-Driver`、WU 驱动目录 | ❌ 无离线 | DISM/WUA |
@@ -146,7 +147,7 @@
 ### P1(对 D2，让“安装/卸载”原生化)
 **把装/卸改为原生驱动安装语义**：
   - INF → 首选 `SetupDiCopyOEMInf` / `SetupDiCallClassInstaller(DIF_INSTALLDEVICE)`，而不是 shell 到 `pnputil`；
-  - 卸载/回滚 → `pnputil /delete-driver` 或对应 `SetupDiCallClassInstaller(DIF_REMOVE)`；
+  - 卸载包 → `pnputil /delete-driver` 或对应 `SetupDiCallClassInstaller(DIF_REMOVE)`；设备回滚无公开原生 API，走设备管理器或重装旧 INF；
   - 若坚持命令行，则**收敛为单一 `pnputil`(Win10 唯一权威)** 并显式处理 `/add-driver` 的退出码而不是把 1 一律当“需重启”。
   - EXE 包的 `ExtractedDriverFallback` 启发式改为“读取安装日志确定 INF,再走原生安装”，不再用 “NVIDIA + is-*.tmp” 猜测。
 

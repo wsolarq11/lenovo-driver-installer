@@ -62,6 +62,7 @@ internal/inventory           Windows machine/OS/PnP/app snapshots via native Set
 internal/model               shared plain data types
 internal/pathutil            Windows path helpers
 internal/plan                plan text, tables, history row building
+internal/trust               Authenticode signature verification via WinVerifyTrust
 wpf/window.xaml              WPF window layout
 wpf/ui.ps1                   WPF window construction and UI helpers
 wpf/worker.ps1               WPF background worker state machine
@@ -118,8 +119,9 @@ Useful modes:
 -LatestAcrossOS                  experimental merge across all supported OS lists
 -DownloadOnly                    download verified files without installing
 -DownloadDir <path>              choose download directory
--IncludeBios                     include BIOS/EC packages
+-IncludeBios                     include firmware packages (BIOS/EC/ME/TPM/Thunderbolt/UEFI)
 -SkipHashCheck                   disable hash verification
+-SkipSignatureCheck              disable Authenticode verification
 -Model <model>                   override machine model lookup
 ```
 
@@ -200,6 +202,11 @@ once with the new `FilePath`.
   unknown.
 - Software-only packages resolve their local version from installed
   applications/services, not from unrelated same-vendor PnP devices.
+- Firmware packages (BIOS/EC/ME/TPM/Thunderbolt/UEFI) are skipped unless
+  `-IncludeBios` is passed.
+- Matched devices are read with their Windows problem code via
+  `CM_Get_DevNode_Status`. A driver whose matched devices report a problem
+  carries a `DeviceProblem` summary in the assessment, plan, and GUI export.
 
 ## 10. Download and Integrity
 
@@ -212,6 +219,9 @@ For every file:
 3. Check official MD5 when the source provides one.
 4. If verification fails, remove the cached file and download again.
 5. After download, compute the local SHA-256 and write `<file>.sha256`.
+6. Authenticode-verify the file through WinVerifyTrust (`internal/trust`); a
+   failed signature rejects the file. `-SkipSignatureCheck` disables this check
+   for diagnostic unsigned fixtures only.
 
 `-SkipHashCheck` bypasses companion and MD5 checks but is not the default path.
 
@@ -246,12 +256,12 @@ Processes are bounded by timeouts. Timed-out process trees are terminated with
 ## 12. Artifacts
 
 ```text
-%TEMP%\lenovo_driver_install.log       operation log
-%TEMP%\lenovo_driver_plan.txt          human-readable plan
-%TEMP%\lenovo_driver_history.csv       CSV history with before/after versions
-%TEMP%\LenovoDrivers\                  default download directory
-<download-dir>\<DriverCode>_<file>     downloaded package
-<download-dir>\<DriverCode>_<file>.sha256  local SHA-256 companion
+%LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_install.log   operation log
+%LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_plan.txt      human-readable plan (per-run view)
+%LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_history.csv  CSV history with before/after versions
+%TEMP%\LenovoDrivers\                                            default download directory
+<download-dir>\<DriverCode>_<file>                               downloaded package
+<download-dir>\<DriverCode>_<file>.sha256                        local SHA-256 companion
 ```
 
 `lenovo_driver_history.csv` contains timestamp, driver code, OSID/OSName,

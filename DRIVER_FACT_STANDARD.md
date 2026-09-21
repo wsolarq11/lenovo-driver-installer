@@ -105,9 +105,10 @@
 | Dry-run 计划 | 否，黑盒 | 否 | 是 |
 | 本机版本对比 | 是 | 否 | 是 |
 | 选择安装 | 有界面选择 | 人工下载 | 数字选择 |
-| 官方 MD5 | 后端返回 | 否 | 当前未使用 |
+| 官方 MD5 | 后端返回 | 否 | 使用 |
+| Authenticode 签名 | 官方包自带 | 是 | 使用（WinVerifyTrust） |
 | 官方安装参数 | 后端返回 | 有 `InstallCode` | 使用 `InstallCode` |
-| 安装历史/来源记录 | 有限日志 | 否 | 当前未记录 OSID 来源 |
+| 安装历史/来源记录 | 有限日志 | 否 | 是（CSV 记录 OSID） |
 | 超时/回退保护 | 内部实现，不透明 | 否 | 是 |
 | 第三方万能驱动 | 否 | 否 | 否 |
 
@@ -116,8 +117,8 @@
 1. **数据源规则**：只接受联想官方当前 OS 驱动列表作为正常更新依据。本机 Win10 的默认源是 `OSID 42`。
 2. **OS 规则**：不把 `OSID 248` 的更高版本视为“更新”。`Local newer` 必须显示为“当前 OS 列表旧、本机来自其它源”，不能简单当成异常。
 3. **跨 OS 例外规则**：仅当当前 OS 列表缺失该驱动、设备出现明确问题、且用户确认该例外时，才允许使用其它 OS 列表中的同一硬件驱动；安装后必须记录来源 OSID。
-4. **完整性规则**：官方文件必须校验非空、大小和官方 MD5；没有官方 MD5 时使用本地首次下载哈希缓存。
-5. **签名规则**：官方工具和下载包来自联想官方域，工具应校验签名和版本。
+4. **完整性规则**：官方文件必须校验非空、大小、官方 MD5 与 Authenticode 签名；没有官方 MD5 时使用本地首次下载哈希缓存；`-SkipSignatureCheck` 仅限诊断性未签名样本。
+5. **签名规则**：官方工具和下载包必须来自联想官方域，下载包经 WinVerifyTrust 校验 Authenticode；工具自身校验签名和版本。
 6. **计划规则**：安装前先 dry-run，输出计划文件；不静默批量安装，不自动重启。
 7. **安装规则**：优先使用官方返回的安装参数；失败时只对已知安装器类型做受控回退；不猜测安装器家族。
 8. **验证规则**：安装后复核版本、设备状态、服务和关键功能；如果功能正常，不因为状态显示为 `Stopped` 或 `Local newer` 而强行改动。
@@ -156,6 +157,8 @@
 
 `Local newer` 是“本机装的来自其它源的驱动比当前 OS 官方列表新”，不是版本解析错误；这些来源均不是当前 Win10 官方列表。
 
+注：实现收紧审计边界后，上述“离线镜像集成 / 在线包安装 / 预存 DriverStore 包”在计划里的类别统一显示为 `External`，机制与原始证据行仍保留；只有本工具安装历史才被标为确定来源。
+
 官方工具接口一致性（2026-08-25 实测）：
 
 - `D:\_B_\pk\_drivers\driverinstall20260722.exe` 是 Lenovo QuickFix `2.6.26.721`，Lenovo 官方签名有效。
@@ -181,10 +184,25 @@
 
 1. 优先使用官方 QuickFix 数据源 `SearchForXbb`（含 `MD5`、`Parameter`、`Bootfile`），失败时回退官网 `drive_listnew`；OS 列表也支持 QuickFix 回退。
 2. 下载后校验官方 `MD5`，缓存文件复用前同样校验；本地 SHA-256 缓存继续保留。
-3. 安装/下载后写 `%TEMP%\lenovo_driver_history.csv`，记录 `DriverCode`、`OSID`、`Version`、`VerifiedVersion`、`BeforeVersion`、`FileName`、`MD5`、来源、时间和结果；`VerifiedVersion` 保存安装后实际检测到的本机版本，`BeforeVersion` 保存安装前本机版本。
-4. `Local newer` 会优先从安装历史、DriverStore 导入记录或另一 OS 官方列表识别来源；标签区分“离线镜像集成”“在线包安装”“预存 DriverStore 包”和“来源未知”，不强行猜成某一 OS。
+3. 安装/下载后写 `%LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_history.csv`，记录 `DriverCode`、`OSID`、`Version`、`VerifiedVersion`、`BeforeVersion`、`FileName`、`MD5`、来源、时间和结果；`VerifiedVersion` 保存安装后实际检测到的本机版本，`BeforeVersion` 保存安装前本机版本；操作日志同目录，计划文件为 `%LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_plan.txt` 的单次运行视图。
+4. `Local newer` 优先从本工具安装历史识别来源；共享 `setupapi` 日志与 DriverStore 的机制证据统一标为 `External`（离线镜像集成/在线包安装/预存包只保留在摘要与证据行），另一 OS 官方列表只给出“版本匹配某 OS 列表”的弱结论，绝不强行猜成某一 OS。
 5. `-LatestAcrossOS` 保留但标记为“实验例外”，默认仍为 `-CurrentOSOnly`；新增 `-TargetOS <OSID|OSName>` 显式查看单个支持 OS 的官方列表，不与 `-LatestAcrossOS` 合并。
 6. 单文件部署、dry-run、交互选择、退出码、超时保护和 Inno/pnputil 回退保持不变。
 7. 每个适用驱动在 dry-run 计划中输出 `Source audit`：类别、结论和证据行；`setupapi.offline.log`、`setupapi.dev.log`、`setupapi.setup.log` 中的 DriverStore 导入记录用于区分离线镜像集成、在线安装包和历史安装。
 
 仍不承诺：替代联想所有隐藏安装器逻辑、自动判断 Fn 等实际功能是否正常、把“来源未知”强行猜成某一 OS。
+
+8. 固件分类取证（2026-08）：QuickFix `driverList` 与官网 `drivelist` 均未提供固件类别字段，只有 `FileType`（exe/inf/zip/cab）与 `Bootfile`；`Bootfile` 语义不足以作为固件证据。当前 `reFirmware` 名字匹配仍是启发式，待官方接口出现类别字段后改为数据字段过滤，不伪造类别。
+
+9. 真机 smoke 清单（个人单机收尾，需 82JQ 主机配合）：以下五项在实机跑一次，逐项记录实测到本节。设备健康：dry-run 计划中 `Device problem` 对正常设备为空、对已知异常设备有 `Code N`。Authenticode：对官方 EXE 缓存包执行签名校验通过，坏文件或 `-SkipSignatureCheck` 行为符合预期。绑定验证：安装后历史记录出现 `binding=bound|staged|unchanged|undetected` 之一，且 `VerifiedVersion/BeforeVersion` 不为空。重启推迟：让任一 INF/EXE 包返回 `3010/1641`，确认后续驱动进入 `Deferred`、不继续安装、日志与账本有记录。回滚提示：构造安装后设备问题，确认计划/日志给出设备级回退指引（回退驱动程序，旧 INF 名），不执行 `pnputil /delete-driver`，并写账本。
+
+9.1 实测结果（2026-09-20，82JQ / PF2SBWJA，Windows 10 19045）：
+
+- dry-run：识别 `82JQ` 与 `PF2SBWJA`，OSID 42 列表 23 行；`Update 0 / Up to date 1 / Not installed 1 / Local newer 9 / Not applicable 12`，`fact=1 inference=10 undetermined=12`。计划文件稳定写入 `C:\Users\Administrator\AppData\Local\Lenovo\DriverInstaller\lenovo_driver_plan.txt`。
+- 导出：GUI JSON 的 `EvidenceBasis`、`DeviceProblem`、`NonMatchReason` 均正确填充；未命中原因已压缩为 `hardware ids X, Y, ... (N ids)`，不再打印整条硬件 ID 列表。
+- Authenticode：`DRV202009030023`（Lenovo Fn，`FN-01LF02AFAR2W6JB0.exe`，1616448 字节）下载后通过哈希与签名校验，官方 MD5 `067456565a7f261fb00961e70edbc109`，账本写入 `Downloaded` 记录；缓存复用同样走完整校验。
+- 绑定/重启/回滚：绑定标签与重启判定用纯函数夹具覆盖，回滚提示改为设备级人工回退指引，不动真机；夹具发现并修复了历史账本首次写入只写表头、丢第一条记录的问题。
+
+10. 回滚语义修正（2026-09-20）：`pnputil /delete-driver oemN.inf /uninstall /force` 是从 Driver Store 删除包，不会把设备切回旧驱动，删除活动包可能让设备失去当前驱动。设备级回退只能走设备管理器“回退驱动程序”或重装旧包 INF。引擎不再自动删除包，只输出人工回退指引并写账本；`RemoveDriverPackage` 保留为包清理原语，注释明确不是回退。
+
+11. 健康判定边界（2026-09-20）：`CM_Get_DevNode_Status` 问题码为 0 只表示未观察到问题，不证明功能正常；间歇性崩溃、功耗、睡眠、性能回退不在其覆盖范围。计划不把“无问题码”写成“正常”，已固化为不变量 3。

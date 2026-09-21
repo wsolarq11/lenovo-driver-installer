@@ -80,6 +80,23 @@ design.
 
 ---
 
+## Audit Script Invariants
+
+These are non-negotiable properties of the personal audit-script spec. Product
+features (signing, updates, telemetry) may only be added as layers outside the
+deterministic core and must not violate them:
+
+1. Determinism: the CLI engine performs no telemetry, no hidden network calls,
+   and runs no background service.
+2. Evidence first: the plan file keeps raw evidence lines; WPF renders a thin
+   view and never hides `undetermined` results or source audits.
+3. Default no-action: `Local newer`, healthy devices, and insufficient evidence
+   never enter the automatic install set.
+4. Evidence tiers: plan, console, interactive prompt, and GUI export all report
+   the same `fact` / `inference` / `undetermined` tier.
+5. Audit before state change: the history ledger is append-only and a write
+   failure blocks a success result.
+
 ## Guidelines
 
 - Both scripts are offline and side-effect-free: they never call the Lenovo

@@ -99,8 +99,10 @@ install_lenovo_drivers.bat -LatestAcrossOS
 3. Resolve the Lenovo machine category ID.
 4. Load the current-OS driver list from the official QuickFix backend
    (`SearchForXbb`), falling back to the official webpage API.
-5. Filter BIOS/EC packages unless explicitly enabled.
-6. Snapshot local devices and installed applications.
+5. Filter firmware packages (BIOS/EC/ME/TPM/Thunderbolt/UEFI) unless
+   explicitly enabled.
+6. Snapshot local devices (including their Windows problem codes) and installed
+   applications.
 7. Compare remote and local versions and mark each driver as:
    - `Update`
    - `Up to date`
@@ -135,7 +137,8 @@ install_lenovo_drivers.bat -LatestAcrossOS
 | `-LatestAcrossOS` | Allow newer drivers from other OS entries. Cannot be used with `-CurrentOSOnly`. |
 | `-TargetOS <OSID\|OSName>` | Show and compare against one supported OS list, for example `248` or `Windows 11`. Cannot be used with `-CurrentOSOnly` or `-LatestAcrossOS`. |
 | `-SkipHashCheck` | Skip local SHA-256 companion-file validation. |
-| `-IncludeBios` | Include BIOS/EC packages. They are skipped by default. |
+| `-SkipSignatureCheck` | Skip Authenticode signature verification. |
+| `-IncludeBios` | Include firmware packages (BIOS/EC/ME/TPM/Thunderbolt/UEFI). They are skipped by default. |
 | `-DownloadOnly` | Download applicable files without installing. |
 | `-DownloadDir <path>` | Override the download directory. Defaults to `%TEMP%\LenovoDrivers`. |
 | `-Model <model>` | Override automatic machine model lookup, for example `82JQ`. |
@@ -161,6 +164,8 @@ fails fast with exit code `2`.
   are also checked against it before reuse.
 - Fresh downloads receive a local `.sha256` companion file, and cached files
   are validated before reuse.
+- Downloaded files are Authenticode-verified through WinVerifyTrust. Use
+  `-SkipSignatureCheck` only for diagnostic unsigned fixtures.
 - `-SkipHashCheck` bypasses SHA-256 and official MD5 validation but still
   enforces non-empty files and size checks when available.
 - Expired Lenovo CDN URLs are refreshed from the current driver list before
@@ -191,9 +196,9 @@ INF packages are installed through the native Windows driver-install API.
 
 ## Logs And Plans
 
-- Log file: `%TEMP%\lenovo_driver_install.log`
-- Plan file: `%TEMP%\lenovo_driver_plan.txt`
-- Driver history: `%TEMP%\lenovo_driver_history.csv`
+- Log file: `%LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_install.log`
+- Plan file: `%LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_plan.txt` (per-run view)
+- Driver history: `%LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_history.csv`
 - Source audit evidence: `C:\Windows\INF\setupapi.offline.log`,
   `C:\Windows\INF\setupapi.dev.log`, and `C:\Windows\INF\setupapi.setup.log`
 - Download directory: `%TEMP%\LenovoDrivers` unless `-DownloadDir` is used.

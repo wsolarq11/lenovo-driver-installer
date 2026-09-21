@@ -98,8 +98,9 @@ snapshot failures degrade to an empty inventory (still safe to proceed).
      `Local newer` / `Unknown` / `Not applicable`),
    - for a local version, runs the source-evidence audit
      (`audit.ResolveDriverSourceEvidence`) using setupapi logs and the alternate
-     source map; `Local newer` is labeled from that audit rather than treated
-     as an error.
+     source map; non-history sources are labeled `External`, and `Local newer`
+     is labeled from that audit rather than treated as an error.
+   - collapses matched-device Windows problem codes into `DeviceProblem`.
 7. `present` writes the plan file and prints the console table, then
    `partitionViewDrivers` splits the drivers into applicable / update-only.
 
@@ -153,7 +154,8 @@ so the choice is visible ahead of the side effects.
   context; sub-process installs and PnPutil have their own per-type timeouts
   and kill the full process tree on a stall.
 - Downloads are integrity-checked (size, official MD5 when provided, local
-  SHA-256 companion); a cached file is only reused after the same checks.
+  SHA-256 companion, and Authenticode signature unless `-SkipSignatureCheck`);
+  a cached file is only reused after the same checks.
 - Install feedback (`3010`/`1`) is normalized through one
   `InstallSucceeded` gate so reboot-required counts as success everywhere.
 - Compare phase never mutates shared/fetched rows (deep-clone before assessment).
