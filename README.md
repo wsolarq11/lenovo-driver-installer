@@ -1,311 +1,46 @@
-# Lenovo Driver Installer
+# Lenovo 驱动安装器（个人单机审计脚本）
 
-A Go installer for Lenovo machines. It detects the current machine model at
-runtime, queries the official Lenovo driver API, compares available drivers
-with locally installed versions, and installs only the selected applicable
-drivers. The Go CLI is the deterministic engine; WPF remains the desktop
-presentation layer.
+Go 引擎 + WPF 桌面的联想驱动审计/安装工具。运行时解析机型与主机编号，查询联想官方驱动接口，与本机已装版本对比，只安装被选中的适用驱动。Go CLI 是确定性引擎，WPF 只做薄渲染、不实现任何驱动决策逻辑。
 
-Full reproduction and development details are in
-[docs/TECHNICAL.md](docs/TECHNICAL.md).
+## 文档地图
 
-## Fact Standard
+| 想做什么 | 看这里 |
+| --- | --- |
+| 理解“驱动该不该更新、跨 OS 装不装、以谁为准”的决策标准 | `docs/spec/fact-standard.md` |
+| 理解六条不可回退的不变量 | `AGENTS.md`（权威清单）· `docs/spec/invariants.md`（语义展开） |
+| 理解架构、仓库布局、端到端数据流 | `docs/spec/architecture.md` |
+| 查外部契约：API / GUI JSON / 退出码 / 产物与账本列 | `docs/spec/contracts.md` |
+| 查运行时行为：比较与选择 / 下载完整性 / 安装分发 / 回退 | `docs/spec/behavior.md` |
+| 构建 / 运行 / 快速上手 / 排障 | `docs/howto/run.md` |
+| 开发流水线 / 质量门禁 / CI / 真机 smoke | `docs/howto/develop.md` |
+| 真机回退行为验收（一次性 VM 计划） | `docs/howto/verify-rollback.md` |
+| 分发为何冻结（决策记录） | `docs/decisions/distribution-frozen.md` |
+| 追溯历史：82JQ 证据 / 工作日志 / 评审 / 调研 | `docs/records/` |
 
-The factual standard for Lenovo driver decisions is documented in
-[DRIVER_FACT_STANDARD.md](DRIVER_FACT_STANDARD.md). In short:
+## 30 秒上手
 
-- The normal source is the official Lenovo driver list for the installed OS.
-- `Local newer` is usually a source mismatch, not a bug, and is not a reason to
-  downgrade or switch OS lists.
-- The official QuickFix tool is good for one-click current-OS matching, but it
-  is not a dry-run/audit tool.
-- The installer remains a current-OS-first dry-run, selection, logging, and
-  integrity-checking tool; `-TargetOS` is the explicit way to inspect another
-  supported OS list, while `-LatestAcrossOS` is an experimental merge mode that
-  is not the standard update path.
-
-## Quick Start
-
-The first run builds `bin\lenovo-driver.exe` when Go is available, then invokes
-the Go CLI from an elevated PowerShell or Command Prompt:
+首次运行会自动构建 `bin\lenovo-driver.exe`，随后进入交互选择：
 
 ```bat
 install_lenovo_drivers.bat
 ```
 
-The batch wrapper requests administrator rights when they are missing. During a
-normal run, the installer prompts you to choose what to install:
-
-- `y` installs update-only drivers.
-- `a` installs all applicable drivers.
-- `s` selects driver numbers manually, for example `1,3,5`.
-- `t` switches to another supported OS list when the machine has multiple OS entries.
-- `n` cancels.
-
-Before the input prompt, the installer prints the exact driver set for `y`
-and for `a`, including driver code, name, remote version, local version, and
-status, so the choice is visible before anything is downloaded.
-
-## Desktop UI (WPF)
-
-A WPF front end is available for the same engine:
-
-```bat
-install_lenovo_drivers_wpf.bat
-```
-
-The WPF window loads the official driver list through the installer engine,
-shows the same `Update` / `Up to date` / `Not installed` / `Local newer`
-statuses, preserves the source audit labels, and lets you choose which OS list
-to display. The buttons mirror the CLI choices:
-
-- `刷新驱动列表` loads the current machine list, or the selected supported OS list.
-- `安装更新项 (y)` installs only drivers marked `Update`.
-- `安装全部可安装 (a)` installs every applicable driver.
-- `安装选中项` installs only the rows checked in the table.
-- `仅下载选中项` downloads the checked rows without installing them.
-
-The WPF script does not duplicate driver decision logic. It starts the Go CLI
-in a child process with JSON export or install arguments, then renders the same
-deterministic comparison results in the desktop UI. Build the engine once with
-`go build -o bin\lenovo-driver.exe ./cmd/lenovo-driver` before launching the
-WPF wrapper.
-
-
-A dry run never downloads or installs anything:
+只审计、不下载不安装：
 
 ```bat
 install_lenovo_drivers.bat -DryRun
 ```
 
-To inspect the official driver list for another supported OS without merging
-lists, pass its OSID or OS name:
+桌面界面：
 
 ```bat
-install_lenovo_drivers.bat -DryRun -TargetOS 248
-install_lenovo_drivers.bat -DryRun -TargetOS "Windows 11"
+install_lenovo_drivers_wpf.bat
 ```
 
-To compare newer driver versions from other Lenovo OS entries:
+完整参数表、退出码与排障见 `docs/howto/run.md`。
 
-```bat
-install_lenovo_drivers.bat -LatestAcrossOS
-```
+## 项目边界
 
-## How It Works
+部署形态是**个人单机审计脚本**：CLI 引擎零遥测、无隐藏联网、无后台服务。签名、支持矩阵、安装器/卸载器、升级、遥测、品牌合规等产品尾保持冻结，理由见 `docs/decisions/distribution-frozen.md`。六条不变量见 `AGENTS.md`。
 
-1. Resolve the machine model and serial number.
-2. Detect the current Windows edition and architecture.
-3. Resolve the Lenovo machine category ID.
-4. Load the current-OS driver list from the official QuickFix backend
-   (`SearchForXbb`), falling back to the official webpage API.
-5. Filter firmware packages (BIOS/EC/ME/TPM/Thunderbolt/UEFI) unless
-   explicitly enabled.
-6. Snapshot local devices (including their Windows problem codes) and installed
-   applications.
-7. Compare remote and local versions and mark each driver as:
-   - `Update`
-   - `Up to date`
-   - `Not installed`
-   - `Local newer`
-   - `Unknown`
-   - `Not applicable`
-8. For every applicable driver, audit local source evidence: install history,
-   DriverStore import records from `setupapi.*.log`, current OS match, and
-   alternate OS match. `Local newer` is labeled from this audit plus the
-   alternate OS list instead of treating it as an error. The import parser
-   preserves the setupapi `cmd:` from `Driver Install`/`Device Install`
-   sections, so real `pnputil.exe` or installer command lines are printed in
-   the plan instead of hidden.
-9. Software-only packages compare against their installed application version;
-   a PnP device that merely shares a vendor name is not treated as evidence.
-10. Cross-OS mode selects the actual newest parsed version, not simply the
-    newest published row.
-11. Write a detailed plan file and show a compact console table.
-12. Ask which drivers to download and install.
-13. Validate cached or downloaded files with size, official MD5 when provided,
-    and a local SHA-256 companion file.
-14. Install them, write a CSV history record, and run one post-install
-    verification pass that records the actual before/after local versions.
-
-## Options
-
-| Option | Meaning |
-| --- | --- |
-| `-DryRun` | Compare versions without downloading or installing. |
-| `-CurrentOSOnly` | Use only the current OS driver list. This is the default. |
-| `-LatestAcrossOS` | Allow newer drivers from other OS entries. Cannot be used with `-CurrentOSOnly`. |
-| `-TargetOS <OSID\|OSName>` | Show and compare against one supported OS list, for example `248` or `Windows 11`. Cannot be used with `-CurrentOSOnly` or `-LatestAcrossOS`. |
-| `-SkipHashCheck` | Skip local SHA-256 companion-file validation. |
-| `-SkipSignatureCheck` | Skip Authenticode signature verification. |
-| `-IncludeBios` | Include firmware packages (BIOS/EC/ME/TPM/Thunderbolt/UEFI). They are skipped by default. |
-| `-DownloadOnly` | Download applicable files without installing. |
-| `-DownloadDir <path>` | Override the download directory. Defaults to `%TEMP%\LenovoDrivers`. |
-| `-Model <model>` | Override automatic machine model lookup, for example `82JQ`. |
-| `-Elevated` | Skip elevation. Used internally by the WPF wrapper. |
-| `-GuiExportPath <path>` | Write the WPF-compatible JSON driver view and exit. |
-| `-GuiInstallCodes <codes>` | Install only the comma-separated driver codes from a GUI export. |
-| `-Rollback <codes>` | Roll back the device drivers for the comma-separated driver codes that have a pending rollback offer. Rolls back the driver, or reinstalls the previous INF when no backup exists; never `pnputil /delete-driver` package cleanup. |
-| `-Help` | Show usage help. |
-
-`-CurrentOSOnly`, `-LatestAcrossOS`, and `-TargetOS` are mutually exclusive:
-`-TargetOS` selects one explicit supported OS list, while `-LatestAcrossOS`
-merges newer versions from other OS entries. Passing incompatible options
-fails fast with exit code `2`.
-
-## Safety And Integrity
-
-- Current-OS-only comparison is the safe default; cross-OS comparison is an
-  explicit experimental opt-in.
-- Driver lists are loaded from the official QuickFix backend first and fall
-  back to the official webpage API if that backend is unavailable.
-- Downloads are stored with unique `DriverCode_FileName` names.
-- File size is checked against the Lenovo driver list when available.
-- Official `MD5` is validated when the data source provides it; cached files
-  are also checked against it before reuse.
-- Fresh downloads receive a local `.sha256` companion file, and cached files
-  are validated before reuse.
-- Downloaded files are Authenticode-verified through WinVerifyTrust with
-  revocation checking enabled, and the signing certificate must belong to
-  Lenovo: a valid signature from an unrelated publisher is rejected. If
-  revocation status is offline (CRL unreachable), verification degrades to
-  chain + signer checking rather than rejecting a valid official package. Use
-  `-SkipSignatureCheck` only for diagnostic unsigned fixtures.
-- Download URLs must resolve to a Lenovo-owned domain (`lenovo.com` or
-  `lenovo.com.cn`, including subdomains). A URL pointing at any other host is
-  refused before a single byte is requested.
-- When the Lenovo API returns rows whose shape no longer matches the parser
-  contract, the run reports interface drift instead of silently degrading to
-  "no drivers". A gated or blocked private endpoint (HTTP errors, non-JSON
-  bodies, or missing top-level fields) surfaces as an explicit interface-gate
-  error.
-- If both Lenovo endpoints are unavailable, the run falls back to the last
-  successfully fetched driver list (persisted locally and clearly marked
-  stale) instead of failing outright.
-- `-SkipHashCheck` bypasses SHA-256 and official MD5 validation but still
-  enforces non-empty files and size checks when available.
-- Expired Lenovo CDN URLs are refreshed from the current driver list before
-  retrying.
-- EXE, MSI, pnputil, and expand runs use a timeout and kill the full process
-  tree when a run stalls.
-- Installer exit codes `3010` and `1641` are treated as success with reboot
-  required.
-- If an Inno-style wrapper stalls or fails, the installer attempts extracted
-  INF installation through `pnputil` or an inner installer where available.
-- If that fallback also fails for an EXE, the console asks whether to run the
-  downloaded EXE interactively before marking the driver failed.
-
-## Installer Handling
-
-| File type | Strategy |
-| --- | --- |
-| `.exe` | Silent Inno-style flags, Lenovo `InstallCode` arguments when provided, timeout, log capture, and extracted-installer fallback. |
-| `.msi` | `msiexec /i <file> /qn /norestart` with timeout. |
-| `.inf` | Native `DiInstallDriverW` (newdev.dll); falls back to system-native `pnputil /add-driver <file> /install` with timeout. |
-| `.zip` | Expand and install every contained INF with the same native INF path. |
-| `.cab` | Expand with `expand.exe` and install every contained INF with the same native INF path. |
-
-The runtime is native-only: it never spawns PowerShell. The driver source and
-update path never depend on Windows Update. With network access, the official
-Lenovo API list is loaded, packages are downloaded and integrity-checked, and
-INF packages are installed through the native Windows driver-install API.
-
-## Logs And Plans
-
-- Log file: `%LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_install.log`
-- Plan file: `%LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_plan.txt` (per-run view)
-- Driver history: `%LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_history.csv`
-- Source audit evidence: `C:\Windows\INF\setupapi.offline.log`,
-  `C:\Windows\INF\setupapi.dev.log`, and `C:\Windows\INF\setupapi.setup.log`
-- Download directory: `%TEMP%\LenovoDrivers` unless `-DownloadDir` is used.
-
-## Exit Codes
-
-| Code | Meaning |
-| --- | --- |
-| `0` | Completed successfully, or no drivers were selected. |
-| `1` | One or more downloads or installs failed. |
-| `2` | Invalid flag combination. |
-| `3` | A `-GuiInstallCodes` driver code was not found in the export. |
-
-## Troubleshooting
-
-- **Machine lookup fails**: run with `-Model "<model>"`, for example
-  `install_lenovo_drivers.bat -Model "82JQ"`.
-- **Current OS entry is not found**: confirm the machine model is correct and
-  the Lenovo API returns an OS list. Do not use `-LatestAcrossOS` as a blind
-  workaround.
-- **A silent installer fails**: the installer log path is printed. Use `s` to
-  skip, or run the downloaded file interactively from
-  `%TEMP%\LenovoDrivers`.
-- **A driver still reports an old version after install**: the post-install
-  recheck logs `unchanged`; a reboot may be required.
-- **Download returns `403`**: the script refreshes the URL from the current
-  driver list and retries once.
-
-## Architecture
-
-The runtime is a functional core with an imperative shell:
-
-- `internal/` contains the Go deterministic core: API parsing, inventory,
-  comparison, audit, plan formatting, download integrity, installer dispatch,
-  and path utilities.
-- `cmd/lenovo-driver` is the CLI orchestration shell. It owns flag parsing,
-  elevation, API calls, system snapshots, history files, logging, prompts, and
-  download/install side effects.
-- `lenovo_driver_wpf.ps1` is the desktop presentation entry point. It dot-sources
-  `wpf/ui.ps1`, `wpf/worker.ps1`, and `wpf/actions.ps1`, loads
-  `wpf/window.xaml`, launches the Go CLI in a child process, renders the JSON
-  driver view in a WPF table, and forwards user-selected driver codes back to
-  the same CLI for download/install.
-- `install_lenovo_drivers.bat` and `install_lenovo_drivers_wpf.bat` stay thin
-  and are the recommended entry points. The CLI wrapper builds the Go
-  engine when needed; the WPF wrapper expects `bin\lenovo-driver.exe`.
-
-The Go packages are small and focused. Files stay under 500 lines, public
-functions use explicit error returns, and offline tests cover parsing,
-matching, comparison, history, download integrity, and path handling.
-
-## Development
-
-The Go engine is organized by package: API, inventory, comparison, audit,
-plan, download, install, and app orchestration. The deterministic core is
-side-effect-free where practical so it can be tested without a real machine or
-network.
-
-The full development and build pipeline — fast inner loop, offline acceptance
-gate, real-machine smokes, and CI behavior — is documented in
-[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). To iterate quickly, run the unified
-loop (build → vet → fmt → test → build `bin\lenovo-driver.exe`):
-
-```powershell
-.\scripts\dev.ps1
-```
-
-Run the authoritative offline acceptance gate (the same gate CI runs; the
-script prints its own step count):
-
-```powershell
-.\scripts\verify.ps1
-```
-
-The architecture, API contract, installer behavior, and clean-checkout
-reproduction steps are documented in [docs/TECHNICAL.md](docs/TECHNICAL.md).
-
-## Definition Of Done
-
-This project enters maintenance mode (no new features) once all of the
-following hold:
-
-1. `scripts/verify.ps1` is fully green, including the zero-network import check.
-2. The WORM history ledger carries a chained hash and `verifyHistoryChain`
-   detects tampering.
-3. Rollback records `RolledBack` only on verified recovery (problem code cleared
-   and driver version changed) and never reports a false recovery.
-4. The distribution question is frozen: the tool stays a personal single-machine
-   audit script. Distribution is out of scope unless D0–D5 in
-   `docs/distribution-governance.md` are explicitly answered and approved.
-
-Remaining items that are low-consequence or environment-gated (real-machine
-downgrade behavior, FileRepository path, reboot-latent recovery) are recorded
-as 待取证 in `DRIVER_FACT_STANDARD.md` and are intentionally left open.
+进入纯维护模式（不再加特性）需同时满足：`scripts/verify.ps1` 全绿（含零网络导入检查）；WORM 账本哈希链可证伪篡改；回退只在“问题码恢复且驱动版本已变”时记 `RolledBack`，不记假恢复；分发问题保持冻结（D0–D5 未被重新决策推翻）。
