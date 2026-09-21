@@ -145,6 +145,7 @@ install_lenovo_drivers.bat -LatestAcrossOS
 | `-Elevated` | Skip elevation. Used internally by the WPF wrapper. |
 | `-GuiExportPath <path>` | Write the WPF-compatible JSON driver view and exit. |
 | `-GuiInstallCodes <codes>` | Install only the comma-separated driver codes from a GUI export. |
+| `-Rollback <codes>` | Roll back the device drivers for the comma-separated driver codes that have a pending rollback offer. Rolls back the driver, or reinstalls the previous INF when no backup exists; never `pnputil /delete-driver` package cleanup. |
 | `-Help` | Show usage help. |
 
 `-CurrentOSOnly`, `-LatestAcrossOS`, and `-TargetOS` are mutually exclusive:
@@ -290,3 +291,21 @@ script prints its own step count):
 
 The architecture, API contract, installer behavior, and clean-checkout
 reproduction steps are documented in [docs/TECHNICAL.md](docs/TECHNICAL.md).
+
+## Definition Of Done
+
+This project enters maintenance mode (no new features) once all of the
+following hold:
+
+1. `scripts/verify.ps1` is fully green, including the zero-network import check.
+2. The WORM history ledger carries a chained hash and `verifyHistoryChain`
+   detects tampering.
+3. Rollback records `RolledBack` only on verified recovery (problem code cleared
+   and driver version changed) and never reports a false recovery.
+4. The distribution question is frozen: the tool stays a personal single-machine
+   audit script. Distribution is out of scope unless D0–D5 in
+   `docs/distribution-governance.md` are explicitly answered and approved.
+
+Remaining items that are low-consequence or environment-gated (real-machine
+downgrade behavior, FileRepository path, reboot-latent recovery) are recorded
+as 待取证 in `DRIVER_FACT_STANDARD.md` and are intentionally left open.

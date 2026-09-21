@@ -259,6 +259,7 @@ Processes are bounded by timeouts. Timed-out process trees are terminated with
 %LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_install.log   operation log
 %LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_plan.txt      human-readable plan (per-run view)
 %LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_history.csv  CSV history with before/after versions
+%LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_rollback.json  rollback offers (GUI display cache; ledger is the authority)
 %TEMP%\LenovoDrivers\                                            default download directory
 <download-dir>\<DriverCode>_<file>                               downloaded package
 <download-dir>\<DriverCode>_<file>.sha256                        local SHA-256 companion

@@ -200,6 +200,20 @@ Assert-Step 'git diff check' {
     if ($LASTEXITCODE -ne 0) { throw "git diff --check failed`n$diff" }
 }
 
+Assert-Step 'engine zero-network import (local side-effect packages)' {
+    # Determinism invariant: only download/api may touch the network. Local
+    # side-effect packages must not import net/http or net/url, otherwise a
+    # hidden network call could slip in silently.
+    $localPkgs = 'internal\install', 'internal\compare', 'internal\inventory', 'internal\plan', 'internal\audit'
+    $hits = Get-ChildItem -Path $localPkgs -Recurse -Filter *.go |
+        Where-Object { $_.FullName -notmatch '_test\.go$' } |
+        Select-String -Pattern '"net/http"|"net/url"'
+    if ($hits) {
+        $files = ($hits | ForEach-Object { "$($_.Path):$($_.LineNumber)" }) -join ', '
+        throw "local side-effect packages must not import net/http or net/url: $files"
+    }
+}
+
 Assert-Step 'untracked artifact hygiene' {
     $untracked = git status --porcelain | Where-Object { $_ -match '^\?\?' }
     foreach ($line in @($untracked)) {

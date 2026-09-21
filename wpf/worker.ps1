@@ -85,6 +85,9 @@
         }
     } elseif ($mode -eq 'Install') {
         Add-GuiLog -Message '驱动下载/安装任务完成。'
+        Show-RollbackOffers
+    } elseif ($mode -eq 'Rollback') {
+        Add-GuiLog -Message '回退任务完成，请刷新列表查看结果。'
     }
 }
 
@@ -142,8 +145,10 @@ function Start-LenovoDriverJob {
         [switch]$Export,
         [switch]$Install,
         [switch]$DownloadOnly,
+        [switch]$Rollback,
         [string]$TargetOsId = '',
-        [string]$InstallCodes = ''
+        [string]$InstallCodes = '',
+        [string]$RollbackCodes = ''
     )
     if ($null -ne $script:WorkerProcess) {
         Add-GuiLog -Message '已有任务正在运行，请等待完成。'
@@ -182,8 +187,12 @@ function Start-LenovoDriverJob {
     if ($DownloadOnly) {
         $argsList += '-DownloadOnly'
     }
+    if ($RollbackCodes) {
+        $argsList += '-Rollback'
+        $argsList += $RollbackCodes
+    }
 
-    $script:WorkerMode = if ($Export) { 'Export' } else { 'Install' }
+    $script:WorkerMode = if ($Export) { 'Export' } elseif ($Rollback) { 'Rollback' } else { 'Install' }
     $script:WorkerStdoutPath = Join-Path $env:TEMP ('lenovo_gui_out_{0}.txt' -f ([guid]::NewGuid().ToString('N')))
     $script:WorkerStderrPath = Join-Path $env:TEMP ('lenovo_gui_err_{0}.txt' -f ([guid]::NewGuid().ToString('N')))
     $script:WorkerStdoutRead = 0

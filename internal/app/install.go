@@ -72,6 +72,16 @@ installLoop:
 			continue
 		}
 
+		// Audit-first: record the operator's install intent before mutating
+		// device state. Windows records the mechanism (a driver was installed);
+		// this row records the decision and blocks the install when the ledger
+		// cannot be written (invariant 5: audit failure never commits).
+		if err := a.WriteHistoryRecord(ad, "Install", "install requested", "", ""); err != nil {
+			a.Log(ctx, "["+driver.DriverCode+"] Install intent audit write failed; skipping install: "+err.Error(), "ERROR")
+			failed = append(failed, ad)
+			continue
+		}
+
 		isEXE := strings.EqualFold(filepath.Ext(outFile), ".exe")
 		if isEXE && !install.HasSilentParameters(driver) {
 			a.Log(ctx, "["+driver.DriverCode+"] No official silent install parameters; using interactive install.", "WARN")
@@ -345,6 +355,7 @@ func (a *App) verifyInstalled(ctx context.Context, drivers []*model.AssessedDriv
 		a.Log(ctx, "Post-install device evidence lookup failed: "+evErr.Error(), "WARN")
 		evidenceByID = nil
 	}
+	var offers []rollbackOffer
 	for _, ad := range drivers {
 		if ad == nil || ad.Driver == nil {
 			continue
@@ -367,10 +378,23 @@ func (a *App) verifyInstalled(ctx context.Context, drivers []*model.AssessedDriv
 		}
 		binding := installBindingLabel(beforeLocal, afterLocal, driver.Version)
 		message := fmt.Sprintf("binding=%s; local=%s; before=%s; problem=%s", binding, afterLocal, beforeLabel, problemLabel)
-		if afterProblem != "" && afterInf != "" {
-			rollback := manualRollbackGuidance(beforeInf)
-			message += "; rollback=" + rollback
-			a.Log(ctx, fmt.Sprintf("[%s] Rollback hint: %s", driver.DriverCode, rollback), "WARN")
+		// Causal gate: a rollback offer is only honest when the problem is NEW
+		// (clean before install, problem after). A problem that pre-existed the
+		// install cannot be attributed to it, so it is reported but not offered.
+		basis := rollbackCausalBasis(ad.DeviceProblem, afterProblem)
+		if basis == "new" {
+			message += "; attribution=new"
+			if afterInf != "" {
+				rollback := manualRollbackGuidance(beforeInf)
+				message += "; rollback=" + rollback
+				a.Log(ctx, fmt.Sprintf("[%s] Rollback hint: %s", driver.DriverCode, rollback), "WARN")
+			}
+			if offer := a.buildRollbackOffer(ad, beforeLocal, afterLocal, projected); len(offer.Devices) > 0 {
+				offers = append(offers, offer)
+			}
+		} else if basis == "pre-existing" {
+			message += "; attribution=pre-existing"
+			a.Log(ctx, fmt.Sprintf("[%s] Recheck: problem pre-existed (%s); not attributed to this install.", driver.DriverCode, ad.DeviceProblem), "WARN")
 		}
 		switch binding {
 		case "bound":
@@ -392,6 +416,15 @@ func (a *App) verifyInstalled(ctx context.Context, drivers []*model.AssessedDriv
 			a.Log(ctx, "["+driver.DriverCode+"] Recheck: version not detectable yet.", "WARN")
 		}
 		a.writeHistoryRecordChecked(ctx, ad, "Verified", message, afterLocal, beforeLocal)
+	}
+	for i := range offers {
+		offer := &offers[i]
+		a.writeHistoryRecordChecked(ctx, offer.assessedDriver(), "RollbackOffered", rollbackOfferedMessage(*offer), offer.BeforeVersion, offer.AfterVersion)
+	}
+	if err := a.writeRollbackOffers(offers); err != nil {
+		a.Log(ctx, "Could not persist rollback offers: "+err.Error(), "WARN")
+	} else if len(offers) > 0 {
+		a.Log(ctx, "Rollback offers : "+a.rollbackOfferPath(), "WARN")
 	}
 }
 

@@ -343,8 +343,10 @@ func (a *App) assessSelectedDrivers(ctx context.Context, vc *ViewContext, select
 			evidenceBuilt = true
 		}
 		ad.SourceAudit = a.resolveDriverSourceAudit(ad, matchedDevices, evidenceByID, vc.History, currentSourceMap, alternateSourceMap)
-		ad.DeviceProblem = model.DeviceProblemSummary(projectMatchedEvidence(matchedDevices, evidenceByID))
-		ad.BeforeInfName = firstInfName(projectMatchedEvidence(matchedDevices, evidenceByID))
+		beforeEvidence := projectMatchedEvidence(matchedDevices, evidenceByID)
+		ad.DeviceProblem = model.DeviceProblemSummary(beforeEvidence)
+		ad.BeforeInfName = firstInfName(beforeEvidence)
+		ad.BeforeInfPath = firstInfPath(beforeEvidence)
 		if ad.CompareStatus == model.StatusLocalNewer {
 			ad.CompareSource = audit.ResolveDriverSourceLabel(ad, vc.History, alternateSourceMap, ad.SourceAudit)
 			a.Log(ctx, "["+driver.DriverCode+"] "+ad.CompareSource, "WARN")

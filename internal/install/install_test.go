@@ -264,3 +264,29 @@ func TestInstallEXENoParamsIsTerminal(t *testing.T) {
 		t.Fatal("installEXE must not launch an EXE without official silent parameters")
 	}
 }
+
+func TestTimeoutErrIncludesKillFailure(t *testing.T) {
+	err := timeoutErr("pnputil", ProcessResult{TimedOut: true, KillErr: os.ErrPermission})
+	if !strings.Contains(err.Error(), "failed to terminate child tree") {
+		t.Fatalf("timeoutErr should surface the kill failure: %v", err)
+	}
+}
+
+func TestHasSilentParameters(t *testing.T) {
+	if !HasSilentParameters(&model.Driver{DriverCode: "d1", InstallParameter: "/VERYSILENT"}) {
+		t.Fatal("Inno /VERYSILENT should count as usable silent parameters")
+	}
+	if HasSilentParameters(&model.Driver{DriverCode: "d1"}) {
+		t.Fatal("empty official parameters should not be usable")
+	}
+}
+
+func TestInstallINFsEmptyArchiveIsTerminal(t *testing.T) {
+	code, err := installINFs(t.TempDir(), t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "no .inf") {
+		t.Fatalf("empty archive should be a terminal no-inf error: code=%d err=%v", code, err)
+	}
+	if code != 2 {
+		t.Fatalf("empty archive code = %d, want 2", code)
+	}
+}

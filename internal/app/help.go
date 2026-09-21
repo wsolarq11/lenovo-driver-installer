@@ -9,6 +9,8 @@ Usage:
                 [-DownloadDir <path>] [-Model <model>] [-Help]
   lenovo-driver -GuiExportPath <path> [-Model <model>]
   lenovo-driver -GuiInstallCodes <code1,code2,...>
+  lenovo-driver -Rollback <code1,code2,...>
+  lenovo-driver -Audit <snapshotPath>
 
 Options:
   -DryRun          Build and print the plan only; do not download or install.
@@ -24,6 +26,13 @@ Options:
   -Elevated        Skip the automatic UAC relaunch when the process is already elevated.
   -GuiExportPath   Export the WPF-compatible JSON view and exit.
   -GuiInstallCodes Install only the comma-separated DriverCode values from a GUI export.
+  -Rollback        Roll back the device drivers for the comma-separated DriverCode values
+                   that have a pending rollback offer (rolls back the driver, or reinstalls
+                   the previous INF when no backup exists; never package cleanup).
+  -Audit           Snapshot the current device drivers. On first run it writes a baseline;
+                   on later runs it reports the device-level diff since the last snapshot
+                   (added/removed devices, driver version/INF/date/problem-code changes)
+                   and advances the baseline. Read-only against device state.
   -Help            Show this help.
 
 Interactive choices:
@@ -42,7 +51,7 @@ Data source:
 
 Exit codes:
   0  Success or no driver selected.
-  1  Download or install failure.
+  1  Download, install, or rollback failure.
   2  Invalid flag combination.
   3  GUI driver code mismatch.
 

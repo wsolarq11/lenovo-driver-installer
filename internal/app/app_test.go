@@ -119,8 +119,12 @@ func TestShowActionPreviewIncludesDriverRows(t *testing.T) {
 func TestReadHistoryStripsUTF8BOM(t *testing.T) {
 	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
 	app.HistoryPath = filepath.Join(t.TempDir(), "history.csv")
-	row := []string{"2026-01-01 00:00:00", "d1", "42", "Windows 10 64-bit", "Audio", "1.0.0.1", "", "", "audio.exe", "abc", "QuickFix", "Installed", "exit=0"}
-	content := "\uFEFF" + strings.Join(historyHeader, ",") + "\n" + strings.Join(row, ",") + "\n"
+	rec := model.HistoryRecord{
+		Timestamp: "2026-01-01 00:00:00", DriverCode: "d1", OSID: "42", OSName: "Windows 10 64-bit",
+		DriverName: "Audio", Version: "1.0.0.1", FileName: "audio.exe", MD5: "abc",
+		Source: "QuickFix", Result: "Installed", Message: "exit=0",
+	}
+	content := "\uFEFF" + strings.Join(historyColumns, ",") + "\n" + strings.Join(historyValues(rec), ",") + "\n"
 	if err := os.WriteFile(app.HistoryPath, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}

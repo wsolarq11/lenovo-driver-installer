@@ -29,3 +29,23 @@ func TestNativeInstallSmoke(t *testing.T) {
 		t.Fatal("expected pnputil fallback to fail for a missing INF")
 	}
 }
+
+// TestForceReinstallNativeSmoke is an opt-in real-machine check that calls
+// UpdateDriverForPlugAndPlayDevicesW with a missing INF and a synthetic hardware
+// ID. It never touches a real device: a missing INF path returns an error before
+// any device scan, so the only thing verified is that the export resolves and
+// the call fails (rather than crashing).
+func TestForceReinstallNativeSmoke(t *testing.T) {
+	if os.Getenv("LENOVO_NATIVE_INSTALL_SMOKE") != "1" {
+		t.Skip("set LENOVO_NATIVE_INSTALL_SMOKE=1 to run native reinstall API smoke")
+	}
+	missing := filepath.Join(t.TempDir(), "does-not-exist.inf")
+	reboot, err := ForceReinstallINF(missing, `PCI\VEN_0000&DEV_0000`)
+	if err == nil {
+		t.Fatal("ForceReinstallINF should fail for a missing INF")
+	}
+	if reboot {
+		t.Fatal("a missing-INF reinstall must not report a reboot requirement")
+	}
+	t.Logf("ForceReinstallINF returned error (expected): %v", err)
+}

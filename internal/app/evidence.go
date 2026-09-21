@@ -80,6 +80,29 @@ func firstInfName(devices []model.Device) string {
 	return ""
 }
 
+// firstInfPath returns the absolute path of the first enriched device's bound
+// INF. The registry InfPath value is usually a bare oemN.inf leaf, so a leaf is
+// reconstructed under %SystemRoot%\INF; an already-qualified path is returned
+// unchanged. It is the reinstall target when device rollback has no backup.
+func firstInfPath(devices []model.Device) string {
+	for _, device := range devices {
+		if device.InfName == "" {
+			continue
+		}
+		if parent := pathutil.Parent(device.InfName); parent != "" {
+			return device.InfName
+		}
+		if leaf := pathutil.Base(device.InfName); leaf != "" {
+			root := os.Getenv("SystemRoot")
+			if root == "" {
+				root = `C:\Windows`
+			}
+			return filepath.Join(root, "INF", leaf)
+		}
+	}
+	return ""
+}
+
 // projectMatchedEvidence returns the enriched evidence rows for the matched
 // devices that the evidence scan found, in matched order. When the evidence
 // map is nil (the evidence pass failed), it returns the plain matched rows so

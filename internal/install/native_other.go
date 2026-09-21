@@ -8,3 +8,8 @@ import "fmt"
 func InstallNativeINF(infPath string) (bool, error) {
 	return false, fmt.Errorf("native driver install requires Windows")
 }
+
+// ForceReinstallINF is unsupported off Windows.
+func ForceReinstallINF(infPath, hardwareID string) (bool, error) {
+	return false, fmt.Errorf("native driver reinstall requires Windows")
+}

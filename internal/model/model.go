@@ -67,6 +67,12 @@ type DriverAssessment struct {
 	// target a rollback hint can reference when a post-install device problem
 	// appears; it is read-only evidence, never a rollback trigger.
 	BeforeInfName string `json:"BeforeInfName,omitempty"`
+	// BeforeInfPath is the absolute path (e.g. C:\Windows\INF\oem42.inf) of the
+	// matched device's previously-bound INF, captured before this tool installs
+	// anything. It is the reinstall target when a post-install device problem
+	// has no DiRollbackDriver backup; read-only evidence, never a rollback
+	// trigger.
+	BeforeInfPath string `json:"BeforeInfPath,omitempty"`
 }
 
 // Driver is the normalized Lenovo driver row from the API. It carries only

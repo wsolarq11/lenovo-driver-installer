@@ -29,3 +29,38 @@
     $codes = @($targets | ForEach-Object { $_.DriverCode }) -join ','
     Start-LenovoDriverJob -Install -DownloadOnly:$DownloadOnly -TargetOsId (Get-DisplayedOsId) -InstallCodes $codes
 }
+
+function Get-RollbackOfferPath {
+    if ($env:LOCALAPPDATA) {
+        return Join-Path $env:LOCALAPPDATA 'Lenovo\DriverInstaller\lenovo_driver_rollback.json'
+    }
+    return Join-Path $env:TEMP 'lenovo_driver_rollback.json'
+}
+
+function Read-PendingRollbackOffers {
+    $path = Get-RollbackOfferPath
+    if (-not (Test-Path -LiteralPath $path)) { return @() }
+    try {
+        $data = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+        return @($data.Offers | Where-Object { $_.State -eq 'pending' })
+    } catch {
+        return @()
+    }
+}
+
+function Show-RollbackOffers {
+    $offers = Read-PendingRollbackOffers
+    if ($offers.Count -eq 0) { return }
+    $lines = foreach ($o in $offers) {
+        $devices = (@($o.Devices) | ForEach-Object { "    {0}  ({1})" -f $_.PnpDeviceID, $_.Problem }) -join "`r`n"
+        "  {0}  {1}`r`n    版本 {2} -> {3}`r`n    旧 INF {4}`r`n{5}" -f $o.DriverCode, $o.DriverName, $o.AfterVersion, $o.BeforeVersion, $o.BeforeInf, $devices
+    }
+    $message = "以下驱动安装后检测到设备问题，可回退到安装前的驱动程序：`r`n`r`n{0}`r`n`r`n说明：问题码为本机实测；「由本次安装导致」为时间相关性推断，非直接测量。回退会先回退驱动程序，无备份时重装旧 INF，不删除驱动包。是否执行？" -f ($lines -join "`r`n")
+    $answer = [System.Windows.MessageBox]::Show($message, '回退确认', [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Warning)
+    if ($answer -ne [System.Windows.MessageBoxResult]::Yes) {
+        Add-GuiLog -Message '已跳过回退操作。'
+        return
+    }
+    $codes = @($offers | ForEach-Object { $_.DriverCode }) -join ','
+    Start-LenovoDriverJob -Rollback -RollbackCodes $codes
+}

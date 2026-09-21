@@ -35,6 +35,8 @@ type Options struct {
 	DownloadDir        string
 	GuiExportPath      string
 	GuiInstallCodes    string
+	Rollback           string
+	AuditPath          string
 }
 
 // ViewContext carries the resolved runtime inputs shared by comparison,
@@ -139,6 +141,8 @@ func ParseOptions(args []string) (*Options, error) {
 	fs.StringVar(&opts.DownloadDir, "DownloadDir", "", "")
 	fs.StringVar(&opts.GuiExportPath, "GuiExportPath", "", "")
 	fs.StringVar(&opts.GuiInstallCodes, "GuiInstallCodes", "", "")
+	fs.StringVar(&opts.Rollback, "Rollback", "", "")
+	fs.StringVar(&opts.AuditPath, "Audit", "", "")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
@@ -162,6 +166,12 @@ func (opts *Options) Validate() error {
 	}
 	if opts.TargetOS != "" && opts.LatestAcrossOS {
 		return fmt.Errorf("-TargetOS and -LatestAcrossOS cannot be used together")
+	}
+	if opts.Rollback != "" && (opts.GuiExportPath != "" || opts.GuiInstallCodes != "" || opts.DryRun || opts.DownloadOnly) {
+		return fmt.Errorf("-Rollback cannot be combined with export, install, or dry-run modes")
+	}
+	if opts.AuditPath != "" && (opts.Rollback != "" || opts.GuiExportPath != "" || opts.GuiInstallCodes != "" || opts.DryRun || opts.DownloadOnly) {
+		return fmt.Errorf("-Audit is a standalone mode and cannot be combined with rollback, export, install, or dry-run modes")
 	}
 	return nil
 }
@@ -187,6 +197,14 @@ func (a *App) Run(args []string) int {
 
 	if done, code := a.maybeElevated(ctx, opts, args); done {
 		return code
+	}
+
+	if opts.Rollback != "" {
+		return a.runRollback(ctx, opts.Rollback)
+	}
+
+	if opts.AuditPath != "" {
+		return a.runAudit(ctx, opts.AuditPath)
 	}
 
 	vc, code := a.resolveRuntime(ctx, opts)
