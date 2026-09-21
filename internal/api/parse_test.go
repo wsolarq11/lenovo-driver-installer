@@ -103,7 +103,7 @@ func decodeJSON(data []byte, target any) error {
 
 // TestParseQuickFixContractGolden locks the real QuickFix field names and the
 // normalization rules they feed. DriverCode/Version/FileName come from
-// DRIVER_FACT_STANDARD section 6; the remaining values are fixtures whose only
+// docs/records/evidence-82jq.md; the remaining values are fixtures whose only
 // purpose is to exercise field mapping (MD5 case, Parameter fallback, the
 // DriverEdtionId typo, PubTime date extraction).
 func TestParseQuickFixContractGolden(t *testing.T) {

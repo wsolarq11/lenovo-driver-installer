@@ -3,7 +3,7 @@ package compare
 import "testing"
 
 // TestParseVersionString82JQGolden locks the real local driver versions
-// recorded in DRIVER_FACT_STANDARD section 6 for the 82JQ machine. These are
+// recorded in docs/records/evidence-82jq.md for the 82JQ machine. These are
 // regression fixtures, not synthetic samples: if the parser starts rejecting
 // one of them, the comparison silently degrades that driver to Unknown.
 func TestParseVersionString82JQGolden(t *testing.T) {

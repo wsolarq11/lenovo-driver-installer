@@ -10,7 +10,7 @@ import (
 // The device shapes below follow the Windows PnP naming conventions the
 // matching table was built against. They are regression fixtures for the regex
 // table, not captured 82JQ evidence: the 82JQ driver names come from
-// DRIVER_FACT_STANDARD section 6, while the device names are representative
+// docs/records/evidence-82jq.md, while the device names are representative
 // Windows device-tree strings (inference, not a real inventory dump).
 func TestDriverApplicableGolden(t *testing.T) {
 	local := []model.Device{
