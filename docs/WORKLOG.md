@@ -329,3 +329,29 @@ the 82JQ machine and proved the full pipeline works.
 ### Status
 
 [OK] **Completed**
+
+---
+
+## Session: Download chain proven end-to-end + first commit of the hardening work
+
+**Branch**: `main`
+
+### Summary
+
+Ran the first real `-DownloadOnly` on 82JQ and closed the download chain
+(host allowlist → download → MD5 → SHA-256 → Authenticode signer) with zero
+installation side effects. Committed the four rounds of hardening work.
+
+### Evidence
+
+- [实测] `-DownloadOnly -GuiInstallCodes DRV201907160015` downloaded
+  `ME-WWE00GAE40.exe` (1,230,984 bytes) from `newdriverdl.lenovo.com.cn`.
+- [实测] Computed MD5 `67b31666572dc1657e09c44dea284734` matches the official
+  plan value; SHA-256 companion matches `Get-FileHash`.
+- [实测] `Get-AuthenticodeSignature` reports `Valid`, subject
+  `CN=Lenovo, OU=G09, O=Lenovo...` — the signer whitelist accepted the real
+  Lenovo signer through the tool's own verification path.
+
+### Status
+
+[OK] **Completed** — committed as `188a255` (18 files, +897/-18).
