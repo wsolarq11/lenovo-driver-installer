@@ -2,6 +2,8 @@
 
 本文是“系统怎么分层、谁负责什么、数据按什么顺序流动”的权威描述。任何行为变更都必须能对照本文件走一遍，确认没有在既有边界之外新增副作用。
 
+本文件写**边界与数据流向**，不写函数调用顺序与内部优化——那些的权威是 `internal/` 代码。代码实现变了而本文件不需要变，是本文件的维护性目标。
+
 ## 1. 目标
 
 Lenovo 驱动安装器是面向联想中国大陆机型的 Windows 桌面工具：解析机型与主机编号 → 查询联想官方驱动接口 → 与本地驱动状态对比 → 让用户选择下载或安装适用驱动。
@@ -31,6 +33,12 @@ Go CLI 拥有全部驱动业务逻辑：API 访问与归一化、本机/OS/PnP/�
 
 WPF 只是表现壳：渲染 JSON 导出、启动后台 Go 进程、回传 `DriverCode` 选择。它不实现驱动匹配或安装逻辑。
 
+### 2.1 确定性边界（架构级约束）
+
+- **确定性包**（`api`、`compare`、`audit`、`plan`、`model`）：不碰网络、注册表、PnP、控制台、进程或文件 API。同输入同输出。
+- **副作用包**（`app`、`download`、`install`、`inventory`）：系统副作用集中于此，是“确定性”与“外部世界”之间的唯一接口。
+- 运行时只派生到原生 Windows API 与联想官方接口，从不派生 PowerShell。
+
 ## 3. 仓库布局
 
 ```text
@@ -40,8 +48,8 @@ internal/app                 编排、CLI、GUI 导出、账本、提示
 internal/audit               setupapi 解析与来源证据审计
 internal/compare             版本解析、匹配、选择、格式化
 internal/download            HTTP 下载、重试、SHA-256 伴生文件
-internal/install             安装器分发与 EXE 回退；原生 DiInstallDriverW INF 路径（pnputil 回退）
-internal/inventory           Windows 机器/OS/PnP/应用快照（原生 SetupAPI/CfgMgr32/注册表；运行时无 PowerShell）
+internal/install             安装器分发与 EXE 回退；原生 INF 安装（pnputil 回退）
+internal/inventory           Windows 机器/OS/PnP/应用快照（原生 SetupAPI/CfgMgr32/注册表）
 internal/model               共享纯数据类型
 internal/pathutil            Windows 路径助手
 internal/plan                计划文本、表格、账本行构建
@@ -59,8 +67,6 @@ install_lenovo_drivers_wpf.bat 薄 WPF 启动器
 docs/                        本文档树
 ```
 
-确定性包（`api`、`compare`、`audit`、`plan`、`model`）不碰网络、注册表、PnP、控制台、进程或文件 API。副作用集中在 `app`、`download`、`install`、`inventory`。
-
 ## 4. 前置条件
 
 - Windows 10 / Windows 11
@@ -69,73 +75,29 @@ docs/                        本文档树
 - 驱动安装需要管理员权限
 - 需要访问联想官方 API 主机的网络
 
-## 5. 端到端数据流
+## 5. 数据流（阶段模型）
+
+一次运行按五个阶段流动，阶段间只通过只读视图传递，不共享可变状态：
 
 ```text
-cmd/lenovo-driver (main)  ->  internal/app.App.Run
-                                   |
-                                   v
-        +---------------- resolveRuntime ----------------+
-        |  machine -> OS -> category -> OS list -> local |
-        |  device/app/software snapshot -> driver history|
-        +-----------------------------------------------+
-                                   |
-                                   v
-        +------------- CompareOSDriverView --------------+
-        |  load list -> (可选跨 OS merge) -> row 所有权  |
-        |  -> filter -> latest-select -> assess          |
-        |  (apply / local-version / status / source audit)|
-        |  -> plan file + console table -> partition      |
-        +-----------------------------------------------+
-                                   |
-                                   v
-                  runSelection  -> export | dry-run |
-                                   select | interactive
-                                    |
-                                    v
-          InstallSelected -> download-verify ->
-          install-dispatch (msi/inf/zip/cab/exe + fallbacks)
-                              -> post-install verify -> CSV 账本
+解析 → 比较 → 选择 → 下载安装 → 记账
 ```
 
-### 5.1 入口与参数契约（`internal/app/app.go`）
+| 阶段 | 职责 | 副作用 | 不变量落点 | 代码锚点 |
+| --- | --- | --- | --- | --- |
+| 解析 | 收集机型/OS/分类/OS 列表/本地盘点/历史账本，构建只读视图 | 读系统、读 API、读账本 | 硬失败即停；快照失败降级为空 | `internal/app/app.go`、`internal/inventory`、`internal/api` |
+| 比较 | 加载官方列表，选出最新适用行，评估版本/状态/来源 | 无（纯函数 + 只读输入） | 事实分级、默认不动 | `internal/app/view.go`、`internal/compare`、`internal/audit` |
+| 选择 | 按导出/试运行/交互/回传码分发下一步 | 写 GUI JSON（可选） | 选择先于副作用可见 | `internal/app/interactive.go`、`internal/app/export.go` |
+| 下载安装 | 下载校验、按文件类型分发安装、装后复核 | 网络下载、写文件、装驱动 | 审计先于状态变更、设备级回退 | `internal/download`、`internal/install` |
+| 记账 | 写计划、日志、WORM 账本、回退 offer | 追加写文件 | 审计先于状态变更（写失败不提交） | `internal/plan`、`internal/app/history.go`、`internal/app/rollback.go` |
 
-`cmd/lenovo-driver/main.go` 只调用一次 `app.New(...).Run(args)`。
+阶段语义要点：
 
-`Run` 依次：`ParseOptions` 解析 PowerShell 风格参数 → `-Help` 打印用法退出 `0` → `Validate` 拒绝互斥参数组合退出 `2` → 启动单个 30 分钟 `context.WithTimeout` 约束所有网络/下载/安装步骤 → `maybeElevated` 在需要管理员时重发提权 → `resolveRuntime` 构建只读 `ViewContext` → 解析待比较的 `listOsID` → `CompareOSDriverView` 构建评估视图 → `runSelection` 分发导出/试运行/选择/安装。
-
-`ViewContext` 刻意保持只读；每次运行的易变暂存（OS 驱动缓存）放在 `App` 上，消息代码无法改写共享输入。
-
-### 5.2 解析阶段
-
-`resolveRuntime` 按序收集：`inventory.GetMachineInfo`（机型+序列号）→ `inventory.GetOSInfo`（Windows 版本+归一化 OS 名）→ `api.ResolveCategoryID`（联想机型分类，自动失败回退 `-Model`）→ `api.ResolveOSEntry`（当前 OS 条目+完整支持 OS 列表）→ `inventory.GetLocalDeviceSnapshot` / `GetInstalledApps` / `GetSoftwareSnapshot`（本地盘点，失败软降级）→ `ReadHistory`（历史账本，用于来源审计）。
-
-机器 / OS / 分类 / OS 条目解析硬失败即停；快照失败降级为空盘点（仍可安全继续）。
-
-### 5.3 比较阶段（`view.go`、`compare`、`audit`）
-
-1. `mustDriverList` 加载官方驱动列表（QuickFix 优先、网页回退），硬错误即停，结果视为自有数据。
-2. `-LatestAcrossOS` 下并行拉取每个备用 OS 列表，按确定性的 OSID 顺序合并；空/失败的备用列表是软缺失（`tolerated`）。
-3. 深拷贝拉取的行，评估写操作不碰共享列表缓存或 API 传输 DTO。
-4. `filterDriverRows` 丢弃禁用 / BIOS / 不可安装行。
-5. `SelectLatest` 按 code 选出最新适用行。
-6. `assessSelectedDrivers` 先做单次设备-版本索引，再逐驱动：测试适用性 → 解析本地版本与厂商（`compare.ResolveLocalDriverVersion`）→ 计算 `CompareStatus` → 有本地版本时跑来源证据审计（`audit.ResolveDriverSourceEvidence`，非历史来源标 `External`，`Local newer` 由审计标记而非当错误）→ 折叠匹配设备问题码为 `DeviceProblem`。
-7. `present` 写计划文件 + 打印控制台表，`partitionViewDrivers` 拆成适用 / 仅更新两集。
-
-> 数据流注：设备-版本索引对所有适用驱动只取一次；备用来源映射懒构建并复用，比较阶段不会逐驱动重扫。
-
-### 5.4 选择阶段（`runSelection`、`interactive.go`）
-
-- `-GuiExportPath` → `ExportGUIView` 写 WPF JSON 后退出 `0`。
-- `-DryRun` → 记日志“未下载未安装”退出 `0`。
-- `-GuiInstallCodes` → `selectByCodes` 映射逗号分隔 code；缺失或不适用的 code 快速失败退出 `3`。
-- 否则 → `SelectInteractive` 提示；按 `t` 重载另一个 OS 列表并重建视图。
-
-交互流程在任何下载前打印精确的 `y` / `a` 驱动集，让选择先于副作用可见。
-
-### 5.5 下载与安装（`install.go`、`install`、`download`）
-
-`InstallSelected`：创建下载目录 → 逐选中驱动 `downloadVerified`（缓存命中校验后复用，否则重下；`403` 从当前/合并列表刷新一次 URL 后重试最多一次）→ `-DownloadOnly` 写 `Downloaded` 账本行即算成功 → 否则 `install.InstallDriverFile` 按文件类型分发（`.exe`/`.msi`/`.inf`/`.zip`/`.cab`，各有原生路径 + 有界超时 + 合理回退，`.exe` 静默失败后可能交互重跑）→ 每个结果写账本行（`Installed`/`Failed`/`Downloaded`/`Verified`）→ 有安装成功且非 `-DownloadOnly` 时跑装后复核（`verifyInstalled`，重读版本写 `Verified` 前后版本行）→ 任一驱动失败返回非 nil（驱动退出码 `1`）。
+- **解析**：机器/OS/分类/OS 条目硬失败即停（没有正确输入就没有正确输出）；本地快照失败降级为空盘点，仍可安全继续。
+- **比较**：比较阶段深拷贝官方列表的行，评估的写操作不碰共享列表缓存或 API 传输 DTO；备用 OS 列表为空/失败是软缺失（`tolerated`），不阻断主流程。`Local newer` 由来源审计标记，不当错误。
+- **选择**：任何下载发生前，`y` / `a` 驱动集已精确打印，选择先于副作用可见。
+- **下载安装**：每个文件先校验后使用；安装按文件类型走原生路径，EXE 静默失败后可交互重跑。
+- **记账**：安装/回退动作前先写意图行（`Install` / `Rollback`），写入失败则跳过动作；账本每行带 SHA-256 链哈希，可证伪篡改/乱序/删除。
 
 ## 6. 开发边界
 

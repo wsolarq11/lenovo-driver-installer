@@ -1,6 +1,6 @@
 # 构建与运行
 
-“我要跑起来 / 我要审计一台机器 / 我遇到问题”都看这里。参数与退出码的契约定义见 `docs/spec/contracts.md`。
+“我要跑起来 / 我要审计一台机器 / 我遇到问题”都看这里。运行参数见 `-Help`（机器源 `internal/app/help.go`）；退出码与产物的契约定义见 `docs/spec/contracts.md`。
 
 ## 构建
 
@@ -59,25 +59,11 @@ WPF 窗口通过引擎加载官方驱动列表，显示相同的 `Update` / `Up 
 
 ## 参数
 
-| 参数 | 含义 |
-| --- | --- |
-| `-DryRun` | 只对比，不下载不安装。 |
-| `-CurrentOSOnly` | 只用当前 OS 列表（默认）。 |
-| `-LatestAcrossOS` | 允许其它 OS 条目的更新版本；不能与 `-CurrentOSOnly` 同用。 |
-| `-TargetOS <OSID\|OSName>` | 只对比一个支持 OS 列表，如 `248` 或 `Windows 11`；不能与 `-CurrentOSOnly`/`-LatestAcrossOS` 同用。 |
-| `-SkipHashCheck` | 跳过本地 SHA-256 伴生校验。 |
-| `-SkipSignatureCheck` | 跳过 Authenticode 签名校验。 |
-| `-IncludeBios` | 包含固件包（BIOS/EC/ME/TPM/Thunderbolt/UEFI）；默认跳过。 |
-| `-DownloadOnly` | 只下载不安装。 |
-| `-DownloadDir <path>` | 覆盖下载目录；默认 `%TEMP%\LenovoDrivers`。 |
-| `-Model <model>` | 覆盖自动机型查询，如 `82JQ`。 |
-| `-Elevated` | 跳过提权；WPF 包装内部使用。 |
-| `-GuiExportPath <path>` | 写 WPF 兼容 JSON 视图后退出。 |
-| `-GuiInstallCodes <codes>` | 只安装逗号分隔的驱动 code（来自 GUI 导出）。 |
-| `-Rollback <codes>` | 回退有 pending offer 的驱动：回退驱动程序，或重装旧 INF；绝不 `pnputil /delete-driver` 包清理。 |
-| `-Help` | 显示用法。 |
+完整参数、退出码、产物路径的机器源是 `internal/app/help.go`，运行 `-Help` 查看最新清单。本文不复制参数表，避免与代码漂移。
 
-`-CurrentOSOnly`、`-LatestAcrossOS`、`-TargetOS` 互斥；传冲突组合以退出码 `2` 快速失败。
+`-Help` 未明确、但影响用法的约束：
+- `-CurrentOSOnly`、`-LatestAcrossOS`、`-TargetOS` 互斥；传冲突组合以退出码 `2` 快速失败。
+- `-Audit <snapshotPath>` 是独立只读模式（设备快照基线/差分），不能与安装、回退、导出、试运行组合。
 
 ## 排障
 

@@ -1,8 +1,20 @@
 # 外部契约
 
-单一权威：API、GUI JSON 协议、退出码、产物与账本列。改动任一处必须同步本文件与对应测试 golden。
+API、GUI JSON 协议、退出码、产物与账本列的**单一权威**。改动任一处必须同步本文件与对应测试 golden。
 
-> 权威源提示：退出码、参数、产物路径的机器源是 `internal/app/help.go` 的 `HelpText`；账本列序的机器源是 `internal/app/history.go` 的 `historyColumns`（golden 锁死）。本文件是人工可读副本；`scripts/verify.ps1` 对退出码做 `help.go ↔ 本文件` 比对，漂移会让门禁失败。
+## 单一权威映射
+
+可枚举契约的权威是代码，本文件是**被门禁锁死的人读副本**；锁不住的，本文件只留指针不留副本。
+
+| 契约项 | 机器源（代码） | 门禁 | 本文件的角色 |
+| --- | --- | --- | --- |
+| CLI 参数、退出码、产物路径 | `internal/app/help.go` 的 `HelpText` | `scripts/verify.ps1` 比对退出码，漂移即失败 | 人读语义 |
+| 账本列序 | `internal/app/history.go` 的 `historyColumns` | `history_test.go` golden 锁列序 | 人读语义 |
+| GUI JSON 协议 | `internal/app/export.go` | WPF 层解析（参数引用共享 golden） | 人读协议 |
+| API 端点与字段 | `internal/api/` | API 层单测 | 人读契约 |
+| 回退 offer 字段 | `internal/app/rollback.go` | 回退测试 golden | 人读语义 |
+
+**规则**：改退出码/参数/产物/账本列时，先改代码（机器源），再改本文件副本，跑 `verify.ps1` 让门禁确认两者一致。不允许“只改文档不改代码”或“只改代码不改文档”留下静默漂移。
 
 ## 1. 联想 API 集成
 
@@ -52,6 +64,9 @@ Go CLI 写出的 JSON：
       "CompareStatus": "...",
       "SourceAudit": "...",
       "CompareSource": "...",
+      "DeviceProblem": "...",
+      "EvidenceBasis": "...",
+      "NonMatchReason": "...",
       "FileName": "...",
       "FilePath": "...",
       "FileSize": "...",
@@ -63,7 +78,7 @@ Go CLI 写出的 JSON：
 }
 ```
 
-`SourceAudit` 是规范字符串形式 `Category: Summary`。WPF 直接渲染此 JSON，并用 `-GuiInstallCodes` 回传选择。GUI 导出还填充 `EvidenceBasis`、`DeviceProblem`、`NonMatchReason`（未命中原因压缩为 `hardware ids X, Y, ... (N ids)`）。
+字段机器源是 `internal/app/export.go` 的 `guiExportPayload` / `guiDriverRow` 结构体 tag，由 `export_test.go` 的 golden 锁死；上面的示例是示意，字段增删必须同步两处，否则测试失败。`SourceAudit` 是规范字符串形式 `Category: Summary`。WPF 直接渲染此 JSON，并用 `-GuiInstallCodes` 回传选择。`NonMatchReason` 压缩为 `hardware ids X, Y, ... (N ids)`。
 
 ## 3. 退出码
 
@@ -90,6 +105,8 @@ Go CLI 写出的 JSON：
 ```
 
 来源审计证据源：`C:\Windows\INF\setupapi.offline.log`、`setupapi.dev.log`、`setupapi.setup.log`。
+
+前三个审计产物（log / plan / history）的机器源是 `internal/app/help.go` 的 `Artifacts` 块，由 `scripts/verify.ps1` 比对锁死；改路径必须同步 `help.go` 与本文件，否则门禁失败。
 
 ## 5. 账本（WORM 历史）
 
