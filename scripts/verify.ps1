@@ -195,6 +195,25 @@ Assert-Step 'CLI exit codes match docs contract' {
     }
 }
 
+Assert-Step 'CLI artifact paths match docs contract' {
+    # Single source of truth: internal/app/help.go Artifacts block. The three
+    # audit artifacts (log/history/plan) must carry the same stable path in
+    # docs/spec/contracts.md; a drifted copy fails the gate.
+    $help = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\help.go') -Raw
+    $helpPaths = @([regex]::Matches($help, '(?m)^\s+(%LOCALAPPDATA%\\Lenovo\\DriverInstaller\\lenovo_driver_\S+\.(?:log|csv|txt))') | ForEach-Object { $_.Groups[1].Value })
+
+    $contract = Get-Content -LiteralPath (Join-Path $repoRoot 'docs\spec\contracts.md') -Raw
+    $contractPaths = @([regex]::Matches($contract, '(?m)^(%LOCALAPPDATA%\\Lenovo\\DriverInstaller\\lenovo_driver_\S+\.(?:log|csv|txt))') | ForEach-Object { $_.Groups[1].Value })
+
+    if ($helpPaths.Count -lt 3) { throw "help.go parsed fewer than 3 audit artifact paths" }
+    if ($contractPaths.Count -lt 3) { throw "contracts.md parsed fewer than 3 audit artifact paths" }
+    $diff = Compare-Object -ReferenceObject ($helpPaths | Sort-Object) -DifferenceObject ($contractPaths | Sort-Object)
+    if ($diff) {
+        $detail = ($diff | ForEach-Object { "$($_.SideIndicator)$($_.InputObject)" }) -join ','
+        throw "artifact-path drift (help vs contract): $detail"
+    }
+}
+
 $invalidCombinations = @(
     @('-CurrentOSOnly', '-LatestAcrossOS'),
     @('-CurrentOSOnly', '-TargetOS', '248'),
