@@ -355,3 +355,32 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed** — committed as `188a255` (18 files, +897/-18).
+
+---
+
+## Session: WPF 启动修复 + BOM 治理自动化
+
+**Branch**: `main`
+
+### Summary
+
+修复 WPF 双击启动后一直停在「正在识别机器...」：正常启动路径只构建窗口、进入消息循环，从未触发一次机器识别（Export）后台任务，标题栏停留在 XAML 静态默认文案。同时把 `.ps1` 的 UTF-8 BOM 规则从「手写清单 + 人工记忆」升级为「自动判定 + 自动修复 + 门禁强制 + IDE 无感」。
+
+### Main Changes
+
+- `lenovo_driver_wpf.ps1`：窗口 `Loaded` 后自动执行一次 `Start-LenovoDriverJob -Export`，标题栏从「正在识别机器...」更新为「机型 / 序列号 | 当前系统 | 当前列表」。
+- `wpf/worker.ps1`：引擎退出码非 0 时把标题栏设为明确的失败提示，不再停在「正在识别机器...」。
+- `scripts/fix-bom.ps1`（新增）：BOM 规则单一源——字节级判定「含非 ASCII 且无 UTF-8 BOM」+ 幂等 strict-UTF-8 修复；纯 ASCII，自身不依赖该规则。
+- `scripts/verify.ps1`：BOM 门禁从手写 4 文件清单改为「扫描全部 `.ps1` 自动判定 + 自动恢复 + 残留校验」；语法解析泛化到全部 `.ps1`。
+- `.editorconfig`（新增）：`[*.ps1] charset = utf-8-bom`，IDE 保存自动带 BOM。
+- `docs/howto/develop.md`、`.gitattributes`：登记新规则，`.editorconfig` 固定 LF。
+
+### Testing
+
+- [OK] `scripts/verify.ps1` 21/21 VERIFY_OK（含新门禁 `PowerShell UTF-8 BOM (auto-restore + gate)` 与泛化 `PowerShell parse`）。
+- [实测] 端到端 BOM 漂移：去掉 `wpf/worker.ps1` 的 BOM → `fix-bom.ps1` 直接运行恢复 → `git diff` 无内容残留。
+- [待取证] 真实桌面 GUI 闭环（Loaded 自动识别 → 标题栏更新）未在无桌面环境验证，需真机双击确认。
+
+### Status
+
+[OK] **Completed** — `71e06fd`（WPF 启动修复）+ `efd1bf1`（BOM 治理）。
