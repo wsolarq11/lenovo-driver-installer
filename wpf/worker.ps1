@@ -45,6 +45,8 @@
 
     if ($exitCode -ne 0) {
         Add-GuiLog -Message ("后台任务结束，退出码 {0}" -f $exitCode)
+        $machineText = $script:Ui['MachineText']
+        if ($machineText) { $machineText.Text = '机器识别失败，请查看下方日志，或点击「刷新驱动列表」重试' }
         return
     }
     if ($mode -eq 'Export' -and $exportPath -and (Test-Path -LiteralPath $exportPath)) {

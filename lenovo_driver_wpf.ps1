@@ -106,6 +106,9 @@ if (-not $NoElevation -and -not (Test-IsAdministrator)) {
 }
 
 $window = New-LenovoDriverWindow
+# 启动后自动执行一次机器识别（Export）。否则标题栏会停在 XAML 默认的“正在识别机器...”，
+# 因为没有任何后台任务去更新 MachineText。
+$window.Add_Loaded({ Start-LenovoDriverJob -Export })
 $app = New-Object System.Windows.Application
 $app.ShutdownMode = [System.Windows.ShutdownMode]::OnMainWindowClose
 $app.Run($window) | Out-Null
