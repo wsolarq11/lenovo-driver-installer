@@ -384,3 +384,27 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed** — `71e06fd`（WPF 启动修复）+ `efd1bf1`（BOM 治理）。
+
+---
+
+## Session: BOM 门禁修正 — fail-closed 而非 auto-repair
+
+**Branch**: `main`
+
+### Summary
+
+上一轮把 BOM 门禁写成了「自动修复 + 残留校验」：`Restore-Ps1Bom` 先修复再查残留，合法 UTF-8 前提下残留恒为空、永不失败。后果是 CI 会静默修复并放行无 BOM 的中文 `.ps1`，坏状态照样进 commit，门禁失去阻断能力，违反「违反即阻断合并」。修正为「检测即失败 + `-FixBom` 显式修复」，恢复 CI 阻断语义。
+
+### Main Changes
+
+- `scripts/verify.ps1`：新增 `-FixBom` 开关（本地显式修复，CI 不传）；BOM 门禁改为纯检测，发现无 BOM 的非 ASCII `.ps1` 即 `throw`，错误信息内嵌修复命令。
+- `docs/howto/develop.md`：同步「检测即失败、`-FixBom`/`fix-bom.ps1` 显式修复」的表述。
+
+### Testing
+
+- [实测] 去掉 `wpf/worker.ps1` 的 BOM 后，默认 `verify.ps1` 在 BOM 门禁 FAIL（exit 1），错误信息给出修复命令；连带 parse/quoting 步骤因 5.1 误解码同样 FAIL，证明 CI 已阻断。
+- [实测] `verify.ps1 -FixBom` 恢复 BOM 后 21/21 VERIFY_OK，`worker.ps1` 无 diff 残留。
+
+### Status
+
+[OK] **Completed** — `e937286`。
