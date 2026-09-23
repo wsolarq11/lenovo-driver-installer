@@ -1,0 +1,14 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Windows PowerShell 5.1 decodes a BOM-less .ps1 with the ANSI code page, so a
+# UTF-8 .ps1 containing non-ASCII text must carry a BOM. This makes IDEs save
+# .ps1 with a BOM by default; scripts/verify.ps1 enforces the rule and
+# scripts/fix-bom.ps1 auto-restores any drift.
+[*.ps1]
+charset = utf-8-bom

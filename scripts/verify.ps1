@@ -36,6 +36,7 @@ function Assert-Step {
 }
 
 . (Join-Path $PSScriptRoot 'lib\go-toolchain.ps1')
+. (Join-Path $PSScriptRoot 'fix-bom.ps1')
 $GoExe = Resolve-GoExe -GoExe $GoExe
 
 Assert-Step 'Go build' {
@@ -106,29 +107,32 @@ Assert-Step 'Go source file size (prod <= 500)' {
     if ($over.Count -gt 0) { throw "production Go file exceeds 500 lines: $($over -join ', ')" }
 }
 
-$psFiles = @(
-    'lenovo_driver_wpf.ps1',
-    'wpf\ui.ps1',
-    'wpf\worker.ps1',
-    'wpf\actions.ps1'
-)
+Assert-Step 'PowerShell UTF-8 BOM (auto-restore + gate)' {
+    $fixed = Restore-Ps1Bom -RepoRoot $repoRoot
+    if ($fixed.Count -gt 0) {
+        Write-Host "Restored UTF-8 BOM on: $($fixed -join ', ')"
+    }
+    $remaining = @()
+    foreach ($f in (Get-ProjectPs1Files -RepoRoot $repoRoot)) {
+        if (Test-NeedsBom -File $f) { $remaining += $f.FullName }
+    }
+    if ($remaining.Count -gt 0) {
+        throw "BOM-less non-ASCII ps1 could not be auto-restored (likely non-UTF-8 encoding): $($remaining -join ', ')"
+    }
+}
+
 Assert-Step 'PowerShell parse' {
-    foreach ($file in $psFiles) {
-        $filePath = Join-Path $repoRoot $file
-        $fileBytes = [System.IO.File]::ReadAllBytes($filePath)
-        if (-not ($fileBytes.Length -ge 3 -and $fileBytes[0] -eq 0xEF -and $fileBytes[1] -eq 0xBB -and $fileBytes[2] -eq 0xBF)) {
-            throw "$file must keep a UTF-8 BOM for Windows PowerShell 5.1"
-        }
+    foreach ($f in (Get-ProjectPs1Files -RepoRoot $repoRoot)) {
         $tokens = $null
         $errors = $null
         [System.Management.Automation.Language.Parser]::ParseFile(
-            $filePath,
+            $f.FullName,
             [ref]$tokens,
             [ref]$errors
         ) | Out-Null
         if ($errors) {
             $errors | Format-List | Out-String | Write-Host
-            throw "parse failed: $file"
+            throw "parse failed: $($f.FullName)"
         }
     }
 }
