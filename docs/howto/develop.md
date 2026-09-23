@@ -11,7 +11,7 @@
 | 内循环 + 完整门禁一次跑 | `.\scripts\dev.ps1 -Verify` |
 | 内循环但不重建 `bin\lenovo-driver.exe` | `.\scripts\dev.ps1 -SkipBin` |
 | CI 离线门禁 | push/PR 触发 `.github/workflows/verify.yml` |
-| 修复 .ps1 的 BOM 漂移（幂等） | `.\scripts\fix-bom.ps1` |
+| 修复 .ps1 的 BOM 漂移（幂等） | `.\scripts\fix-bom.ps1` 或 `.\scripts\verify.ps1 -FixBom` |
 
 ## 双环模型
 
@@ -25,7 +25,7 @@
 - Go build/test/vet/gofmt；`legacyps` tag 的 build/vet。
 - 生产 Go 文件 ≤ 500 行。
 - 覆盖率下限（`inventory` 8 / `app` 22 / `install` 45 / `compare` 50 / `audit` 50 / `download` 35 / `plan` 65 / `api` 55）。
-- 含非 ASCII 的 `.ps1` 必须 UTF-8 BOM（Windows PowerShell 5.1 要求）；`verify.ps1` 自动判定并自动修复，语法解析覆盖全部 `.ps1`。
+- 含非 ASCII 的 `.ps1` 必须 UTF-8 BOM（Windows PowerShell 5.1 要求）；`verify.ps1` 检测即失败（CI 阻断）、`-FixBom` 显式修复，语法解析覆盖全部 `.ps1`。
 - WPF 参数引用共享 golden（`internal/app/testdata/windows_argument_quoting.json`）。
 - 旧 PowerShell 引擎文件已删除。
 - CLI 互斥参数组合退出码 `2` 且错误不进 stdout。
@@ -63,6 +63,6 @@ $env:LENOVO_TRUST_SMOKE=1; go test ./internal/trust/ -run TestVerifyLenovoPackag
 
 - 两个脚本都离线、无副作用：绝不调联想 API、下载驱动或安装。
 - 稳定哨兵 `DEV_OK` / `VERIFY_OK` + 数字失败数，供自动化断言。
-- 含非 ASCII 的 `.ps1` 必须 UTF-8 带 BOM；`verify.ps1` 自动修复并强制，`scripts/fix-bom.ps1` 可独立修复，`.editorconfig` 让 IDE 保存自动带 BOM（纯 ASCII 脚本也会因此带 BOM，无害但会产生 diff）。
+- 含非 ASCII 的 `.ps1` 必须 UTF-8 带 BOM；`verify.ps1` 检测即失败（CI 阻断）、`verify.ps1 -FixBom` 或 `scripts/fix-bom.ps1` 显式修复，`.editorconfig` 让 IDE 保存自动带 BOM（纯 ASCII 脚本也会因此带 BOM，无害但会产生 diff）。
 - 文档只在本文件维护开发命令，README “开发”节只是指针，避免命令漂移。
 - 六条不变量是硬门禁，违反即阻断合并；语义见 `docs/spec/invariants.md`。

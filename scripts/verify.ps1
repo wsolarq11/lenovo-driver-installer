@@ -9,7 +9,8 @@ downloads drivers, or installs anything.
 #>
 [CmdletBinding()]
 param(
-    [string]$GoExe = ''
+    [string]$GoExe = '',
+    [switch]$FixBom
 )
 
 $ErrorActionPreference = 'Stop'
@@ -38,6 +39,18 @@ function Assert-Step {
 . (Join-Path $PSScriptRoot 'lib\go-toolchain.ps1')
 . (Join-Path $PSScriptRoot 'fix-bom.ps1')
 $GoExe = Resolve-GoExe -GoExe $GoExe
+
+# -FixBom is an explicit local convenience: restore drifted BOM before the gate
+# runs. CI never passes this switch, so a BOM-less non-ASCII ps1 fails the gate
+# there instead of being silently auto-repaired into a green run.
+if ($FixBom) {
+    $fixed = Restore-Ps1Bom -RepoRoot $repoRoot
+    if ($fixed.Count -gt 0) {
+        Write-Host "Restored UTF-8 BOM on: $($fixed -join ', ')"
+    } else {
+        Write-Host 'UTF-8 BOM consistent: nothing to fix.'
+    }
+}
 
 Assert-Step 'Go build' {
     & $GoExe build ./...
@@ -107,17 +120,13 @@ Assert-Step 'Go source file size (prod <= 500)' {
     if ($over.Count -gt 0) { throw "production Go file exceeds 500 lines: $($over -join ', ')" }
 }
 
-Assert-Step 'PowerShell UTF-8 BOM (auto-restore + gate)' {
-    $fixed = Restore-Ps1Bom -RepoRoot $repoRoot
-    if ($fixed.Count -gt 0) {
-        Write-Host "Restored UTF-8 BOM on: $($fixed -join ', ')"
-    }
-    $remaining = @()
+Assert-Step 'PowerShell UTF-8 BOM (non-ASCII ps1 must carry BOM)' {
+    $missing = @()
     foreach ($f in (Get-ProjectPs1Files -RepoRoot $repoRoot)) {
-        if (Test-NeedsBom -File $f) { $remaining += $f.FullName }
+        if (Test-NeedsBom -File $f) { $missing += $f.FullName }
     }
-    if ($remaining.Count -gt 0) {
-        throw "BOM-less non-ASCII ps1 could not be auto-restored (likely non-UTF-8 encoding): $($remaining -join ', ')"
+    if ($missing.Count -gt 0) {
+        throw "BOM-less non-ASCII ps1 (Windows PowerShell 5.1 will mis-decode): $($missing -join ', '). Fix with: .\scripts\fix-bom.ps1 or .\scripts\verify.ps1 -FixBom"
     }
 }
 
