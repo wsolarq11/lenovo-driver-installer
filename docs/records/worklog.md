@@ -408,3 +408,27 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed** — `e937286`。
+
+---
+
+## Session: 清洁全仓、push、远端 CI 跑通
+
+**Branch**: `main`
+
+### Summary
+
+本地 commit push 到 `origin/main`，远端 verify CI 21/21 VERIFY_OK。过程中消除一条误导性 `setup-go` 缓存警告。
+
+### Main Changes
+
+- `.github/workflows/verify.yml`：`setup-go` 显式 `cache: false`。根因：本模块纯标准库（`go.mod` 无 `require`、无 `go.sum`），而 `setup-go` 的 `cache` 默认是 `true`，会尝试恢复不存在的依赖缓存并输出误导性「go.sum not found」警告。先误删 `cache: true`（无效，因默认即 true），后改显式 `cache: false` 才消除。
+- push 至 `origin/main`（`f008ae0..5c3ca14`）。
+
+### Testing
+
+- [实测] 远端 CI run `35869205275` success，`Verify summary: 21 steps, 0 failed` + `VERIFY_OK`，`go.sum` 缓存警告已消除。
+- [待取证] 真机双击验证（WPF 启动自动识别）仍未做。
+
+### Status
+
+[OK] **Completed** — `5c3ca14`。残余注释：`checkout@v4`/`setup-go@v5` 的 Node 20 deprecation 为 GitHub 平台级告警，功能正常，待官方迁移。
