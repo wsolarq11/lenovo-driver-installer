@@ -432,3 +432,31 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed** — `5c3ca14`。残余注释：`checkout@v4`/`setup-go@v5` 的 Node 20 deprecation 为 GitHub 平台级告警，功能正常，待官方迁移。
+
+---
+
+## Session: 待取证项真机闭环取证
+
+**Branch**: `main`
+
+### Summary
+
+把三处 `[待取证]` / `[推断]` 项在真机 82JQ 上取证：回退 INF 路径、setupapi 日志易失性、WPF Loaded 自动识别。无代码改动，仅文档写回与标注降级。
+
+### Main Changes
+
+- `docs/spec/behavior.md`：`FullInfPath` 待取证 → 实测（发布副本路径通过 API 检查、与 FileRepository 原件逐字节一致）；来源审计 provenance 推断 → 实测证实其上限（日志易失）。
+- `docs/spec/invariants.md`：同步 provenance 推断的实测依据。
+- `docs/records/evidence-82jq.md`：追加三条取证结论。
+
+### Testing
+
+- [实测] 基线 `scripts/verify.ps1` 21/21 VERIFY_OK。
+- [实测] `UpdateDriverForPlugAndPlayDevicesW` 合成 hardwareID 探针返回 `0xe000020b`（`ERROR_NO_SUCH_DEVINST`），发布副本路径通过 INF 路径检查。
+- [实测] `oem47.inf` 与 FileRepository 原件 SHA256 一致（`C3237F2C...`）。
+- [实测] `setupapi.offline.log` / `setupapi.setup.log` 已轮转删除，`setupapi.dev.log` 仅 57 行。
+- [实测] WPF Loaded 自动识别，MachineText 经 UIAutomation 读为 `82JQ / PF2SBWJA | Windows 10 64-bit (OSID 42)`；`-WorkerSmoke` `WORKER_SMOKE_OK rows=23`。
+
+### Status
+
+[OK] **Completed** — 文档写回，待 commit。

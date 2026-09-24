@@ -13,7 +13,7 @@
 
 ### 来源审计的证据等级（[推断]）
 
-`Source audit` 的 provenance 归因（`setupapi.dev.log` / `setupapi.offline.log` / `setupapi.setup.log` 导入记录）是**夹具级**验证，未与真实 DriverStore 逐条对照 ground truth。Windows 会轮转/截断 `setupapi` 日志，“离线镜像集成”与“在线包安装”在日志文本中常不可区分，因此结论等级是**推断**，不是实测；未做一次性环境对照前不得当事实展示。
+`Source audit` 的 provenance 归因（`setupapi.dev.log` / `setupapi.offline.log` / `setupapi.setup.log` 导入记录）结论等级是**推断**，且其上限已实测：本机 `setupapi.offline.log` / `setupapi.setup.log` 已被 Windows 轮转删除，`setupapi.dev.log` 仅存最近三次 Boot Session（57 行），历史导入行号（如 `setupapi.dev.log:32215`）不可复现。故 provenance 无法事后对照 DriverStore ground truth——不是“未对照”，而是“对照对象已易失”，语义上不可事后复现，不得当事实展示。
 
 ## 2. 下载与完整性
 
@@ -59,7 +59,7 @@ EXE 回退行为：
 
 - 首选 `DiRollbackDriver`（newdev.dll，设备管理器“回退驱动程序”同一原语），逐实例 ID 回退；无备份（`ERROR_NO_MORE_ITEMS`）时不动设备记 WARN。
 - 无备份回退 fallback 用 `UpdateDriverForPlugAndPlayDevicesW` + `INSTALLFLAG_FORCE`（`install.ForceReinstallINF`），是唯一无需先删新包即可强制绑回旧驱动的原语。**不用** `DiInstallDriverW` / `pnputil /add-driver /install` 降级——它们对已绑定更新驱动的设备会保留新驱动不动，甚至返回成功却不换回旧驱动，造成假 `RolledBack`。
-  - [待取证] 该 API 要求 `FullInfPath` 指向非系统目录（分发介质/厂商目录，勿用 `%SystemRoot%\inf`）；当前旧 INF 路径仍是 `%SystemRoot%\INF\oemN.inf` 已发布副本，是否需改用 FileRepository 路径待真状态机确认。
+  - [实测] `UpdateDriverForPlugAndPlayDevicesW` 用 `%SystemRoot%\INF\oemN.inf`（发布副本）作为 `FullInfPath` 通过 API 的 INF 路径检查：合成 hardwareID `ROOT\PROBE_NONEXISTENT_*` 下返回 `ERROR_NO_SUCH_DEVINST`（找不到设备）而非“找不到 INF”，对照 missing-INF smoke 测试返回 `Unable to find INF path`，证明路径解析关已过。发布副本与 FileRepository 原件逐字节一致（`oem47.inf` vs `acpivpc.inf_amd64_162ec7a9318c8e40`，SHA256 相同），内容等价。剩余未闭合：真实设备 + 真实 hardwareID 的完整重装属破坏性演练，默认不动，留待设备出现明确问题时授权执行。
 - 装前快照 = `LocalVersion` + `BeforeInfName` + `BeforeInfPath`（完整旧 INF 路径）+ 每设备 `HardwareID`。重装旧 INF 前先 `os.Stat` 确认旧 INF 仍在（审计先于状态变更），缺失/未捕获则不动作记 `RollbackFailed`，不制造半回退。
 
 ### offer 与因果门
