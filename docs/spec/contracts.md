@@ -106,12 +106,18 @@ Go CLI 写出的 JSON：
 
 来源审计证据源：`C:\Windows\INF\setupapi.offline.log`、`setupapi.dev.log`、`setupapi.setup.log`。
 
+`-Audit <snapshotPath>` 的设备差分把每条变化归因到账本中针对该设备记录过的驱动动作（`[ledger: DRV1,DRV2]`，见 §5 的 `devices` 列）；无匹配账本行的设备保持可见的未归因（无标注）。
+
 前三个审计产物（log / plan / history）的机器源是 `internal/app/help.go` 的 `Artifacts` 块，由 `scripts/verify.ps1` 比对锁死；改路径必须同步 `help.go` 与本文件，否则门禁失败。
 
 ## 5. 账本（WORM 历史）
 
-`lenovo_driver_history.csv` 每行 13 个数据列 + `Hash` 结构性尾列：`timestamp`、`driver code`、`OSID/OSName`、`driver name`、`remote version`、`verified version`、`before version`、`file name`、`MD5`、`source`、`result`、`message`、（序列）。列序由 `historyColumns` 单一源驱动，`history_test.go` 用 golden 字面量锁列序；`Hash` 不进入数据列。
+`lenovo_driver_history.csv` 每行 14 个数据列 + `Hash` 结构性尾列：`timestamp`、`driver code`、`OSID/OSName`、`driver name`、`remote version`、`verified version`、`before version`、`file name`、`MD5`、`source`、`result`、`message`、`devices`、（序列）。列序由 `historyColumns` 单一源驱动，`history_test.go` 用 golden 字面量锁列序；`Hash` 不进入数据列。
+
+`devices` 列是账本的**设备身份**：本行动作触及的 PnP 设备实例 id 集合（去重、`;` 分隔、按首次出现排序）。它是“本工具对哪个驱动动了手”与“设备实际怎么变”之间的 join 键，`-Audit` 用它对设备差分逐条归因。该列是设备身份的唯一机器可读出口——`message` 只放人类可读细节，不得再埋 `device <id>` 之类的身份文本（`TestAuditAttributionIgnoresMessageText` 锁死这条）。
+
+**表头即 schema，过期即拒绝**：账本是追加型且不可重写，旧行无法补列。因此写入前先比对在盘表头与当前列集，缺列即拒绝写入并给出处置指令（把旧文件移开），不追加比表头更宽的行——否则读取端会把值绑到错误的列名上，且链哈希位置的错位会让篡改检测静默失效。链哈希在表头中**按列名定位**（`resolveHashIndex`），不按当前列数定位，故旧 schema 的账本仍按其自身布局校验（`TestHashChainIndexSurvivesSchemaGrowth`）。
 
 `Hash` = SHA-256 链：前一行 hash + 本行数据列，以 `0x1F` 分隔。写入时读最后一行 hash 起链；`verifyHistoryChain` 重算校验，任何改写/乱序/删除都在某行断链。旧（无 hash）行不被链覆盖，跳过并从首条新行重新起链。读取器剥离 UTF-8 BOM，兼容旧账本。
 
-账本行类型（`result`）：`Install`（安装意图，动作前）、`Installed` / `Failed` / `Deferred`（安装结果）、`Downloaded` / `Verified`、`RollbackOffered`（offer 派生，`Message` 含 `devices=`、`previous_inf=`、`previous_inf_path=`）、`Rollback`（回退意图）、`RolledBack` / `RollbackFailed`（回退结果，`partial` 表示部分设备成功）。
+账本行类型（`result`）：`Install`（安装意图，动作前）、`Installed` / `Failed` / `Deferred`（安装结果）、`Downloaded` / `Verified`、`RollbackOffered`（offer 派生，`Message` 含 `previous_inf=`、`previous_inf_path=`）、`Rollback`（回退意图）、`RolledBack` / `RollbackFailed`（回退结果，`partial` 表示部分设备成功）。回退的逐设备结果行只在其 `devices` 列记录该设备一个 id，`Message` 不再重复设备 id。

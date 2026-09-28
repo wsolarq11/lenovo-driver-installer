@@ -460,3 +460,38 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed** — 文档写回，待 commit。
+
+---
+
+## Session: 联调到底 — 账本设备身份列（安装端 ↔ 审计端 join）
+
+**Branch**: `main`
+
+### Summary
+
+把设备级对账缺的 join 键补齐：设备身份从自由文本升格为账本的 `devices` 列，并把链哈希从位置式定位改为按表头列名定位，堵住“加列即静默失效”的漂移。
+
+### Main Changes
+
+- `internal/model/model.go`：`HistoryRecord` 补 `Devices`；`DriverAssessment` 补 `MatchedDeviceIDs`。
+- `internal/app/view.go`：评估期一次性捕获匹配设备身份（该遍历本已解析出结果），此后该驱动的所有账本行复用同一集合。
+- `internal/plan/plan.go`：`BuildDriverHistoryRecord` 作为唯一出口把设备身份写进行。
+- `internal/app/history.go`：补 `Devices` 列；`joinDevices`/`splitDevices` 单一分隔符常量；`resolveHashIndex` 按在盘表头**列名**定位链哈希（原 `row[len(historyColumns)]` 位置式索引在加列后会指向数据列，使篡改检测静默失效）；`ledgerHeaderDriftError` 让表头缺列时**拒绝写入**并给出处置指令，不追加比表头更宽的行；`ReadHistory` 对过期表头记一次 WARN。
+- `internal/app/rollback.go`：回退意图行与逐设备结果行的设备身份改走结构列；`deviceScopedDriver` 把逐设备结果行收窄为单个 id；`message` 不再复述设备 id。
+- `internal/app/snapshot.go`：`-Audit` 设备差分按 `devices` 列逐条归因（`[ledger: DRV1,DRV2]`）；无匹配行保持可见的未归因，不写成“正常”。
+- `scripts/verify.ps1`：新增两道门禁——设备身份只许走结构列（禁止回退成自由文本）、链哈希必须按表头名定位（禁止位置式索引）。
+- `docs/spec/contracts.md` §5 / `behavior.md` / `invariants.md` 第 5 条：同步账本 schema、设备身份单一出口、过期表头拒绝语义。
+
+### Testing
+
+- [实测] `scripts/verify.ps1` 23/23 VERIFY_OK（原 21 步 + 新增 2 步门禁）。
+- [实测] `go build` / `go vet` / `gofmt -l` 干净；`go test ./...` 全包通过。
+- [实测] 接缝测试 `TestLedgerRowJoinsToDeviceSnapshot`：写带设备身份的安装行 → 设备快照差分 → 断言变化设备可归因到同一 id。先反证为红灯（不捕获身份时无物可匹配），确认非空跑。
+- [实测] `TestHashChainIndexSurvivesSchemaGrowth`：旧 13 列格式账本仍按其自身布局校验通过，且篡改其后仍能断链。
+- [实测] `TestWriteHistoryRecordRefusesStaleSchema`：过期表头被拒绝，且未追加半行。
+- [实测] 门禁红灯注入验证：注入自由文本后门禁精确报出 `rollback.go:383,391`；注入位置式索引后 `ledger hash column located by header name` FAIL。
+- [待取证] 真机 82JQ 上的旧格式账本需移开归档后新格式才会建立（拒绝写入属设计行为，非缺陷）；真机端到端重跑未做。
+
+### Status
+
+[OK] **Completed** — 待 commit。
