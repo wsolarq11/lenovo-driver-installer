@@ -248,6 +248,34 @@ for ($i = 0; $i -lt $invalidCombinations.Count; $i++) {
     }
 }
 
+Assert-Step 'ledger device identity stays a column (not free text)' {
+    # The ledger's Devices column is the single machine-readable source for
+    # "which device this row acted on". Re-embedding a device id into the
+    # free-text Message would let two sources of device identity drift apart and
+    # force downstream parsing, so the pattern is gated in production code.
+    $hits = Get-ChildItem -Path 'internal' -Recurse -Filter *.go |
+        Where-Object { $_.FullName -notmatch '_test\.go$' } |
+        Select-String -Pattern '"device "\s*\+|"devices="|"device="'
+    if ($hits) {
+        $files = ($hits | ForEach-Object { "$($_.Path):$($_.LineNumber)" }) -join ', '
+        throw "device identity must ride in the ledger Devices column, not in free-text messages: $files"
+    }
+}
+
+Assert-Step 'ledger hash column located by header name' {
+    # Chain verification must find the hash column by name in the on-disk
+    # header. A positional lookup (len(historyColumns)) silently verifies the
+    # wrong cells once a column is added, so tampering stops being detectable
+    # without any error surfacing.
+    $src = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\history.go') -Raw
+    if ($src -notmatch 'func\s+resolveHashIndex') {
+        throw 'history.go must expose resolveHashIndex (header-name lookup)'
+    }
+    if ($src -match 'row\[len\(historyColumns\)\]') {
+        throw 'history.go indexes the ledger positionally by column count; the hash column must be located by header name'
+    }
+}
+
 Assert-Step 'git diff check' {
     $diff = git diff --check
     if ($LASTEXITCODE -ne 0) { throw "git diff --check failed`n$diff" }

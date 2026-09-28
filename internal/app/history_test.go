@@ -20,6 +20,7 @@ func TestHistoryColumnsGolden(t *testing.T) {
 	want := []string{
 		"Timestamp", "DriverCode", "OSID", "OSName", "DriverName", "Version",
 		"VerifiedVersion", "BeforeVersion", "FileName", "MD5", "Source", "Result", "Message",
+		"Devices",
 	}
 	if !reflect.DeepEqual(historyColumns, want) {
 		t.Fatalf("historyColumns drift: got %#v, want %#v", historyColumns, want)
@@ -55,6 +56,7 @@ func TestHistoryValuesAlignsWithColumns(t *testing.T) {
 		Source:          "src",
 		Result:          "res",
 		Message:         "msg",
+		Devices:         []string{"dev-a", "dev-b"},
 	}
 	values := historyValues(rec)
 	if len(values) != len(historyColumns) {
@@ -89,6 +91,8 @@ func TestHistoryValuesAlignsWithColumns(t *testing.T) {
 			rebuilt.Result = values[i]
 		case "Message":
 			rebuilt.Message = values[i]
+		case "Devices":
+			rebuilt.Devices = splitDevices(values[i])
 		default:
 			t.Fatalf("unknown history column %q", col)
 		}

@@ -347,6 +347,11 @@ func (a *App) assessSelectedDrivers(ctx context.Context, vc *ViewContext, select
 		ad.DeviceProblem = model.DeviceProblemSummary(beforeEvidence)
 		ad.BeforeInfName = firstInfName(beforeEvidence)
 		ad.BeforeInfPath = firstInfPath(beforeEvidence)
+		// Capture the matched device identity here, where the matched traversal
+		// already resolved it. Every later ledger row for this driver reuses this
+		// single captured set, so the audit joins "driver acted on" to "device
+		// changed" by identity instead of re-deriving it or parsing free text.
+		ad.MatchedDeviceIDs = pnpIDsOf(matchedDevices)
 		if ad.CompareStatus == model.StatusLocalNewer {
 			ad.CompareSource = audit.ResolveDriverSourceLabel(ad, vc.History, alternateSourceMap, ad.SourceAudit)
 			a.Log(ctx, "["+driver.DriverCode+"] "+ad.CompareSource, "WARN")

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"lenovo-driver/internal/inventory"
@@ -144,10 +146,45 @@ func diffDeviceSnapshots(oldSnap, newSnap deviceSnapshot) []deviceChange {
 	return changes
 }
 
+// deviceAttribution indexes the ledger by the PnP device ids each row targeted,
+// so an -Audit device change can name the driver actions this tool recorded for
+// that device. It is the consumer of the ledger's Devices column: the identity
+// is recorded so that a changed device can be attributed to a driver action by
+// lookup instead of by re-deriving it or parsing free text. Driver codes are
+// kept unique and in ledger order so the attribution is stable across runs.
+func deviceAttribution(records []model.HistoryRecord) map[string][]string {
+	out := map[string][]string{}
+	for _, r := range records {
+		if r.DriverCode == "" {
+			continue
+		}
+		for _, id := range r.Devices {
+			if id == "" || slices.Contains(out[id], r.DriverCode) {
+				continue
+			}
+			out[id] = append(out[id], r.DriverCode)
+		}
+	}
+	return out
+}
+
+// attributionSuffix renders the ledger attribution for one changed device, or ""
+// when the ledger records no action against it. An empty suffix means "this tool
+// has no recorded action for the device", which is a fact worth keeping distinct
+// from "the device changed because of this tool".
+func attributionSuffix(byDevice map[string][]string, pnpDeviceID string) string {
+	codes := byDevice[pnpDeviceID]
+	if len(codes) == 0 {
+		return ""
+	}
+	return " [ledger: " + strings.Join(codes, ",") + "]"
+}
+
 // runAudit captures the current device state and either writes a baseline (no
 // prior snapshot) or reports the diff since the last snapshot and advances the
 // watermark. It never mutates device state: the only write is the snapshot
-// file itself.
+// file itself. Each reported change is attributed to the ledger rows that
+// targeted that device, when any exist.
 func (a *App) runAudit(ctx context.Context, path string) int {
 	devices, err := inventory.GetLocalDeviceSnapshot(ctx)
 	if err != nil {
@@ -183,15 +220,20 @@ func (a *App) runAudit(ctx context.Context, path string) int {
 		a.Log(ctx, "No device changes since last audit.", "INFO")
 		return 0
 	}
+	// Attribution is a best-effort annotation on a read-only report: a ledger
+	// that cannot be read degrades to unattributed changes rather than failing
+	// the audit, and an unattributed change stays visibly unattributed.
+	byDevice := deviceAttribution(a.ReadHistory(ctx))
 	a.Log(ctx, fmt.Sprintf("%d device change(s) since last audit:", len(changes)), "INFO")
 	for _, c := range changes {
+		note := attributionSuffix(byDevice, c.PnpDeviceID)
 		switch c.Field {
 		case "added":
-			a.Log(ctx, fmt.Sprintf("+ %s [%s] %s", c.PnpDeviceID, c.Class, c.Name), "INFO")
+			a.Log(ctx, fmt.Sprintf("+ %s [%s] %s%s", c.PnpDeviceID, c.Class, c.Name, note), "INFO")
 		case "removed":
-			a.Log(ctx, fmt.Sprintf("- %s [%s] %s", c.PnpDeviceID, c.Class, c.Name), "INFO")
+			a.Log(ctx, fmt.Sprintf("- %s [%s] %s%s", c.PnpDeviceID, c.Class, c.Name, note), "INFO")
 		default:
-			a.Log(ctx, fmt.Sprintf("~ %s %s: %s -> %s (%s)", c.PnpDeviceID, c.Field, c.Before, c.After, c.Name), "INFO")
+			a.Log(ctx, fmt.Sprintf("~ %s %s: %s -> %s (%s)%s", c.PnpDeviceID, c.Field, c.Before, c.After, c.Name, note), "INFO")
 		}
 	}
 	return 0

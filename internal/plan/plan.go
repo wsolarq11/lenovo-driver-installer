@@ -269,7 +269,10 @@ func ParseDriverSelectionTokens(inputText string, allSelected []*model.AssessedD
 	return model.SelectionResult{Selected: selected, Invalid: invalid, NotApplicable: notApplicable}
 }
 
-// BuildDriverHistoryRecord mirrors Build-DriverHistoryRecord.
+// BuildDriverHistoryRecord mirrors Build-DriverHistoryRecord. It carries the
+// driver's matched device ids into the Devices column so every ledger row for
+// an action names the devices it targeted; the device audit joins on that
+// identity instead of parsing the free-text Message.
 func BuildDriverHistoryRecord(driver *model.AssessedDriver, result, message, verifiedVersion, beforeVersion, timestamp string) model.HistoryRecord {
 	return model.HistoryRecord{
 		Timestamp:       timestamp,
@@ -285,5 +288,6 @@ func BuildDriverHistoryRecord(driver *model.AssessedDriver, result, message, ver
 		Source:          driver.SourceAPI,
 		Result:          result,
 		Message:         message,
+		Devices:         driver.MatchedDeviceIDs,
 	}
 }

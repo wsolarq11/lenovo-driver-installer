@@ -266,6 +266,17 @@ func (a *App) performRollback(ctx context.Context, offer *rollbackOffer) bool {
 	return failed == 0
 }
 
+// deviceScopedDriver narrows a driver's ledger identity to one device. Rollback
+// outcomes are per-device facts (one device can recover while another does not),
+// so each outcome row records exactly the device it describes in the structured
+// Devices column rather than embedding the id in the free-text Message.
+func deviceScopedDriver(ad *model.AssessedDriver, pnpDeviceID string) *model.AssessedDriver {
+	return &model.AssessedDriver{
+		Driver:           ad.Driver,
+		DriverAssessment: model.DriverAssessment{MatchedDeviceIDs: []string{pnpDeviceID}},
+	}
+}
+
 // rollbackOneDevice rolls one device back and records the outcome. A successful
 // action is only recorded as RolledBack when the device's problem code is
 // re-verified as cleared; a no-reboot rollback whose device still reports a
@@ -273,6 +284,7 @@ func (a *App) performRollback(ctx context.Context, offer *rollbackOffer) bool {
 // recovery. A pending reboot is recorded as RolledBack with the caveat that the
 // recovery is unverified until the restart.
 func (a *App) rollbackOneDevice(ctx context.Context, ad *model.AssessedDriver, offer *rollbackOffer, device rollbackOfferDevice) (needReboot, ok bool) {
+	scoped := deviceScopedDriver(ad, device.PnpDeviceID)
 	needReboot, err := rollbackDriverNative(device.PnpDeviceID)
 	if err != nil {
 		if re, ok := err.(*install.RollbackError); ok && re.NoBackup() {
@@ -282,33 +294,33 @@ func (a *App) rollbackOneDevice(ctx context.Context, ad *model.AssessedDriver, o
 	}
 	if err != nil {
 		a.Log(ctx, fmt.Sprintf("[%s] Rollback failed for %s: %v", offer.DriverCode, device.PnpDeviceID, err), "ERROR")
-		a.writeHistoryRecordChecked(ctx, ad, "RollbackFailed", "device "+device.PnpDeviceID+": "+err.Error(), "", offer.AfterVersion)
+		a.writeHistoryRecordChecked(ctx, scoped, "RollbackFailed", "rollback failed: "+err.Error(), "", offer.AfterVersion)
 		return false, false
 	}
 
 	if needReboot {
-		a.writeHistoryRecordChecked(ctx, ad, "RolledBack", "device "+device.PnpDeviceID+" rolled back (reboot required; recovery unverified)", offer.BeforeVersion, offer.AfterVersion)
+		a.writeHistoryRecordChecked(ctx, scoped, "RolledBack", "rolled back (reboot required; recovery unverified)", offer.BeforeVersion, offer.AfterVersion)
 		return true, true
 	}
 
 	problem, version, found, verr := rollbackDeviceProblem(ctx, device.PnpDeviceID)
 	if verr != nil {
 		a.Log(ctx, fmt.Sprintf("[%s] Recovery verification unavailable for %s: %v", offer.DriverCode, device.PnpDeviceID, verr), "WARN")
-		a.writeHistoryRecordChecked(ctx, ad, "RolledBack", "device "+device.PnpDeviceID+" rolled back (verification unavailable)", offer.BeforeVersion, offer.AfterVersion)
+		a.writeHistoryRecordChecked(ctx, scoped, "RolledBack", "rolled back (verification unavailable)", offer.BeforeVersion, offer.AfterVersion)
 		return false, true
 	}
 	if found && problem == 0 && version != "" && version != offer.AfterVersion {
-		a.writeHistoryRecordChecked(ctx, ad, "RolledBack", "device "+device.PnpDeviceID+" rolled back (recovered)", offer.BeforeVersion, offer.AfterVersion)
+		a.writeHistoryRecordChecked(ctx, scoped, "RolledBack", "rolled back (recovered)", offer.BeforeVersion, offer.AfterVersion)
 		return false, true
 	}
 	if !found {
 		a.Log(ctx, fmt.Sprintf("[%s] Device %s not found after rollback.", offer.DriverCode, device.PnpDeviceID), "ERROR")
-		a.writeHistoryRecordChecked(ctx, ad, "RollbackFailed", "device "+device.PnpDeviceID+" not found after rollback", "", offer.AfterVersion)
+		a.writeHistoryRecordChecked(ctx, scoped, "RollbackFailed", "device not found after rollback", "", offer.AfterVersion)
 		return false, false
 	}
 	if problem != 0 {
 		a.Log(ctx, fmt.Sprintf("[%s] Device %s still reports problem %d after rollback.", offer.DriverCode, device.PnpDeviceID, problem), "ERROR")
-		a.writeHistoryRecordChecked(ctx, ad, "RollbackFailed", fmt.Sprintf("device %s still reports problem %d after rollback", device.PnpDeviceID, problem), "", offer.AfterVersion)
+		a.writeHistoryRecordChecked(ctx, scoped, "RollbackFailed", fmt.Sprintf("still reports problem %d after rollback", problem), "", offer.AfterVersion)
 		return false, false
 	}
 	// Problem cleared but the driver did not verifiably change away from the
@@ -316,10 +328,10 @@ func (a *App) rollbackOneDevice(ctx context.Context, ad *model.AssessedDriver, o
 	// self-healing recovery.
 	if version == "" {
 		a.Log(ctx, fmt.Sprintf("[%s] Device %s problem cleared but driver version unverifiable; rollback not confirmed.", offer.DriverCode, device.PnpDeviceID), "ERROR")
-		a.writeHistoryRecordChecked(ctx, ad, "RollbackFailed", "device "+device.PnpDeviceID+" problem cleared but driver version unverifiable; rollback not confirmed", "", offer.AfterVersion)
+		a.writeHistoryRecordChecked(ctx, scoped, "RollbackFailed", "problem cleared but driver version unverifiable; rollback not confirmed", "", offer.AfterVersion)
 	} else {
 		a.Log(ctx, fmt.Sprintf("[%s] Device %s problem cleared but driver unchanged (%s); rollback not confirmed.", offer.DriverCode, device.PnpDeviceID, version), "ERROR")
-		a.writeHistoryRecordChecked(ctx, ad, "RollbackFailed", fmt.Sprintf("device %s problem cleared but driver still at %s; rollback not confirmed", device.PnpDeviceID, version), "", offer.AfterVersion)
+		a.writeHistoryRecordChecked(ctx, scoped, "RollbackFailed", fmt.Sprintf("problem cleared but driver still at %s; rollback not confirmed", version), "", offer.AfterVersion)
 	}
 	return false, false
 }
@@ -343,6 +355,10 @@ func (a *App) reinstallPreviousInf(offer *rollbackOffer, device rollbackOfferDev
 }
 
 func (o *rollbackOffer) assessedDriver() *model.AssessedDriver {
+	ids := make([]string, 0, len(o.Devices))
+	for _, device := range o.Devices {
+		ids = append(ids, device.PnpDeviceID)
+	}
 	return &model.AssessedDriver{
 		Driver: &model.Driver{
 			DriverCode:  o.DriverCode,
@@ -354,26 +370,25 @@ func (o *rollbackOffer) assessedDriver() *model.AssessedDriver {
 			OfficialMD5: o.MD5,
 			SourceAPI:   o.Source,
 		},
+		DriverAssessment: model.DriverAssessment{MatchedDeviceIDs: ids},
 	}
 }
 
+// rollbackIntentMessage renders the pre-action Rollback row's human-readable
+// detail. Device identity deliberately lives in the structured Devices column,
+// not here, so there is exactly one machine-readable source for "which devices
+// this row acted on"; the message keeps only the restore target, which the
+// ledger has no column for.
 func rollbackIntentMessage(offer *rollbackOffer) string {
-	ids := make([]string, 0, len(offer.Devices))
-	for _, device := range offer.Devices {
-		ids = append(ids, device.PnpDeviceID)
-	}
-	return "device=" + strings.Join(ids, ";") + "; previous_inf=" + offer.BeforeInf
+	return "previous_inf=" + offer.BeforeInf
 }
 
 // rollbackOfferedMessage renders the durable RollbackOffered ledger row. It
-// carries the device targets and the previous INF path so the offer's restore
-// target survives in the WORM ledger even if the JSON cache file is lost.
+// carries the previous INF path so the offer's restore target survives in the
+// WORM ledger even if the JSON cache file is lost; the device targets ride in
+// the structured Devices column.
 func rollbackOfferedMessage(offer rollbackOffer) string {
-	ids := make([]string, 0, len(offer.Devices))
-	for _, device := range offer.Devices {
-		ids = append(ids, device.PnpDeviceID)
-	}
-	return "devices=" + strings.Join(ids, ",") + "; previous_inf=" + offer.BeforeInf + "; previous_inf_path=" + offer.BeforeInfPath
+	return "previous_inf=" + offer.BeforeInf + "; previous_inf_path=" + offer.BeforeInfPath
 }
 
 // pendingRollbackCodes derives, from the append-only ledger, which driver codes

@@ -32,7 +32,9 @@ Options:
   -Audit           Snapshot the current device drivers. On first run it writes a baseline;
                    on later runs it reports the device-level diff since the last snapshot
                    (added/removed devices, driver version/INF/date/problem-code changes)
-                   and advances the baseline. Read-only against device state.
+                   and advances the baseline. Each change is attributed to the driver
+                   codes this tool recorded against that device, when any exist.
+                   Read-only against device state.
   -Help            Show this help.
 
 Interactive choices:

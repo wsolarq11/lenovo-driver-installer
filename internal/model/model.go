@@ -73,6 +73,12 @@ type DriverAssessment struct {
 	// has no DiRollbackDriver backup; read-only evidence, never a rollback
 	// trigger.
 	BeforeInfPath string `json:"BeforeInfPath,omitempty"`
+	// MatchedDeviceIDs is the set of PnP device instance ids this driver was
+	// assessed against. It is captured once at assessment time (the matched
+	// traversal already resolved it) and is the device identity every ledger row
+	// for this driver records, so the device audit can join a changed device to
+	// the driver actions that targeted it without parsing free-text messages.
+	MatchedDeviceIDs []string `json:"MatchedDeviceIDs,omitempty"`
 }
 
 // Driver is the normalized Lenovo driver row from the API. It carries only
@@ -194,6 +200,11 @@ type HistoryRecord struct {
 	Source          string
 	Result          string
 	Message         string
+	// Devices carries the PnP device instance ids this row's action targeted.
+	// It is the ledger's device identity: the join key between "which driver
+	// this tool acted on" and "how devices actually changed", which previously
+	// existed only as free text inside Message.
+	Devices []string
 }
 
 // SourceAudit is the resolved source evidence for a local driver version.
