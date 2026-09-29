@@ -20,7 +20,7 @@ import (
 )
 
 func TestParseOptionsHelp(t *testing.T) {
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app := newTestApp(t)
 	code := app.Run([]string{"-Help"})
 	if code != 0 {
 		t.Fatalf("Help exit code = %d", code)
@@ -28,7 +28,7 @@ func TestParseOptionsHelp(t *testing.T) {
 }
 
 func TestInvalidFlagCombination(t *testing.T) {
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app := newTestApp(t)
 	code := app.Run([]string{"-CurrentOSOnly", "-LatestAcrossOS"})
 	if code != 2 {
 		t.Fatalf("invalid combination exit code = %d", code)
@@ -69,7 +69,7 @@ func TestDownloadVerifiedRefreshes403URL(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(content))}
 	})}
 
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app := newTestApp(t)
 	app.APIClient = api.NewClient()
 	app.APIClient.HTTP = client
 	app.Downloader = download.NewDownloader()
@@ -117,7 +117,7 @@ func TestShowActionPreviewIncludesDriverRows(t *testing.T) {
 }
 
 func TestReadHistoryStripsUTF8BOM(t *testing.T) {
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app := newTestApp(t)
 	app.HistoryPath = filepath.Join(t.TempDir(), "history.csv")
 	rec := model.HistoryRecord{
 		Timestamp: "2026-01-01 00:00:00", DriverCode: "d1", OSID: "42", OSName: "Windows 10 64-bit",
@@ -228,14 +228,14 @@ func TestAcquireSelectionPreservesExitCodeContract(t *testing.T) {
 		},
 	}
 	// A GUI-code path that matches every requested code selects and returns 0.
-	match := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	match := newTestApp(t)
 	matchVC := &ViewContext{Opts: Options{GuiInstallCodes: "d1"}}
 	selected, code := match.acquireSelection(context.Background(), matchVC, view, "42")
 	if code != 0 || len(selected) != 1 || selected[0].DriverCode != "d1" {
 		t.Fatalf("matching codes must select and continue: selected=%#v code=%d", selected, code)
 	}
 	// A GUI-code mismatch must abort with PS1 exit code 3, never 0 or 1.
-	mismatch := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	mismatch := newTestApp(t)
 	mismatchVC := &ViewContext{Opts: Options{GuiInstallCodes: "missing"}}
 	selected, code = mismatch.acquireSelection(context.Background(), mismatchVC, view, "42")
 	if code != 3 || selected != nil {
@@ -280,7 +280,7 @@ func TestOtherOSIDsExcludesCurrentAndPreservesOrder(t *testing.T) {
 }
 
 func TestCachedDriverObjectsAvoidsDuplicateFetch(t *testing.T) {
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app := newTestApp(t)
 	app.APIClient = nil
 	app.osDriverCache = map[string]api.SourceDrivers{
 		"248|QuickFix": {Source: "QuickFix", Drivers: []*model.Driver{{DriverCode: "d1"}}},
@@ -299,7 +299,7 @@ func TestCachedDriverObjectsDoesNotCacheFailure(t *testing.T) {
 	client := &http.Client{Transport: appRoundTripFunc(func(req *http.Request) *http.Response {
 		return &http.Response{StatusCode: http.StatusInternalServerError, Body: io.NopCloser(bytes.NewReader(nil))}
 	})}
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app := newTestApp(t)
 	app.APIClient = api.NewClient()
 	app.APIClient.HTTP = client
 	app.driverListCacheDir = t.TempDir()
@@ -339,7 +339,7 @@ func TestPnpIDsOfSkipsEmpty(t *testing.T) {
 }
 
 func TestLoadDriverListToleratesEmpty(t *testing.T) {
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app := newTestApp(t)
 	app.APIClient = nil
 	app.osDriverCache = map[string]api.SourceDrivers{"248|QuickFix": {Source: "QuickFix"}}
 	vc := &ViewContext{CategoryID: "cat"}
@@ -350,7 +350,7 @@ func TestLoadDriverListToleratesEmpty(t *testing.T) {
 }
 
 func TestLoadDriverListReturnsCachedRows(t *testing.T) {
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app := newTestApp(t)
 	app.APIClient = nil
 	app.osDriverCache = map[string]api.SourceDrivers{
 		"248|QuickFix": {Source: "QuickFix", Drivers: []*model.Driver{{DriverCode: "d1"}}},
@@ -363,7 +363,7 @@ func TestLoadDriverListReturnsCachedRows(t *testing.T) {
 }
 
 func TestMustDriverListHardErrorsOnEmpty(t *testing.T) {
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app := newTestApp(t)
 	app.APIClient = nil
 	app.osDriverCache = map[string]api.SourceDrivers{"248|QuickFix": {Source: "QuickFix"}}
 	vc := &ViewContext{CategoryID: "cat"}
@@ -374,7 +374,7 @@ func TestMustDriverListHardErrorsOnEmpty(t *testing.T) {
 }
 
 func TestMustDriverListReturnsCachedRows(t *testing.T) {
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app := newTestApp(t)
 	app.APIClient = nil
 	app.osDriverCache = map[string]api.SourceDrivers{
 		"248|QuickFix": {Source: "QuickFix", Drivers: []*model.Driver{{DriverCode: "d1"}}},
@@ -387,7 +387,7 @@ func TestMustDriverListReturnsCachedRows(t *testing.T) {
 }
 
 func TestLoadDriverListsForOSIDsPreservesOrder(t *testing.T) {
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app := newTestApp(t)
 	app.APIClient = nil
 	app.osDriverCache = map[string]api.SourceDrivers{
 		"42|QuickFix":  {Source: "QuickFix", Drivers: []*model.Driver{{DriverCode: "a"}}},

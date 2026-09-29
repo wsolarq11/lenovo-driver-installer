@@ -276,6 +276,27 @@ Assert-Step 'ledger hash column located by header name' {
     }
 }
 
+Assert-Step 'tests never write to the real audit directory' {
+    # New() points LogPath/PlanPath/HistoryPath at the real per-user audit
+    # directory, which is the authoritative evidence store on a live machine.
+    # A test calling New() directly appends fixture lines there, where they
+    # become indistinguishable from a real operation. newTestApp redirects every
+    # artifact into t.TempDir(); it is the only sanctioned test constructor.
+    $hits = Get-ChildItem -Path 'internal' -Recurse -Filter *_test.go |
+        Where-Object { $_.Name -ne 'testapp_test.go' } |
+        Select-String -Pattern '=\s*New\(' -CaseSensitive
+    if ($hits) {
+        $files = ($hits | ForEach-Object { "$($_.Path):$($_.LineNumber)" }) -join ', '
+        throw "tests must construct via newTestApp(t) so audit artifacts stay in t.TempDir(): $files"
+    }
+    $helper = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\testapp_test.go') -Raw
+    foreach ($artifact in @('LogPath', 'PlanPath', 'HistoryPath', 'driverListCacheDir')) {
+        if ($helper -notmatch "\.$artifact\s*=") {
+            throw "newTestApp must redirect $artifact into t.TempDir()"
+        }
+    }
+}
+
 Assert-Step 'git diff check' {
     $diff = git diff --check
     if ($LASTEXITCODE -ne 0) { throw "git diff --check failed`n$diff" }

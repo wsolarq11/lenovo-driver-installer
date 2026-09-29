@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"encoding/csv"
 	"os"
@@ -24,7 +23,7 @@ import (
 // the on-disk Devices column and survive the read-back, so a ledger row names
 // the devices its action targeted.
 func TestLedgerCarriesDeviceIdentity(t *testing.T) {
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app := newTestApp(t)
 	app.HistoryPath = filepath.Join(t.TempDir(), "history.csv")
 
 	ad := &model.AssessedDriver{
@@ -63,7 +62,7 @@ func TestLedgerDeviceIdentityIsDeduped(t *testing.T) {
 // same id. Before the Devices column existed this join was impossible: the
 // ledger held only a driver code and the device id lived inside free text.
 func TestLedgerRowJoinsToDeviceSnapshot(t *testing.T) {
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app := newTestApp(t)
 	app.HistoryPath = filepath.Join(t.TempDir(), "history.csv")
 
 	const changedDevice = `PCI\VEN_10DE&DEV_2520`
@@ -194,7 +193,7 @@ func TestHashChainIndexSurvivesSchemaGrowth(t *testing.T) {
 // appended to. Its rows are append-only and cannot be widened, so appending a
 // wider row would silently bind values to the wrong column names.
 func TestWriteHistoryRecordRefusesStaleSchema(t *testing.T) {
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app := newTestApp(t)
 	app.HistoryPath = filepath.Join(t.TempDir(), "history.csv")
 
 	stale := []string{

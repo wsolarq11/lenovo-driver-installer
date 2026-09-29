@@ -1,11 +1,9 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 
 	"lenovo-driver/internal/model"
@@ -56,7 +54,7 @@ func TestAttributionSuffixIsExplicitWhenAbsent(t *testing.T) {
 // attribution must find it. This is the behaviour that was impossible before the
 // identity became a column, because the id lived inside the free-text Message.
 func TestAuditAttributionComesFromDeviceColumn(t *testing.T) {
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app := newTestApp(t)
 	app.HistoryPath = filepath.Join(t.TempDir(), "history.csv")
 
 	const dev = `PCI\VEN_10DE&DEV_2520`

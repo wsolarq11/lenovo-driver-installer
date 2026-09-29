@@ -1,13 +1,11 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"encoding/csv"
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 
 	"lenovo-driver/internal/model"
@@ -106,7 +104,7 @@ func TestHistoryValuesAlignsWithColumns(t *testing.T) {
 // the single-source header first and the single-source row values second, so the
 // header and the first data row can never disagree about column order.
 func TestWriteHistoryRecordHeaderUsesColumns(t *testing.T) {
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app := newTestApp(t)
 	app.HistoryPath = filepath.Join(t.TempDir(), "history.csv")
 	driver := &model.AssessedDriver{Driver: &model.Driver{DriverCode: "d1", DriverName: "Audio"}}
 	if err := app.WriteHistoryRecord(driver, "Installed", "exit=0", "", ""); err != nil {
@@ -138,7 +136,7 @@ func TestWriteHistoryRecordHeaderUsesColumns(t *testing.T) {
 // TestHistoryChainIntact writes two rows and verifies the chained hash is
 // recomputable from the on-disk bytes.
 func TestHistoryChainIntact(t *testing.T) {
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app := newTestApp(t)
 	app.HistoryPath = filepath.Join(t.TempDir(), "history.csv")
 	driver := &model.AssessedDriver{Driver: &model.Driver{DriverCode: "d1"}}
 	if err := app.WriteHistoryRecord(driver, "Installed", "exit=0", "", ""); err != nil {
@@ -155,7 +153,7 @@ func TestHistoryChainIntact(t *testing.T) {
 // TestHistoryChainDetectsTamper proves a single rewritten data field breaks the
 // chain, i.e. the ledger is tamper-evident rather than merely append-only.
 func TestHistoryChainDetectsTamper(t *testing.T) {
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app := newTestApp(t)
 	app.HistoryPath = filepath.Join(t.TempDir(), "history.csv")
 	driver := &model.AssessedDriver{Driver: &model.Driver{DriverCode: "d1"}}
 	if err := app.WriteHistoryRecord(driver, "Installed", "exit=0", "", ""); err != nil {
@@ -197,7 +195,7 @@ func rewriteCSV(t *testing.T, path string, rowIdx, colIdx int, value string) {
 // TestHistoryRoundTrip writes a record and reads it back through ReadHistory,
 // confirming the single-source writer and the tolerant reader agree end to end.
 func TestHistoryRoundTrip(t *testing.T) {
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app := newTestApp(t)
 	app.HistoryPath = filepath.Join(t.TempDir(), "history.csv")
 	driver := &model.AssessedDriver{Driver: &model.Driver{
 		DriverCode:  "d1",

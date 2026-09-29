@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -12,14 +11,6 @@ import (
 	"lenovo-driver/internal/install"
 	"lenovo-driver/internal/model"
 )
-
-func newRollbackTestApp(t *testing.T) *App {
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
-	dir := t.TempDir()
-	app.HistoryPath = filepath.Join(dir, "history.csv")
-	app.LogPath = filepath.Join(dir, "log.txt")
-	return app
-}
 
 func stubRollback(t *testing.T, fn func(string) (bool, error)) {
 	original := rollbackDriverNative
@@ -57,14 +48,14 @@ func writePendingOffer(t *testing.T, app *App, offer rollbackOffer) {
 }
 
 func TestRollbackCombinationRejected(t *testing.T) {
-	app := New(&bytes.Buffer{}, &bytes.Buffer{}, strings.NewReader(""))
+	app := newTestApp(t)
 	if code := app.Run([]string{"-Rollback", "d1", "-DryRun"}); code != 2 {
 		t.Fatalf("-Rollback with -DryRun should exit 2, got %d", code)
 	}
 }
 
 func TestBuildRollbackOffer(t *testing.T) {
-	app := newRollbackTestApp(t)
+	app := newTestApp(t)
 	ad := &model.AssessedDriver{
 		Driver: &model.Driver{
 			DriverCode:  "d1",
@@ -101,7 +92,7 @@ func TestBuildRollbackOffer(t *testing.T) {
 }
 
 func TestRollbackOfferFileRoundTrip(t *testing.T) {
-	app := newRollbackTestApp(t)
+	app := newTestApp(t)
 	offers := []rollbackOffer{{
 		DriverCode: "d1", State: rollbackStatePending, BeforeInf: "oem42.inf",
 		Devices: []rollbackOfferDevice{{PnpDeviceID: "B", Problem: "driver failed load"}},
@@ -139,7 +130,7 @@ func TestPendingRollbackCodes(t *testing.T) {
 }
 
 func TestRunRollbackSuccess(t *testing.T) {
-	app := newRollbackTestApp(t)
+	app := newTestApp(t)
 	stubRollback(t, func(string) (bool, error) { return false, nil })
 	stubRollbackVerify(t, recoveredVerify)
 	writePendingOffer(t, app, rollbackOffer{
@@ -171,7 +162,7 @@ func TestRunRollbackSuccess(t *testing.T) {
 }
 
 func TestRunRollbackRequiresLedgerOffer(t *testing.T) {
-	app := newRollbackTestApp(t)
+	app := newTestApp(t)
 	called := false
 	stubRollback(t, func(string) (bool, error) { called = true; return false, nil })
 	// The JSON cache has a pending offer, but no RollbackOffered ledger row
@@ -190,7 +181,7 @@ func TestRunRollbackRequiresLedgerOffer(t *testing.T) {
 }
 
 func TestPerformRollbackAuditFailureBlocksAction(t *testing.T) {
-	app := newRollbackTestApp(t)
+	app := newTestApp(t)
 	called := false
 	stubRollback(t, func(string) (bool, error) { called = true; return false, nil })
 	offer := rollbackOffer{
@@ -214,7 +205,7 @@ func TestPerformRollbackAuditFailureBlocksAction(t *testing.T) {
 }
 
 func TestPerformRollbackPartial(t *testing.T) {
-	app := newRollbackTestApp(t)
+	app := newTestApp(t)
 	stubRollback(t, func(id string) (bool, error) {
 		if id == "OK" {
 			return false, nil
@@ -243,7 +234,7 @@ func TestPerformRollbackPartial(t *testing.T) {
 }
 
 func TestRunRollbackNoBackupLeavesDevice(t *testing.T) {
-	app := newRollbackTestApp(t)
+	app := newTestApp(t)
 	stubRollback(t, func(string) (bool, error) { return false, &install.RollbackError{Code: 259} })
 	reinstallCalled := false
 	stubRollbackReinstall(t, func(string, string) (bool, error) { reinstallCalled = true; return false, nil })
@@ -274,7 +265,7 @@ func TestRunRollbackNoBackupLeavesDevice(t *testing.T) {
 }
 
 func TestRunRollbackReinstallFallbackSuccess(t *testing.T) {
-	app := newRollbackTestApp(t)
+	app := newTestApp(t)
 	stubRollback(t, func(string) (bool, error) { return false, &install.RollbackError{Code: 259} })
 	stubRollbackReinstall(t, func(string, string) (bool, error) { return false, nil })
 	stubRollbackVerify(t, recoveredVerify)
@@ -311,7 +302,7 @@ func TestRunRollbackReinstallFallbackSuccess(t *testing.T) {
 }
 
 func TestRunRollbackReinstallMissingInfBlocks(t *testing.T) {
-	app := newRollbackTestApp(t)
+	app := newTestApp(t)
 	stubRollback(t, func(string) (bool, error) { return false, &install.RollbackError{Code: 259} })
 	reinstallCalled := false
 	stubRollbackReinstall(t, func(string, string) (bool, error) { reinstallCalled = true; return false, nil })
@@ -340,7 +331,7 @@ func TestRunRollbackReinstallMissingInfBlocks(t *testing.T) {
 }
 
 func TestRunRollbackNotRecovered(t *testing.T) {
-	app := newRollbackTestApp(t)
+	app := newTestApp(t)
 	stubRollback(t, func(string) (bool, error) { return false, nil })
 	// The API reports success but the device still reports problem 43, so the
 	// ledger must record a failure, not a false recovery.
@@ -374,7 +365,7 @@ func TestRunRollbackNotRecovered(t *testing.T) {
 }
 
 func TestRunRollbackRebootRequired(t *testing.T) {
-	app := newRollbackTestApp(t)
+	app := newTestApp(t)
 	stubRollback(t, func(string) (bool, error) { return true, nil })
 	verified := false
 	stubRollbackVerify(t, func(context.Context, string) (int, string, bool, error) { verified = true; return 0, "1.0", true, nil })
@@ -410,7 +401,7 @@ func TestRunRollbackRebootRequired(t *testing.T) {
 }
 
 func TestRunRollbackUnchangedDriverNotRecovered(t *testing.T) {
-	app := newRollbackTestApp(t)
+	app := newTestApp(t)
 	stubRollback(t, func(string) (bool, error) { return false, nil })
 	// Problem cleared but the driver version did not change away from the
 	// broken version: a coincidental/self-healing recovery must not be credited
