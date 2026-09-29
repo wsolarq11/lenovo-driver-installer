@@ -1,4 +1,4 @@
-﻿<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="联想驱动安装器" Height="760" Width="1240"
         WindowStartupLocation="CenterScreen" FontSize="13"
@@ -32,7 +32,7 @@
         <Border DockPanel.Dock="Bottom" Padding="14,8,14,8" Background="#FFFFFF" BorderBrush="#D8DEE6" BorderThickness="0,1,0,0">
             <StackPanel Orientation="Horizontal">
                 <Button x:Name="InstallUpdatesButton" Content="安装更新项 (y)" MinWidth="130" Padding="10,6" Margin="0,0,10,0"/>
-                <Button x:Name="InstallApplicableButton" Content="安装全部可安装 (a)" MinWidth="150" Padding="10,6" Margin="0,0,10,0"/>
+                <Button x:Name="InstallApplicableButton" Content="安装需更新项 (a)" MinWidth="150" Padding="10,6" Margin="0,0,10,0"/>
                 <Button x:Name="InstallSelectedButton" Content="安装选中项" MinWidth="110" Padding="10,6" Margin="0,0,10,0"/>
                 <Button x:Name="DownloadSelectedButton" Content="仅下载选中项" MinWidth="110" Padding="10,6" Margin="0,0,10,0"/>
                 <Button x:Name="OpenPlanButton" Content="打开计划文件" MinWidth="110" Padding="10,6"/>

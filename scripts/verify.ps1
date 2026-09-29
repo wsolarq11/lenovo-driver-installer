@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 Offline verification gate for the Lenovo driver installer Go migration.
 
@@ -325,6 +325,21 @@ Assert-Step 'automatic install set excludes downgrade and no-op statuses' {
     $interactive = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\interactive.go') -Raw
     if ($interactive -match 'all-applicable|all applicable') {
         throw 'interactive prompt still advertises the old "all applicable" set whose membership changed'
+    }
+    # The GUI export is a second exit onto the same set: the WPF "install all"
+    # button filters on IsApplicable and passes the codes via -GuiInstallCodes,
+    # which bypasses partitionViewDrivers entirely. It must project the same
+    # predicate or the GUI keeps downgrading what the CLI now refuses.
+    $export = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\export.go') -Raw
+    if ($export -match 'IsApplicable:\s*ad\.CompareStatus\s*!=\s*model\.StatusNotApplicable') {
+        throw 'export.go redefines IsApplicable loosely; it must project model.InAutomaticInstallSet'
+    }
+    if ($export -notmatch 'IsApplicable:\s*model\.InAutomaticInstallSet') {
+        throw 'export.go must project model.InAutomaticInstallSet onto IsApplicable'
+    }
+    $xaml = Get-Content -LiteralPath (Join-Path $repoRoot 'wpf\window.xaml') -Raw
+    if ($xaml -match '安装全部可安装') {
+        throw 'WPF install-all button still says "安装全部可安装"; the set no longer contains every applicable driver'
     }
 }
 

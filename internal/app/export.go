@@ -89,8 +89,12 @@ func (a *App) ExportGUIView(path string, vc *ViewContext, view *DriverView) erro
 			FilePath:       ad.FilePath,
 			FileSize:       ad.FileSize,
 			MD5:            ad.OfficialMD5,
-			IsApplicable:   ad.CompareStatus != model.StatusNotApplicable,
-			IsUpdate:       ad.CompareStatus == model.StatusUpdate,
+			// IsApplicable mirrors the CLI's automatic install set so the GUI's
+			// "install all" button offers the same drivers as the interactive
+			// "a" action. A local definition here would re-admit Local newer and
+			// let the GUI downgrade a device the CLI would refuse to touch.
+			IsApplicable: model.InAutomaticInstallSet(ad.CompareStatus),
+			IsUpdate:     ad.CompareStatus == model.StatusUpdate,
 		})
 	}
 	data, err := json.MarshalIndent(payload, "", "  ")
