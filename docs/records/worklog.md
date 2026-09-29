@@ -532,4 +532,24 @@ installation side effects. Committed the four rounds of hardening work.
 
 1. `Bootfile` 已采集未消费：官方 `Parameter=/add-driver *.inf /install /subdirs` + `Bootfile=//Pnputil.exe` 表达“解包后 pnputil 装 INF”，包为标准 Inno Setup。`Update: 0` 时不触发，低优先级。
 2. Web 源 `Field1` 未解析（官网用 `InstallCode`+`Field1`，QuickFix 用 `Parameter`+`Bootfile`）。
-3. 真机 `LENOVO_NATIVE_EQUIV_SMOKE=1` 等价性 smoke。
+3. 应用列表 native 侧重复采集 77 条（见下一条）。
+
+---
+
+## Session: 真机等价性 smoke + 审计日志归档
+
+**Branch**: `main`
+
+### Summary
+
+补上长期挂着的真机等价性 smoke，并把被测试污染过的审计日志归档重建。smoke 顺带暴露一个此前被 PASS 掩盖的采集瑕疵。
+
+### Testing
+
+- [实测] `LENOVO_NATIVE_EQUIV_SMOKE=1 go test -tags legacyps ./internal/inventory/ -run TestNativePSEquivalenceSmoke` **PASS**（11.0s）：设备 `native=169 / ps=169 / nativeOnly=0 / psOnly=0`；机器 `82JQ`/`PF2SBWJA` 两侧一致；OS `Kind`/`OSName`/`Arch` 一致（`Caption` 因本地化不同不参与判定）；应用 `nativeOnly=0 / versionMismatch=0`；`ProvisionedAmdPower=Provisioned`、`LenovoFnServiceVersion=2.0.0.25` 一致。
+- [实测] **应用列表重复采集（smoke 副产物）**：`apps native=265 ps=188 nativeOnly=0`。native 多 77 条但去重后无独有项，说明同一批应用被采集两轮（`7-Zip 26.02 (x64)`、`Microsoft Visual C++ 2010 x86 Redistributable` 等确出现两次）。等价性按去重比较故判 PASS，掩盖了该瑕疵。影响输出重复、采集耗时翻倍、"已安装 N 个"统计虚高；不影响驱动判定。待定位 native 注册表枚举路径。
+- [实测] **审计日志归档**：污染日志 190 行 / 16400 字节已归档为 `lenovo_driver_install.log.polluted-20260930-005804.bak`，SHA256 `803DB4BC...D78B17`。构成分析：夹具噪声 46 行、真实操作 144 行——两类都是证据，故**归档而非删除**。归档后重跑真实 dry-run，新日志 24 行、夹具噪声 0 行、`Applicable candidates: 1`（修复后值）。
+
+### Status
+
+[OK] **Completed** — 文档写回，待 commit。
