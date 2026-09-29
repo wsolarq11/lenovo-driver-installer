@@ -341,6 +341,55 @@ Assert-Step 'automatic install set excludes downgrade and no-op statuses' {
     if ($xaml -match '安装全部可安装') {
         throw 'WPF install-all button still says "安装全部可安装"; the set no longer contains every applicable driver'
     }
+
+Assert-Step 'evidence chain runs on real fixtures' {
+    # The chain's whole value is that it reproduces the live dry-run on recorded
+    # 82JQ data. A missing fixture or a renamed loader would leave the tests
+    # green for the wrong reason, so require the chain and its inputs to exist.
+    $chainFile = Join-Path $repoRoot 'internal\app\evidence_chain_test.go'
+    if (-not (Test-Path -LiteralPath $chainFile)) {
+        throw 'internal/app/evidence_chain_test.go is gone; the end-to-end evidence chain no longer exists'
+    }
+    $chain = Get-Content -LiteralPath $chainFile -Raw
+    foreach ($step in @('ParseQuickFix', 'filterDriverRows', 'SelectLatestDrivers',
+            'TestDriverApplicable', 'ResolveLocalDriverVersion', 'CompareDriverStatus',
+            'partitionViewDrivers', 'WriteHistoryRecord', 'diffDeviceSnapshots')) {
+        if ($chain -notmatch [regex]::Escape($step)) {
+            throw "evidence chain no longer exercises $step; a link was dropped from the chain"
+        }
+    }
+    foreach ($fixture in @('quickfix_real_82jq.json', 'local_devices_82jq.json', 'local_software_82jq.json')) {
+        $p = Join-Path $repoRoot "internal\app\testdata\$fixture"
+        if (-not (Test-Path -LiteralPath $p)) {
+            throw "evidence fixture missing: $fixture"
+        }
+        if ((Get-Item -LiteralPath $p).Length -lt 2048) {
+            throw "evidence fixture $fixture is too small to be real recorded data"
+        }
+    }
+}
+
+Assert-Step 'recorded fixtures carry no live credentials or device serials' {
+    # These fixtures are committed, so a download token or a machine serial in
+    # one is a leak that no test would catch. The token is refreshed per fetch
+    # anyway, and the instance tail is boot-specific, so redacting costs the
+    # chain nothing.
+    foreach ($fixture in @('quickfix_real_82jq.json', 'local_devices_82jq.json', 'local_software_82jq.json')) {
+        $p = Join-Path $repoRoot "internal\app\testdata\$fixture"
+        $text = Get-Content -LiteralPath $p -Raw
+        if ($text -match '\?token=[A-Za-z0-9_\-]{20,}') {
+            throw "$fixture contains an unredacted download token; refresh via the redaction step before committing"
+        }
+        if ($text -match 'PF2SBWJA') {
+            throw "$fixture contains the machine serial; fixtures must carry hardware ids only"
+        }
+        # PnpDeviceID is the ledger join key, so the instance tail has to stay
+        # recognisable, but it must be the placeholder rather than a real one.
+        if ($fixture -eq 'local_devices_82jq.json' -and $text -match '\\\d+&\w+&\d+&\d+\\?"') {
+            throw 'local_devices_82jq.json carries a real device instance id'
+        }
+    }
+}
 }
 
 Assert-Step 'git diff check' {
