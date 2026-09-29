@@ -495,3 +495,41 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed** — 待 commit。
+
+---
+
+## Session: 缺口调研 + 自动安装集纳入降级驱动（真机取证后修复）
+
+**Branch**: `main`
+
+### Summary
+
+真机 82JQ 上做缺口调研（交换/比较/反复/品味到底），发现规范与代码的直接冲突：不变量 3 写明 `Local newer` 不进自动安装集，而 `partitionViewDrivers` 用宽松比较把它放了进去——选 `a` 会降级显卡。已修复并加门禁锁死。
+
+### Main Changes
+
+- `internal/model/model.go`：新增 `InAutomaticInstallSet`，作为自动安装集成员资格的唯一权威（显式 `==` 白名单：仅 `Update` + `Not installed`）。
+- `internal/app/view.go`：`partitionViewDrivers` 改为消费该谓词，不再用 `!= StatusNotApplicable`。
+- `internal/app/interactive.go` / `help.go`：`a` 的文案从“all applicable”改为“install set”，并说明按 `a` 不会降级设备、`s` 是安装本机已更新驱动的唯一途径。
+- `scripts/verify.ps1`：新增门禁 `automatic install set excludes downgrade and no-op statuses`（函数体出现 `!=` 即失败；`view.go` 不得宽松划分；提示语不得回退）。
+- `docs/spec/invariants.md` 第 3 条：把“约束”补成可执行白名单 + 门禁强制点。
+
+### Testing
+
+- [实测] 修复前真机 dry-run：`Applicable candidates: 11 / update-only: 0`，9 个 `Local newer`（AMD VGA 官方 `27.20.15026.8004` vs 本机 `30.0.14052.9003`；NVIDIA `31.0.15.2799` vs `31.0.15.4630`；Realtek Lan / Intel WLAN / Fn 键等）。
+- [实测] 修复后真机 dry-run：`Applicable candidates: 1`，9 个 `Local newer` 全部退出自动集。
+- [实测] `scripts/verify.ps1` 25/25 VERIFY_OK（原 24 步 + 1 步新门禁）。
+- [实测] 三条新测试反证为红：把谓词退回 `!= StatusNotApplicable` 后 `TestAutomaticInstallSetExcludesDowngradeAndNoop`（5≠2）、`TestLocalNewerNeverEntersAutomaticSet`（10≠1）、`TestInAutomaticInstallSetIsExplicit` 同时失败。
+- [实测] 门禁红灯注入：首次正则过窄未抓住等价的宽松写法，已修正为“函数体含 `!=` 即失败”，二次注入后门禁精确报错。
+- [实测] 真机确认无账本：`lenovo_driver_history.csv` 全盘不存在，此前登记的“旧格式账本需移开归档”为空操作。
+- [实测] 82JQ 无 `history.csv` 以外的审计产物被测试写入（已修，见上一提交）。
+
+### Status
+
+[OK] **Completed** — 待 commit。
+
+### 剩余（按优先级）
+
+1. `Bootfile` 已采集未消费：官方 `Parameter=/add-driver *.inf /install /subdirs` + `Bootfile=//Pnputil.exe` 表达“解包后 pnputil 装 INF”，包为标准 Inno Setup。`Update: 0` 时不触发，低优先级。
+2. Web 源 `Field1` 未解析（官网用 `InstallCode`+`Field1`，QuickFix 用 `Parameter`+`Bootfile`）。
+3. 真机 `LENOVO_NATIVE_EQUIV_SMOKE=1` 等价性 smoke。
