@@ -1,0 +1,734 @@
+{
+  "InstalledApps": [
+    {
+      "DisplayName": "7-Zip 26.02 (x64)",
+      "DisplayVersion": "26.02"
+    },
+    {
+      "DisplayName": "Clash Verge",
+      "DisplayVersion": "2.5.2"
+    },
+    {
+      "DisplayName": "EcoPaste",
+      "DisplayVersion": "1.1.0"
+    },
+    {
+      "DisplayName": "Git",
+      "DisplayVersion": "2.55.0.5"
+    },
+    {
+      "DisplayName": "7-Zip 26.03 Final 汉化版 (64位)",
+      "DisplayVersion": "26.03"
+    },
+    {
+      "DisplayName": "火绒安全软件",
+      "DisplayVersion": "6.0.12.1"
+    },
+    {
+      "DisplayName": "Microsoft Office LTSC 专业增强版 2024 - zh-cn",
+      "DisplayVersion": "16.0.17932.21000"
+    },
+    {
+      "DisplayName": "Kingdom Rush",
+      "DisplayVersion": ""
+    },
+    {
+      "DisplayName": "Stellaris",
+      "DisplayVersion": ""
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2013 x64 Additional Runtime - 12.0.40664",
+      "DisplayVersion": "12.0.40664"
+    },
+    {
+      "DisplayName": "Microsoft .NET Host - 8.0.30 (x64)",
+      "DisplayVersion": "64.120.56788"
+    },
+    {
+      "DisplayName": "GitHub CLI",
+      "DisplayVersion": "2.98.0"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2022 X64 Debug Runtime - 14.51.36247",
+      "DisplayVersion": "14.51.36247"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2008 Redistributable - x64 9.0.30729.7523",
+      "DisplayVersion": "9.0.30729.7523"
+    },
+    {
+      "DisplayName": "Microsoft.NET.Sdk.Maui.Manifest-8.0.100 (x64)",
+      "DisplayVersion": "8.0.3"
+    },
+    {
+      "DisplayName": "Application Verifier x64 External Package (DesktopEditions)",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Microsoft .NET Host - 10.0.12 (x64)",
+      "DisplayVersion": "80.48.58476"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2010  x64 Redistributable - 10.0.40219",
+      "DisplayVersion": "10.0.40219"
+    },
+    {
+      "DisplayName": "Microsoft .NET AppHost Pack - 8.0.30 (x64_arm64)",
+      "DisplayVersion": "64.120.56788"
+    },
+    {
+      "DisplayName": "NapCatQQ Desktop",
+      "DisplayVersion": "3.2.1"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2012 x64 Additional Runtime - 11.0.61030",
+      "DisplayVersion": "11.0.61030"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2005 Redistributable (x64)",
+      "DisplayVersion": "8.0.61186"
+    },
+    {
+      "DisplayName": "Python 3.14.7 Development Libraries (64-bit)",
+      "DisplayVersion": "3.14.7150.0"
+    },
+    {
+      "DisplayName": "Microsoft.NET.Workload.Emscripten.net6.Manifest (x64)",
+      "DisplayVersion": "64.120.56610"
+    },
+    {
+      "DisplayName": "Microsoft ASP.NET Core 8.0.30 Targeting Pack (x64)",
+      "DisplayVersion": "8.0.30.26373"
+    },
+    {
+      "DisplayName": "Application Verifier x64 External Package (OnecoreUAP)",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Microsoft .NET Toolset 8.0.424 (x64)",
+      "DisplayVersion": "32.15.16412"
+    },
+    {
+      "DisplayName": "Python 3.14.7 Standard Library (64-bit)",
+      "DisplayVersion": "3.14.7150.0"
+    },
+    {
+      "DisplayName": "Microsoft Windows Desktop Targeting Pack - 8.0.30 (x64)",
+      "DisplayVersion": "64.120.56881"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2013 x64 Minimum Runtime - 12.0.40664",
+      "DisplayVersion": "12.0.40664"
+    },
+    {
+      "DisplayName": "Microsoft .NET Host FX Resolver - 8.0.30 (x64)",
+      "DisplayVersion": "64.120.56788"
+    },
+    {
+      "DisplayName": "Microsoft.NET.Sdk.tvOS.Manifest-8.0.100 (x64)",
+      "DisplayVersion": "17.0.8478"
+    },
+    {
+      "DisplayName": "Python 3.14.7 Tcl/Tk Support (64-bit)",
+      "DisplayVersion": "3.14.7150.0"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2008 Redistributable - x64 9.0.30729.6161",
+      "DisplayVersion": "9.0.30729.6161"
+    },
+    {
+      "DisplayName": "CC Switch",
+      "DisplayVersion": "3.20.1"
+    },
+    {
+      "DisplayName": "Python 3.14.7 pip Bootstrap (64-bit)",
+      "DisplayVersion": "3.14.7150.0"
+    },
+    {
+      "DisplayName": "Microsoft Windows Desktop Runtime - 8.0.30 (x64)",
+      "DisplayVersion": "64.120.56881"
+    },
+    {
+      "DisplayName": "Microsoft.NET.Sdk.iOS.Manifest-8.0.100 (x64)",
+      "DisplayVersion": "17.0.8478"
+    },
+    {
+      "DisplayName": "Microsoft Visual Studio Installer",
+      "DisplayVersion": "4.9.50.62957"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2022 X64 Additional Runtime - 14.51.36247",
+      "DisplayVersion": "14.51.36247"
+    },
+    {
+      "DisplayName": "Microsoft .NET Targeting Pack - 8.0.30 (x64)",
+      "DisplayVersion": "64.120.56788"
+    },
+    {
+      "DisplayName": "Python 3.14.7 Core Interpreter (64-bit)",
+      "DisplayVersion": "3.14.7150.0"
+    },
+    {
+      "DisplayName": "Windows App Certification Kit Native Components",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Python 3.14.7 Test Suite (64-bit)",
+      "DisplayVersion": "3.14.7150.0"
+    },
+    {
+      "DisplayName": "Microsoft.NET.Sdk.MacCatalyst.Manifest-8.0.100 (x64)",
+      "DisplayVersion": "17.0.8478"
+    },
+    {
+      "DisplayName": "Universal CRT Tools x64",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Microsoft Windows Desktop Runtime - 10.0.12 (x64)",
+      "DisplayVersion": "80.48.58476"
+    },
+    {
+      "DisplayName": "Office 16 Click-to-Run Licensing Component",
+      "DisplayVersion": "16.0.17932.21000"
+    },
+    {
+      "DisplayName": "Office 16 Click-to-Run Extensibility Component",
+      "DisplayVersion": "16.0.17928.20216"
+    },
+    {
+      "DisplayName": "Office 16 Click-to-Run Localization Component",
+      "DisplayVersion": "16.0.17928.20216"
+    },
+    {
+      "DisplayName": "Microsoft .NET Runtime - 10.0.12 (x64)",
+      "DisplayVersion": "80.48.58476"
+    },
+    {
+      "DisplayName": "Mocreak v2.4.1.407",
+      "DisplayVersion": "2.4.1.407"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2022 X64 Minimum Runtime - 14.51.36247",
+      "DisplayVersion": "14.51.36247"
+    },
+    {
+      "DisplayName": "Python 3.14.7 Documentation (64-bit)",
+      "DisplayVersion": "3.14.7150.0"
+    },
+    {
+      "DisplayName": "Windows SDK DirectX x64 Remote",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Microsoft.NET.Sdk.macOS.Manifest-8.0.100 (x64)",
+      "DisplayVersion": "14.0.8478"
+    },
+    {
+      "DisplayName": "Microsoft ASP.NET Core 8.0.30 Shared Framework (x64)",
+      "DisplayVersion": "8.0.30.26373"
+    },
+    {
+      "DisplayName": "Microsoft .NET Standard Targeting Pack - 2.1.0 (x64)",
+      "DisplayVersion": "24.0.28113"
+    },
+    {
+      "DisplayName": "Microsoft.NET.Workload.Mono.Toolchain.net7.Manifest (x64)",
+      "DisplayVersion": "64.120.56788"
+    },
+    {
+      "DisplayName": "PowerShell 7-x64",
+      "DisplayVersion": "7.6.6.0"
+    },
+    {
+      "DisplayName": "NVIDIA 图形驱动程序 546.30",
+      "DisplayVersion": "546.30"
+    },
+    {
+      "DisplayName": "NVIDIA PhysX 系统软件 9.21.0713",
+      "DisplayVersion": "9.21.0713"
+    },
+    {
+      "DisplayName": "NVIDIA HD 音频驱动程序 1.3.40.14",
+      "DisplayVersion": "1.3.40.14"
+    },
+    {
+      "DisplayName": "NVIDIA Install Application",
+      "DisplayVersion": "2.1002.408.0"
+    },
+    {
+      "DisplayName": "NVIDIA Platform Controllers and Framework",
+      "DisplayVersion": "545.70"
+    },
+    {
+      "DisplayName": "Python 3.14.7 Add to Path (64-bit)",
+      "DisplayVersion": "3.14.7150.0"
+    },
+    {
+      "DisplayName": "Microsoft.NET.Sdk.Android.Manifest-8.0.100 (x64)",
+      "DisplayVersion": "34.0.43"
+    },
+    {
+      "DisplayName": "Microsoft .NET AppHost Pack - 8.0.30 (x64)",
+      "DisplayVersion": "64.120.56788"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2012 x64 Minimum Runtime - 11.0.61030",
+      "DisplayVersion": "11.0.61030"
+    },
+    {
+      "DisplayName": "Microsoft.NET.Workload.Mono.Toolchain.net6.Manifest (x64)",
+      "DisplayVersion": "64.120.56788"
+    },
+    {
+      "DisplayName": "Microsoft .NET Runtime - 8.0.30 (x64)",
+      "DisplayVersion": "64.120.56788"
+    },
+    {
+      "DisplayName": "豆包输入法",
+      "DisplayVersion": "0.9.0.0"
+    },
+    {
+      "DisplayName": "Node.js",
+      "DisplayVersion": "24.21.0"
+    },
+    {
+      "DisplayName": "Microsoft .NET Host FX Resolver - 10.0.12 (x64)",
+      "DisplayVersion": "80.48.58476"
+    },
+    {
+      "DisplayName": "Microsoft.NET.Workload.Mono.Toolchain.Current.Manifest (x64)",
+      "DisplayVersion": "64.120.56788"
+    },
+    {
+      "DisplayName": "Microsoft.NET.Workload.Emscripten.Current.Manifest (x64)",
+      "DisplayVersion": "64.120.56610"
+    },
+    {
+      "DisplayName": "Microsoft.NET.Sdk.Aspire.Manifest-8.0.100 (x64)",
+      "DisplayVersion": "64.0.5426"
+    },
+    {
+      "DisplayName": "Microsoft.NET.Workload.Emscripten.net7.Manifest (x64)",
+      "DisplayVersion": "64.120.56610"
+    },
+    {
+      "DisplayName": "Python 3.14.7 Executables (64-bit)",
+      "DisplayVersion": "3.14.7150.0"
+    },
+    {
+      "DisplayName": "OPLUS Tool Driver 版本 4.0.1.6",
+      "DisplayVersion": "4.0.1.6"
+    },
+    {
+      "DisplayName": "Microsoft .NET 8.0 Templates 8.0.424 (x64)",
+      "DisplayVersion": "32.15.49180"
+    },
+    {
+      "DisplayName": "Microsoft .NET AppHost Pack - 8.0.30 (x64_x86)",
+      "DisplayVersion": "64.120.56788"
+    },
+    {
+      "DisplayName": "Visual Studio 生成工具 2026",
+      "DisplayVersion": "18.9.1"
+    },
+    {
+      "DisplayName": "福昕高级PDF编辑器专业精简版",
+      "DisplayVersion": "2024.3.0.26795"
+    },
+    {
+      "DisplayName": "IObit Unlocker",
+      "DisplayVersion": "1.3.0.11"
+    },
+    {
+      "DisplayName": "K-Lite Mega Codec Pack 19.9.5",
+      "DisplayVersion": "19.9.5"
+    },
+    {
+      "DisplayName": "Microsoft Edge WebView2 Runtime",
+      "DisplayVersion": "154.0.4258.37"
+    },
+    {
+      "DisplayName": "Notepad3 (x64)",
+      "DisplayVersion": "6.26.428.1"
+    },
+    {
+      "DisplayName": "QQ",
+      "DisplayVersion": "9.9.35.52892"
+    },
+    {
+      "DisplayName": "微信",
+      "DisplayVersion": "4.1.15.13"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2013 Redistributable (x64) - 12.0.40664",
+      "DisplayVersion": "12.0.40664.0"
+    },
+    {
+      "DisplayName": "Universal CRT Redistributable",
+      "DisplayVersion": "10.0.26624"
+    },
+    {
+      "DisplayName": "迷雾通版本v5.4.1",
+      "DisplayVersion": "v5.4.1"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ v14 Redistributable (x64) - 14.51.36247",
+      "DisplayVersion": "14.51.36247.0"
+    },
+    {
+      "DisplayName": "Windows SDK Modern Non-Versioned Developer Tools",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "WinRT Intellisense Desktop - en-us",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows Software Development Kit - Windows 10.0.26100.8249",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "WinRT Intellisense IoT - en-us",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows SDK OnecoreUap Headers x64",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows SDK Desktop Headers x64",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "vs_FileTracker_Singleton",
+      "DisplayVersion": "18.9.11915"
+    },
+    {
+      "DisplayName": "Universal CRT Headers Libraries and Sources",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Microsoft XNA Framework Redistributable 4.0",
+      "DisplayVersion": "4.0.20823.0"
+    },
+    {
+      "DisplayName": "Windows SDK for Windows Store Apps Headers",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "MSI Development Tools",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2012 Redistributable (x86) - 11.0.61030",
+      "DisplayVersion": "11.0.61030.0"
+    },
+    {
+      "DisplayName": "Windows SDK",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows SDK Modern Versioned Developer Tools",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows SDK Signing Tools",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2022 X86 Minimum Runtime - 14.51.36247",
+      "DisplayVersion": "14.51.36247"
+    },
+    {
+      "DisplayName": "Windows App Certification Kit x64 (OnecoreUAP)",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Microsoft Visual Studio Setup Configuration",
+      "DisplayVersion": "4.8.41.48107"
+    },
+    {
+      "DisplayName": "WinRT Intellisense UAP - Other Languages",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows SDK Desktop Tools x86",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2022 X86 Additional Runtime - 14.51.36247",
+      "DisplayVersion": "14.51.36247"
+    },
+    {
+      "DisplayName": "vcpp_crt.redist.clickonce",
+      "DisplayVersion": "14.51.36247"
+    },
+    {
+      "DisplayName": "WinRT Intellisense PPI - en-us",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows SDK Desktop Headers arm64",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Universal General MIDI DLS Extension SDK",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows Desktop Extension SDK",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "vs_githubprotocolhandlermsi",
+      "DisplayVersion": "18.9.11915"
+    },
+    {
+      "DisplayName": "X-Rite Color Assistant 2.67.0",
+      "DisplayVersion": "2.67.0"
+    },
+    {
+      "DisplayName": "Windows SDK for Windows Store Apps Libs",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Microsoft Visual Studio Setup WMI Provider",
+      "DisplayVersion": "4.8.41.48107"
+    },
+    {
+      "DisplayName": "Windows SDK Facade Windows WinMD Versioned",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows SDK Desktop Libs x64",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2008 Redistributable - x86 9.0.30729.7523",
+      "DisplayVersion": "9.0.30729.7523"
+    },
+    {
+      "DisplayName": "Windows SDK OnecoreUap Headers arm64",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2013 x86 Minimum Runtime - 12.0.40664",
+      "DisplayVersion": "12.0.40664"
+    },
+    {
+      "DisplayName": "Windows SDK for Windows Store Apps",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "SDK ARM64 Additions",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows SDK Desktop Libs x86",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Universal CRT Extension SDK",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows SDK for Windows Store Apps Headers OnecoreUap",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows SDK EULA",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows SDK Desktop Headers x86",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "WinRT Intellisense UAP - en-us",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows Mobile Extension SDK",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "vs_vswebprotocolselectormsires",
+      "DisplayVersion": "18.9.11915"
+    },
+    {
+      "DisplayName": "Windows SDK for Windows Store Managed Apps Libs",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ v14 Redistributable (x86) - 14.51.36247",
+      "DisplayVersion": "14.51.36247.0"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2008 Redistributable - x86 9.0.30729.6161",
+      "DisplayVersion": "9.0.30729.6161"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2022 X86 Debug Runtime - 14.51.36247",
+      "DisplayVersion": "14.51.36247"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2013 Redistributable (x86) - 12.0.40664",
+      "DisplayVersion": "12.0.40664.0"
+    },
+    {
+      "DisplayName": "Windows IoT Extension SDK Contracts",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "SDK ARM64 Redistributables",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows SDK Desktop Tools arm64",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows SDK OnecoreUap Headers x86",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows IoT Extension SDK",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2012 x86 Additional Runtime - 11.0.61030",
+      "DisplayVersion": "11.0.61030"
+    },
+    {
+      "DisplayName": "WinRT Intellisense Desktop - Other Languages",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows SDK DirectX x86 Remote",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows SDK Desktop Libs arm64",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows Desktop Extension SDK Contracts",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows SDK for Windows Store Apps Contracts",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2012 x86 Minimum Runtime - 11.0.61030",
+      "DisplayVersion": "11.0.61030"
+    },
+    {
+      "DisplayName": "Windows SDK for Windows Store Apps DirectX x86 Remote",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "WinRT Intellisense Mobile - en-us",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows App Certification Kit x64",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "WinRT Intellisense IoT - Other Languages",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows App Certification Kit SupportedApiList x86",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2012 Redistributable (x64) - 11.0.61030",
+      "DisplayVersion": "11.0.61030.0"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2005 Redistributable",
+      "DisplayVersion": "8.0.61187"
+    },
+    {
+      "DisplayName": "Windows SDK Desktop Tools x64",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Microsoft .NET SDK 8.0.424 (x64)",
+      "DisplayVersion": "8.4.2426.37308"
+    },
+    {
+      "DisplayName": "Windows SDK Redistributables",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2013 x86 Additional Runtime - 12.0.40664",
+      "DisplayVersion": "12.0.40664"
+    },
+    {
+      "DisplayName": "Windows SDK ARM64 Desktop Tools",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "WinAppDeploy",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows SDK for Windows Store Apps Tools",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "WinRT Intellisense PPI - Other Languages",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Universal CRT Tools x86",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows Team Extension SDK Contracts",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Python Launcher",
+      "DisplayVersion": "3.14.7150.0"
+    },
+    {
+      "DisplayName": "Kits Configuration Installer",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Windows SDK for Windows Store Apps Metadata",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Microsoft Visual C++ 2010  x86 Redistributable - 10.0.40219",
+      "DisplayVersion": "10.0.40219"
+    },
+    {
+      "DisplayName": "Windows Mobile Extension SDK Contracts",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "vs_vswebprotocolselectormsi",
+      "DisplayVersion": "18.9.11915"
+    },
+    {
+      "DisplayName": "Windows SDK AddOn",
+      "DisplayVersion": "10.1.0.0"
+    },
+    {
+      "DisplayName": "Windows Team Extension SDK",
+      "DisplayVersion": "10.1.26100.8249"
+    },
+    {
+      "DisplayName": "Microsoft Windows Desktop Runtime 10.0.12 (x64)",
+      "DisplayVersion": "10.0.12.50000"
+    }
+  ],
+  "ProvisionedAmdPower": "Provisioned",
+  "LenovoFnServiceVersion": "2.0.0.25"
+}

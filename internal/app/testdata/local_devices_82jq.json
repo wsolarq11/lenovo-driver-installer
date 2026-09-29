@@ -1,0 +1,1692 @@
+[
+  {
+    "PnpDeviceID": "HID\\VID_046D\u0026PID_C534\u0026MI_01\u0026COL01\\\u003cinstance\u003e",
+    "DeviceID": "HID\\VID_046D\u0026PID_C534\u0026REV_5101\u0026MI_01\u0026Col01",
+    "Name": "HID-compliant mouse",
+    "Class": "Mouse",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "msmouse.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "USB\\VID_05E3\u0026PID_0610\\\u003cinstance\u003e",
+    "DeviceID": "USB\\VID_05E3\u0026PID_0610\u0026REV_7100",
+    "Name": "通用 USB 集线器",
+    "Class": "USB",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "usbhub3.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\PNP0C02\\1",
+    "DeviceID": "ACPI\\VEN_PNP\u0026DEV_0C02",
+    "Name": "母板资源",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HID\\VID_0BDA\u0026PID_4762\u0026MI_02\u0026COL02\\\u003cinstance\u003e",
+    "DeviceID": "HID\\VID_0BDA\u0026PID_4762\u0026REV_1412\u0026MI_02\u0026Col02",
+    "Name": "符合 HID 标准的供应商定义设备",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "input.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\PNP0C09\\1",
+    "DeviceID": "ACPI\\VEN_PNP\u0026DEV_0C09",
+    "Name": "Microsoft ACPI 兼容的嵌入式控制器",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\LHK2019\\0",
+    "DeviceID": "ACPI\\VEN_LHK\u0026DEV_2019",
+    "Name": "Lenovo Fn and function keys",
+    "Class": "System",
+    "DriverVersion": "2.0.0.25",
+    "InfName": "oem55.inf",
+    "ProviderName": "Lenovo",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\PNP0C0A\\1",
+    "DeviceID": "ACPI\\VEN_PNP\u0026DEV_0C0A",
+    "Name": "Microsoft ACPI 兼容的控制方法电池",
+    "Class": "Battery",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "cmbatt.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HID\\VID_0BDA\u0026PID_4762\u0026MI_02\u0026COL01\\\u003cinstance\u003e",
+    "DeviceID": "HID\\VID_0BDA\u0026PID_4762\u0026REV_1412\u0026MI_02\u0026Col01",
+    "Name": "符合 HID 标准的供应商定义设备",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "input.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HID\\VID_048D\u0026PID_C101\u0026COL03\\\u003cinstance\u003e",
+    "DeviceID": "HID\\VID_048D\u0026PID_C101\u0026REV_0700\u0026Col03",
+    "Name": "符合 HID 标准的用户控制设备",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "hidserv.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_1639\u0026SUBSYS_382817AA\u0026REV_00\\\u003cinstance\u003e",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_1639\u0026SUBSYS_382817AA\u0026REV_00",
+    "Name": "符合 USB xHCI 的主机控制器",
+    "Class": "USB",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "usbxhci.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\PRINTENUM\\PRINTQUEUES",
+    "DeviceID": "PRINTENUM\\LocalPrintQueue",
+    "Name": "本地打印队列",
+    "Class": "PrintQueue",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "printqueue.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "USB\\VID_8087\u0026PID_0029\\\u003cinstance\u003e",
+    "DeviceID": "USB\\VID_8087\u0026PID_0029\u0026REV_0001",
+    "Name": "英特尔(R) 无线 Bluetooth(R)",
+    "Class": "Bluetooth",
+    "DriverVersion": "22.160.0.4",
+    "InfName": "oem72.inf",
+    "ProviderName": "Intel Corporation",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_166A\u0026SUBSYS_00000000\u0026REV_00\\3\u00262411E6FE\u00260\u0026C0",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_166A\u0026SUBSYS_00000000\u0026REV_00",
+    "Name": "PCI 标准主机 CPU 桥",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_10DE\u0026DEV_2560\u0026SUBSYS_3A8017AA\u0026REV_A1\\\u003cinstance\u003e",
+    "DeviceID": "PCI\\VEN_10DE\u0026DEV_2560\u0026SUBSYS_3A8017AA\u0026REV_A1",
+    "Name": "NVIDIA GeForce RTX 3060 Laptop GPU",
+    "Class": "Display",
+    "DriverVersion": "31.0.15.4630",
+    "InfName": "oem91.inf",
+    "ProviderName": "NVIDIA",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ROOT\\VOLMGR\\0000",
+    "DeviceID": "ROOT\\VOLMGR",
+    "Name": "卷管理器",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "volmgr.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_790B\u0026SUBSYS_384217AA\u0026REV_51\\3\u00262411E6FE\u00260\u0026A0",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_790B\u0026SUBSYS_384217AA\u0026REV_51",
+    "Name": "AMD SMBus",
+    "Class": "System",
+    "DriverVersion": "5.12.0.38",
+    "InfName": "oem89.inf",
+    "ProviderName": "Advanced Micro Devices, Inc",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\DRIVERENUM\\{741A2100-1023-11E9-B56E-0800200C9A66}#NAHIMIC_BTLINK\u00266\u00266759B03\u00260",
+    "DeviceID": "ROOT\\NahimicBTLink",
+    "Name": "Nahimic Easy Surround device",
+    "Class": "MEDIA",
+    "DriverVersion": "2.0.0.0",
+    "InfName": "oem63.inf",
+    "ProviderName": "Nahimic",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\MSRRAS\\MS_PPPOEMINIPORT",
+    "DeviceID": "ms_pppoeminiport",
+    "Name": "WAN 微型端口(PPPOE)",
+    "Class": "Net",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "netrasa.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\PNP0C04\\4\u0026302A01F5\u00260",
+    "DeviceID": "ACPI\\VEN_PNP\u0026DEV_0C04",
+    "Name": "数值数据处理器",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "USB\\VID_046D\u0026PID_C534\u0026MI_00\\\u003cinstance\u003e",
+    "DeviceID": "USB\\VID_046D\u0026PID_C534\u0026REV_5101\u0026MI_00",
+    "Name": "USB 输入设备",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "input.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ROOT\\BASICDISPLAY\\0000",
+    "DeviceID": "ROOT\\BasicDisplay",
+    "Name": "Microsoft 基本显示驱动程序",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "basicdisplay.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_15B7\u0026DEV_5006\u0026SUBSYS_500615B7\u0026REV_00\\4\u0026394ED9FB\u00260\u0026000A",
+    "DeviceID": "PCI\\VEN_15B7\u0026DEV_5006\u0026SUBSYS_500615B7\u0026REV_00",
+    "Name": "标准 NVM Express 控制器",
+    "Class": "SCSIAdapter",
+    "DriverVersion": "10.0.19041.4355",
+    "InfName": "stornvme.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "{5D624F94-8850-40C3-A3FA-A4FD2080BAF3}\\VWIFIMP_WFD\\\u003cinstance\u003e",
+    "DeviceID": "{5d624f94-8850-40c3-a3fa-a4fd2080baf3}\\vwifimp_wfd",
+    "Name": "Microsoft Wi-Fi Direct 虚拟适配器",
+    "Class": "Net",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "netvwifimp.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "{5D624F94-8850-40C3-A3FA-A4FD2080BAF3}\\VWIFIMP_WFD\\\u003cinstance\u003e",
+    "DeviceID": "{5d624f94-8850-40c3-a3fa-a4fd2080baf3}\\vwifimp_wfd",
+    "Name": "Microsoft Wi-Fi Direct 虚拟适配器",
+    "Class": "Net",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "netvwifimp.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\AMDI0030\\0",
+    "DeviceID": "ACPI\\VEN_AMDI\u0026DEV_0030",
+    "Name": "AMD GPIO Controller",
+    "Class": "System",
+    "DriverVersion": "2.2.0.130",
+    "InfName": "oem86.inf",
+    "ProviderName": "Advanced Micro Devices, Inc",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ROOT\\NET\\0000",
+    "DeviceID": "tap0901",
+    "Name": "TAP-Windows Adapter V9",
+    "Class": "Net",
+    "DriverVersion": "9.24.6.601",
+    "InfName": "oem114.inf",
+    "ProviderName": "TAP-Windows Provider V9",
+    "ProblemNumber": 22
+  },
+  {
+    "PnpDeviceID": "SWD\\DRIVERENUM\\AMDUWP\u00265\u0026A2BEA0B\u00260",
+    "DeviceID": "SWC\\VID1002\u0026PID0001",
+    "Name": "AMD-UWP Version Control",
+    "Class": "SoftwareComponent",
+    "DriverVersion": "29.2140.0.0",
+    "InfName": "oem68.inf",
+    "ProviderName": "Advanced Micro Devices, Inc.",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\RADIO\\{D523D36F-B430-49C3-9484-E2A4A186C166}",
+    "DeviceID": "",
+    "Name": "通用软件设备",
+    "Class": "SoftwareDevice",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "c_swdevice.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\MSRRAS\\{5E259276-BC7E-40E3-B93B-8F89B5F3ABC0}",
+    "DeviceID": "",
+    "Name": "通用软件设备",
+    "Class": "SoftwareDevice",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "c_swdevice.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\ACPI0010\\1",
+    "DeviceID": "ACPI\\VEN_ACPI\u0026DEV_0010",
+    "Name": "ACPI 处理器容器设备",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HID\\VID_046D\u0026PID_C534\u0026MI_01\u0026COL02\\\u003cinstance\u003e",
+    "DeviceID": "HID\\VID_046D\u0026PID_C534\u0026REV_5101\u0026MI_01\u0026Col02",
+    "Name": "符合 HID 标准的用户控制设备",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "hidserv.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\PNP0C14\\4",
+    "DeviceID": "ACPI\\VEN_PNP\u0026DEV_0C14",
+    "Name": "Microsoft Windows Management Interface for ACPI",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "wmiacpi.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "STORAGE\\VOLUME\\{6580843D-9D63-11F1-A0BA-806E6F6E6963}#0000000000100000",
+    "DeviceID": "STORAGE\\Volume",
+    "Name": "卷",
+    "Class": "Volume",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "volume.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\USBC000\\0",
+    "DeviceID": "ACPI\\VEN_USB\u0026DEV_C000",
+    "Name": "UCM-UCSI ACPI 设备",
+    "Class": "UCM",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "UcmUcsiAcpiClient.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_166F\u0026SUBSYS_00000000\u0026REV_00\\3\u00262411E6FE\u00260\u0026C5",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_166F\u0026SUBSYS_00000000\u0026REV_00",
+    "Name": "PCI 标准主机 CPU 桥",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\MSRRAS\\MS_PPTPMINIPORT",
+    "DeviceID": "ms_pptpminiport",
+    "Name": "WAN 微型端口(PPTP)",
+    "Class": "Net",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "netrasa.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HDAUDIO\\FUNC_01\u0026VEN_10EC\u0026DEV_0287\u0026SUBSYS_17AA3846\u0026REV_1000\\\u003cinstance\u003e",
+    "DeviceID": "HDAUDIO\\FUNC_01\u0026VEN_10EC\u0026DEV_0287\u0026SUBSYS_17AA3846\u0026REV_1000",
+    "Name": "Realtek High Definition Audio",
+    "Class": "MEDIA",
+    "DriverVersion": "6.0.9363.1",
+    "InfName": "oem57.inf",
+    "ProviderName": "Realtek Semiconductor Corp.",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_790E\u0026SUBSYS_384017AA\u0026REV_51\\3\u00262411E6FE\u00260\u0026A3",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_790E\u0026SUBSYS_384017AA\u0026REV_51",
+    "Name": "PCI 标准 ISA 桥",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ROOT\\VID\\0000",
+    "DeviceID": "ROOT\\VID",
+    "Name": "Microsoft Hyper-V 虚拟化基础结构驱动程序",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.7663",
+    "InfName": "wvid.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\PRINTENUM\\{E8E2D2BC-4632-436B-B41A-AE972C947B8B}",
+    "DeviceID": "PRINTENUM\\{0f4130dd-19c7-7ab6-99a1-980f03b2ee4e}",
+    "Name": "本地打印队列",
+    "Class": "PrintQueue",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "printqueue.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\MSRRAS\\MS_AGILEVPNMINIPORT",
+    "DeviceID": "ms_agilevpnminiport",
+    "Name": "WAN Miniport (IKEv2)",
+    "Class": "Net",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "netavpna.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ROOT\\COMPOSITEBUS\\0000",
+    "DeviceID": "ROOT\\CompositeBus",
+    "Name": "复合总线枚举器",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "compositebus.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\PNP0800\\4\u0026302A01F5\u00260",
+    "DeviceID": "ACPI\\VEN_PNP\u0026DEV_0800",
+    "Name": "系统扬声器",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ROOT\\VDRVROOT\\0000",
+    "DeviceID": "ROOT\\vdrvroot",
+    "Name": "Microsoft 虚拟驱动器枚举器",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "vdrvroot.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HID\\VID_048D\u0026PID_C101\u0026COL04\\\u003cinstance\u003e",
+    "DeviceID": "HID\\VID_048D\u0026PID_C101\u0026REV_0700\u0026Col04",
+    "Name": "符合 HID 标准的无线通信控制",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "input.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\ACPI0003\\2\u0026DABA3FF\u00260",
+    "DeviceID": "ACPI\\VEN_ACPI\u0026DEV_0003",
+    "Name": "Microsoft AC 适配器",
+    "Class": "Battery",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "cmbatt.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ROOT\\SPACEPORT\\0000",
+    "DeviceID": "Root\\Spaceport",
+    "Name": "Microsoft 存储空间控制器",
+    "Class": "SCSIAdapter",
+    "DriverVersion": "10.0.19041.7663",
+    "InfName": "spaceport.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\DRIVERENUM\\{741A2100-1023-11E9-B56E-0800200C9A66}#AVOLUTE_NH4APO\u00266\u00266759B03\u00260",
+    "DeviceID": "SWC\\VEN_AVOL\u0026AID_0802",
+    "Name": "Nahimic APO 4",
+    "Class": "SoftwareComponent",
+    "DriverVersion": "4.7.2.0",
+    "InfName": "oem61.inf",
+    "ProviderName": "A-Volute",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "USB\\VID_046D\u0026PID_C534\\\u003cinstance\u003e",
+    "DeviceID": "USB\\VID_046D\u0026PID_C534\u0026REV_5101",
+    "Name": "USB Composite Device",
+    "Class": "USB",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "usb.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1002\u0026DEV_1638\u0026SUBSYS_3A8017AA\u0026REV_C5\\\u003cinstance\u003e",
+    "DeviceID": "PCI\\VEN_1002\u0026DEV_1638\u0026SUBSYS_3A8017AA\u0026REV_C5",
+    "Name": "AMD Radeon(TM) Graphics",
+    "Class": "Display",
+    "DriverVersion": "30.0.14052.9003",
+    "InfName": "oem67.inf",
+    "ProviderName": "Advanced Micro Devices, Inc.",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "USB\\VID_0BDA\u0026PID_4762\u0026MI_00\\\u003cinstance\u003e",
+    "DeviceID": "USB\\VID_0BDA\u0026PID_4762\u0026REV_1412\u0026MI_00",
+    "Name": "USB 输入设备",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "input.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "USB\\VID_05E3\u0026PID_0620\\\u003cinstance\u003e",
+    "DeviceID": "USB\\VID_05E3\u0026PID_0620\u0026REV_7100",
+    "Name": "通用 SuperSpeed USB 集线器",
+    "Class": "USB",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "usbhub3.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "STORAGE\\VOLUME\\{6580843D-9D63-11F1-A0BA-806E6F6E6963}#000000321F500000",
+    "DeviceID": "STORAGE\\Volume",
+    "Name": "卷",
+    "Class": "Volume",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "volume.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_166C\u0026SUBSYS_00000000\u0026REV_00\\3\u00262411E6FE\u00260\u0026C2",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_166C\u0026SUBSYS_00000000\u0026REV_00",
+    "Name": "PCI 标准主机 CPU 桥",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "USB\\VID_046D\u0026PID_C534\u0026MI_01\\\u003cinstance\u003e",
+    "DeviceID": "USB\\VID_046D\u0026PID_C534\u0026REV_5101\u0026MI_01",
+    "Name": "USB 输入设备",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "input.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\PNP0C0D\\2\u0026DABA3FF\u00260",
+    "DeviceID": "ACPI\\VEN_PNP\u0026DEV_0C0D",
+    "Name": "ACPI 盖子",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_1630\u0026SUBSYS_381417AA\u0026REV_00\\\u003cinstance\u003e",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_1630\u0026SUBSYS_381417AA\u0026REV_00",
+    "Name": "PCI 标准主机 CPU 桥",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\PRINTENUM\\{708B8179-FE4C-494C-9671-5607322ADC96}",
+    "DeviceID": "PRINTENUM\\{084f01fa-e634-4d77-83ee-074817c03581}",
+    "Name": "本地打印队列",
+    "Class": "PrintQueue",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "printqueue.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\PNP0C14\\LSK20",
+    "DeviceID": "ACPI\\VEN_PNP\u0026DEV_0C14",
+    "Name": "Microsoft Windows Management Interface for ACPI",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "wmiacpi.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_1632\u0026SUBSYS_00000000\u0026REV_00\\\u003cinstance\u003e",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_1632\u0026SUBSYS_00000000\u0026REV_00",
+    "Name": "PCI 标准主机 CPU 桥",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_1632\u0026SUBSYS_00000000\u0026REV_00\\\u003cinstance\u003e",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_1632\u0026SUBSYS_00000000\u0026REV_00",
+    "Name": "PCI 标准主机 CPU 桥",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_1632\u0026SUBSYS_00000000\u0026REV_00\\\u003cinstance\u003e",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_1632\u0026SUBSYS_00000000\u0026REV_00",
+    "Name": "PCI 标准主机 CPU 桥",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\PNP0100\\4\u0026302A01F5\u00260",
+    "DeviceID": "ACPI\\VEN_PNP\u0026DEV_0100",
+    "Name": "系统计时器",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACP\\DEVTYPE_0001\u0026DEVREV_0000\u0026VEN_1022\u0026DEV_15E2\u0026SUBSYS_17AA382C\u0026REV_01\\\u003cinstance\u003e",
+    "DeviceID": "ACP\\DEVTYPE_0001\u0026DEVREV_0000\u0026VEN_1022\u0026DEV_15E2\u0026SUBSYS_17AA382C\u0026REV_01",
+    "Name": "ACP HDA Node",
+    "Class": "",
+    "DriverVersion": "",
+    "InfName": "",
+    "ProviderName": "",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_1671\u0026SUBSYS_00000000\u0026REV_00\\3\u00262411E6FE\u00260\u0026C7",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_1671\u0026SUBSYS_00000000\u0026REV_00",
+    "Name": "PCI 标准主机 CPU 桥",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HID\\VID_046D\u0026PID_C534\u0026MI_01\u0026COL03\\\u003cinstance\u003e",
+    "DeviceID": "HID\\VID_046D\u0026PID_C534\u0026REV_5101\u0026MI_01\u0026Col03",
+    "Name": "符合 HID 标准的系统控制器",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "input.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_1635\u0026SUBSYS_16351022\u0026REV_00\\\u003cinstance\u003e",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_1635\u0026SUBSYS_16351022\u0026REV_00",
+    "Name": "PCI Express 根端口",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.6456",
+    "InfName": "pci.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_1635\u0026SUBSYS_16351022\u0026REV_00\\\u003cinstance\u003e",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_1635\u0026SUBSYS_16351022\u0026REV_00",
+    "Name": "PCI Express 根端口",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.6456",
+    "InfName": "pci.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\PNP0103\\3\u00262411E6FE\u00260",
+    "DeviceID": "ACPI\\VEN_PNP\u0026DEV_0103",
+    "Name": "高精度事件计时器",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ROOT\\UMBUS\\0000",
+    "DeviceID": "root\\umbus",
+    "Name": "UMBus Root Bus Enumerator",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "umbus.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "USB\\ROOT_HUB30\\\u003cinstance\u003e",
+    "DeviceID": "USB\\ROOT_HUB30\u0026VID1022\u0026PID1639\u0026REV0000",
+    "Name": "USB 根集线器(USB 3.0)",
+    "Class": "USB",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "usbhub3.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "USB\\VID_048D\u0026PID_C101\\\u003cinstance\u003e",
+    "DeviceID": "USB\\VID_048D\u0026PID_C101\u0026REV_0700",
+    "Name": "USB 输入设备",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "input.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ROOT\\CAD\\0000",
+    "DeviceID": "ROOT\\CAD",
+    "Name": "充电均衡驱动程序",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "ChargeArbitration.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_15E3\u0026SUBSYS_382B17AA\u0026REV_00\\\u003cinstance\u003e",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_15E3\u0026SUBSYS_382B17AA\u0026REV_00",
+    "Name": "High Definition Audio 控制器",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.7663",
+    "InfName": "hdaudbus.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_10EC\u0026DEV_8168\u0026SUBSYS_390B17AA\u0026REV_15\\01000000684CE00000",
+    "DeviceID": "PCI\\VEN_10EC\u0026DEV_8168\u0026SUBSYS_390B17AA\u0026REV_15",
+    "Name": "Realtek PCIe GbE Family Controller",
+    "Class": "Net",
+    "DriverVersion": "10.50.511.2021",
+    "InfName": "oem71.inf",
+    "ProviderName": "Realtek",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\RADIO\\{3DB5895D-CC28-44B3-AD3D-6F01A782B8D2}",
+    "DeviceID": "",
+    "Name": "通用软件设备",
+    "Class": "SoftwareDevice",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "c_swdevice.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HID\\VID_048D\u0026PID_C101\u0026COL05\\\u003cinstance\u003e",
+    "DeviceID": "HID\\VID_048D\u0026PID_C101\u0026REV_0700\u0026Col05",
+    "Name": "符合 HID 标准的系统控制器",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "input.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_15E2\u0026SUBSYS_382C17AA\u0026REV_01\\\u003cinstance\u003e",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_15E2\u0026SUBSYS_382C17AA\u0026REV_01",
+    "Name": "AMD Audio CoProcessor",
+    "Class": "System",
+    "DriverVersion": "6.0.0.82",
+    "InfName": "oem65.inf",
+    "ProviderName": "AMD",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\RADIO\\BLUETOOTH_38FC9887E186",
+    "DeviceID": "",
+    "Name": "通用软件设备",
+    "Class": "SoftwareDevice",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "c_swdevice.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\FUJ7401\\4\u0026302A01F5\u00260",
+    "DeviceID": "ACPI\\VEN_FUJ\u0026DEV_7401",
+    "Name": "PS/2 标准键盘",
+    "Class": "Keyboard",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "keyboard.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "USB\\ROOT_HUB30\\\u003cinstance\u003e",
+    "DeviceID": "USB\\ROOT_HUB30\u0026VID1022\u0026PID1639\u0026REV0000",
+    "Name": "USB 根集线器(USB 3.0)",
+    "Class": "USB",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "usbhub3.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "UEFI\\RES_{234124E9-40B7-43EF-9B5E-97470808D440}\\0",
+    "DeviceID": "UEFI\\RES_{234124e9-40b7-43ef-9b5e-97470808d440}\u0026REV_2",
+    "Name": "设备固件",
+    "Class": "Firmware",
+    "DriverVersion": "10.0.19041.7291",
+    "InfName": "c_firmware.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ROOT\\ACPI_HAL\\0000",
+    "DeviceID": "acpiapic",
+    "Name": "基于 ACPI x64 的电脑",
+    "Class": "Computer",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "hal.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\MSRRAS\\MS_NDISWANBH",
+    "DeviceID": "ms_ndiswanbh",
+    "Name": "WAN 微型端口(网络监视器)",
+    "Class": "Net",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "netrasa.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\MSRRAS\\MS_NDISWANIP",
+    "DeviceID": "ms_ndiswanip",
+    "Name": "WAN 微型端口(IP)",
+    "Class": "Net",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "netrasa.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\PNP0C14\\AOD",
+    "DeviceID": "ACPI\\VEN_PNP\u0026DEV_0C14",
+    "Name": "Microsoft Windows Management Interface for ACPI",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "wmiacpi.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\PNP0A08\\1",
+    "DeviceID": "ACPI\\VEN_PNP\u0026DEV_0A08",
+    "Name": "PCI Express 根复合体",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.6456",
+    "InfName": "pci.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\VPC2004\\0",
+    "DeviceID": "ACPI\\VEN_VPC\u0026DEV_2004",
+    "Name": "Lenovo ACPI-Compliant Virtual Power Controller",
+    "Class": "System",
+    "DriverVersion": "15.11.29.65",
+    "InfName": "oem90.inf",
+    "ProviderName": "Lenovo",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_1634\u0026SUBSYS_388617AA\u0026REV_00\\3\u00262411E6FE\u00260\u00260A",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_1634\u0026SUBSYS_388617AA\u0026REV_00",
+    "Name": "PCI Express 根端口",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.6456",
+    "InfName": "pci.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_1634\u0026SUBSYS_388617AA\u0026REV_00\\\u003cinstance\u003e",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_1634\u0026SUBSYS_388617AA\u0026REV_00",
+    "Name": "PCI Express 根端口",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.6456",
+    "InfName": "pci.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_1634\u0026SUBSYS_388617AA\u0026REV_00\\\u003cinstance\u003e",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_1634\u0026SUBSYS_388617AA\u0026REV_00",
+    "Name": "PCI Express 根端口",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.6456",
+    "InfName": "pci.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "USB\\VID_0BDA\u0026PID_4762\u0026MI_01\\\u003cinstance\u003e",
+    "DeviceID": "USB\\VID_0BDA\u0026PID_4762\u0026REV_1412\u0026MI_01",
+    "Name": "USB 输入设备",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "input.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\PNP0C0C\\2\u0026DABA3FF\u00260",
+    "DeviceID": "ACPI\\VEN_PNP\u0026DEV_0C0C",
+    "Name": "ACPI 电源按钮",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI_HAL\\PNP0C08\\0",
+    "DeviceID": "ACPI_HAL\\PNP0C08",
+    "Name": "Microsoft ACPI-Compliant System",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.6456",
+    "InfName": "acpi.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HTREE\\ROOT\\0",
+    "DeviceID": "",
+    "Name": "",
+    "Class": "",
+    "DriverVersion": "",
+    "InfName": "",
+    "ProviderName": "",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ROOT\\BASICRENDER\\0000",
+    "DeviceID": "ROOT\\BasicRender",
+    "Name": "Microsoft 基本呈现驱动程序",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.7663",
+    "InfName": "basicrender.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_10DE\u0026DEV_228E\u0026SUBSYS_00000000\u0026REV_A1\\\u003cinstance\u003e",
+    "DeviceID": "PCI\\VEN_10DE\u0026DEV_228E\u0026SUBSYS_00000000\u0026REV_A1",
+    "Name": "High Definition Audio 控制器",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.7663",
+    "InfName": "hdaudbus.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\PNP0C14\\GMZN",
+    "DeviceID": "ACPI\\VEN_PNP\u0026DEV_0C14",
+    "Name": "Microsoft Windows Management Interface for ACPI",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "wmiacpi.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\MSRRAS\\MS_SSTPMINIPORT",
+    "DeviceID": "ms_sstpminiport",
+    "Name": "WAN 微型端口(SSTP)",
+    "Class": "Net",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "netsstpa.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI_HAL\\UEFI\\0",
+    "DeviceID": "ACPI_HAL\\UEFI",
+    "Name": "Microsoft UEFI 兼容系统",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "uefi.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_166E\u0026SUBSYS_00000000\u0026REV_00\\3\u00262411E6FE\u00260\u0026C4",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_166E\u0026SUBSYS_00000000\u0026REV_00",
+    "Name": "PCI 标准主机 CPU 桥",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_1639\u0026SUBSYS_382917AA\u0026REV_00\\\u003cinstance\u003e",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_1639\u0026SUBSYS_382917AA\u0026REV_00",
+    "Name": "符合 USB xHCI 的主机控制器",
+    "Class": "USB",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "usbxhci.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\DRIVERENUM\\{C3A63EDD-2D27-4B66-B155-5E94B43D926A}#REALTEKAPO\u00266\u00266759B03\u00260",
+    "DeviceID": "SWC\\VEN_10EC\u0026AID_0011",
+    "Name": "Realtek Audio Effects Component",
+    "Class": "SoftwareComponent",
+    "DriverVersion": "12.23.1057.27",
+    "InfName": "oem60.inf",
+    "ProviderName": "Realtek",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "STORAGE\\VOLUME\\{6580843D-9D63-11F1-A0BA-806E6F6E6963}#000000001F500000",
+    "DeviceID": "STORAGE\\Volume",
+    "Name": "卷",
+    "Class": "Volume",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "volume.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HID\\VID_046D\u0026PID_C534\u0026MI_01\u0026COL04\\\u003cinstance\u003e",
+    "DeviceID": "HID\\VID_046D\u0026PID_C534\u0026REV_5101\u0026MI_01\u0026Col04",
+    "Name": "符合 HID 标准的供应商定义设备",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "input.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\FIXEDBUTTON\\2\u0026DABA3FF\u00260",
+    "DeviceID": "ACPI\\FixedButton",
+    "Name": "ACPI 固定功能按钮",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HID\\ELAN06FA\u0026COL04\\\u003cinstance\u003e",
+    "DeviceID": "HID\\VEN_ELAN\u0026DEV_06FA\u0026SUBSYS_ELAN0001\u0026Col04",
+    "Name": "Microsoft Input Configuration Device",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "mtconfig.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\MMDEVAPI\\{0.0.0.00000000}.{B0E84016-6852-4677-81A7-B2D364799262}",
+    "DeviceID": "MMDEVAPI\\AudioEndpoints",
+    "Name": "音频端点",
+    "Class": "AudioEndpoint",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "audioendpoint.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\PNP0C02\\90",
+    "DeviceID": "ACPI\\VEN_PNP\u0026DEV_0C02",
+    "Name": "母板资源",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HID\\VID_048D\u0026PID_C101\u0026COL01\\\u003cinstance\u003e",
+    "DeviceID": "HID\\VID_048D\u0026PID_C101\u0026REV_0700\u0026Col01",
+    "Name": "符合 HID 标准的供应商定义设备",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "input.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HID\\ELAN06FA\u0026COL03\\\u003cinstance\u003e",
+    "DeviceID": "HID\\VEN_ELAN\u0026DEV_06FA\u0026SUBSYS_ELAN0001\u0026Col03",
+    "Name": "符合 HID 标准的触摸板",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "input.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\ELAN06FA\\3\u0026C8C3232\u00260",
+    "DeviceID": "ACPI\\VEN_ELAN\u0026DEV_06FA\u0026SUBSYS_ELAN0001",
+    "Name": "I2C HID 设备",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.7663",
+    "InfName": "hidi2c.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HID\\ELAN06FA\u0026COL02\\\u003cinstance\u003e",
+    "DeviceID": "HID\\VEN_ELAN\u0026DEV_06FA\u0026SUBSYS_ELAN0001\u0026Col02",
+    "Name": "符合 HID 标准的供应商定义设备",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "input.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HID\\ELAN06FA\u0026COL01\\\u003cinstance\u003e",
+    "DeviceID": "HID\\VEN_ELAN\u0026DEV_06FA\u0026SUBSYS_ELAN0001\u0026Col01",
+    "Name": "HID-compliant mouse",
+    "Class": "Mouse",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "msmouse.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_166B\u0026SUBSYS_00000000\u0026REV_00\\3\u00262411E6FE\u00260\u0026C1",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_166B\u0026SUBSYS_00000000\u0026REV_00",
+    "Name": "PCI 标准主机 CPU 桥",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "USB\\VID_0BDA\u0026PID_4762\u0026MI_02\\\u003cinstance\u003e",
+    "DeviceID": "USB\\VID_0BDA\u0026PID_4762\u0026REV_1412\u0026MI_02",
+    "Name": "USB 输入设备",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "input.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HID\\VID_0BDA\u0026PID_4762\u0026MI_01\u0026COL01\\\u003cinstance\u003e",
+    "DeviceID": "HID\\VID_0BDA\u0026PID_4762\u0026REV_1412\u0026MI_01\u0026Col01",
+    "Name": "HID Keyboard Device",
+    "Class": "Keyboard",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "keyboard.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\MMDEVAPI\\MICROSOFTGSWAVETABLESYNTH",
+    "DeviceID": "",
+    "Name": "通用软件设备",
+    "Class": "SoftwareDevice",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "c_swdevice.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_15DF\u0026SUBSYS_382A17AA\u0026REV_00\\\u003cinstance\u003e",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_15DF\u0026SUBSYS_382A17AA\u0026REV_00",
+    "Name": "AMD PSP 10.0 Device",
+    "Class": "SecurityDevices",
+    "DriverVersion": "5.18.0.0",
+    "InfName": "oem85.inf",
+    "ProviderName": "Advanced Micro Devices Inc.",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\DRIVERENUM\\{C3A63EDD-2D27-4B66-B155-5E94B43D926A}#REALTEKSRV\u00266\u00266759B03\u00260",
+    "DeviceID": "SWC\\VEN_10EC\u0026SID_0001",
+    "Name": "Realtek Audio Universal Service",
+    "Class": "SoftwareComponent",
+    "DriverVersion": "1.0.0.533",
+    "InfName": "oem59.inf",
+    "ProviderName": "Realtek",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_1670\u0026SUBSYS_00000000\u0026REV_00\\3\u00262411E6FE\u00260\u0026C6",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_1670\u0026SUBSYS_00000000\u0026REV_00",
+    "Name": "PCI 标准主机 CPU 桥",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "DISPLAY\\CSO1600\\5\u0026A2BEA0B\u00260\u0026UID512",
+    "DeviceID": "MONITOR\\CSO1600",
+    "Name": "通用即插即用监视器",
+    "Class": "Monitor",
+    "DriverVersion": "10.0.19041.5794",
+    "InfName": "monitor.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\AUTHENTICAMD_-_AMD64_FAMILY_25_MODEL_80_-_AMD_RYZEN_7_5800H_WITH_RADEON_GRAPHICS_________\\0",
+    "DeviceID": "ACPI\\VEN_ACPI\u0026DEV_0007",
+    "Name": "AMD Processor",
+    "Class": "Processor",
+    "DriverVersion": "10.0.19041.6093",
+    "InfName": "cpu.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\AUTHENTICAMD_-_AMD64_FAMILY_25_MODEL_80_-_AMD_RYZEN_7_5800H_WITH_RADEON_GRAPHICS_________\\1",
+    "DeviceID": "ACPI\\VEN_ACPI\u0026DEV_0007",
+    "Name": "AMD Processor",
+    "Class": "Processor",
+    "DriverVersion": "10.0.19041.6093",
+    "InfName": "cpu.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\AUTHENTICAMD_-_AMD64_FAMILY_25_MODEL_80_-_AMD_RYZEN_7_5800H_WITH_RADEON_GRAPHICS_________\\2",
+    "DeviceID": "ACPI\\VEN_ACPI\u0026DEV_0007",
+    "Name": "AMD Processor",
+    "Class": "Processor",
+    "DriverVersion": "10.0.19041.6093",
+    "InfName": "cpu.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\AUTHENTICAMD_-_AMD64_FAMILY_25_MODEL_80_-_AMD_RYZEN_7_5800H_WITH_RADEON_GRAPHICS_________\\3",
+    "DeviceID": "ACPI\\VEN_ACPI\u0026DEV_0007",
+    "Name": "AMD Processor",
+    "Class": "Processor",
+    "DriverVersion": "10.0.19041.6093",
+    "InfName": "cpu.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\AUTHENTICAMD_-_AMD64_FAMILY_25_MODEL_80_-_AMD_RYZEN_7_5800H_WITH_RADEON_GRAPHICS_________\\4",
+    "DeviceID": "ACPI\\VEN_ACPI\u0026DEV_0007",
+    "Name": "AMD Processor",
+    "Class": "Processor",
+    "DriverVersion": "10.0.19041.6093",
+    "InfName": "cpu.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\AUTHENTICAMD_-_AMD64_FAMILY_25_MODEL_80_-_AMD_RYZEN_7_5800H_WITH_RADEON_GRAPHICS_________\\5",
+    "DeviceID": "ACPI\\VEN_ACPI\u0026DEV_0007",
+    "Name": "AMD Processor",
+    "Class": "Processor",
+    "DriverVersion": "10.0.19041.6093",
+    "InfName": "cpu.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\AUTHENTICAMD_-_AMD64_FAMILY_25_MODEL_80_-_AMD_RYZEN_7_5800H_WITH_RADEON_GRAPHICS_________\\6",
+    "DeviceID": "ACPI\\VEN_ACPI\u0026DEV_0007",
+    "Name": "AMD Processor",
+    "Class": "Processor",
+    "DriverVersion": "10.0.19041.6093",
+    "InfName": "cpu.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\AUTHENTICAMD_-_AMD64_FAMILY_25_MODEL_80_-_AMD_RYZEN_7_5800H_WITH_RADEON_GRAPHICS_________\\7",
+    "DeviceID": "ACPI\\VEN_ACPI\u0026DEV_0007",
+    "Name": "AMD Processor",
+    "Class": "Processor",
+    "DriverVersion": "10.0.19041.6093",
+    "InfName": "cpu.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\AUTHENTICAMD_-_AMD64_FAMILY_25_MODEL_80_-_AMD_RYZEN_7_5800H_WITH_RADEON_GRAPHICS_________\\8",
+    "DeviceID": "ACPI\\VEN_ACPI\u0026DEV_0007",
+    "Name": "AMD Processor",
+    "Class": "Processor",
+    "DriverVersion": "10.0.19041.6093",
+    "InfName": "cpu.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\AUTHENTICAMD_-_AMD64_FAMILY_25_MODEL_80_-_AMD_RYZEN_7_5800H_WITH_RADEON_GRAPHICS_________\\9",
+    "DeviceID": "ACPI\\VEN_ACPI\u0026DEV_0007",
+    "Name": "AMD Processor",
+    "Class": "Processor",
+    "DriverVersion": "10.0.19041.6093",
+    "InfName": "cpu.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\AUTHENTICAMD_-_AMD64_FAMILY_25_MODEL_80_-_AMD_RYZEN_7_5800H_WITH_RADEON_GRAPHICS_________\\A",
+    "DeviceID": "ACPI\\VEN_ACPI\u0026DEV_0007",
+    "Name": "AMD Processor",
+    "Class": "Processor",
+    "DriverVersion": "10.0.19041.6093",
+    "InfName": "cpu.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\AUTHENTICAMD_-_AMD64_FAMILY_25_MODEL_80_-_AMD_RYZEN_7_5800H_WITH_RADEON_GRAPHICS_________\\B",
+    "DeviceID": "ACPI\\VEN_ACPI\u0026DEV_0007",
+    "Name": "AMD Processor",
+    "Class": "Processor",
+    "DriverVersion": "10.0.19041.6093",
+    "InfName": "cpu.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\AUTHENTICAMD_-_AMD64_FAMILY_25_MODEL_80_-_AMD_RYZEN_7_5800H_WITH_RADEON_GRAPHICS_________\\C",
+    "DeviceID": "ACPI\\VEN_ACPI\u0026DEV_0007",
+    "Name": "AMD Processor",
+    "Class": "Processor",
+    "DriverVersion": "10.0.19041.6093",
+    "InfName": "cpu.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\AUTHENTICAMD_-_AMD64_FAMILY_25_MODEL_80_-_AMD_RYZEN_7_5800H_WITH_RADEON_GRAPHICS_________\\D",
+    "DeviceID": "ACPI\\VEN_ACPI\u0026DEV_0007",
+    "Name": "AMD Processor",
+    "Class": "Processor",
+    "DriverVersion": "10.0.19041.6093",
+    "InfName": "cpu.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\AUTHENTICAMD_-_AMD64_FAMILY_25_MODEL_80_-_AMD_RYZEN_7_5800H_WITH_RADEON_GRAPHICS_________\\E",
+    "DeviceID": "ACPI\\VEN_ACPI\u0026DEV_0007",
+    "Name": "AMD Processor",
+    "Class": "Processor",
+    "DriverVersion": "10.0.19041.6093",
+    "InfName": "cpu.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\AUTHENTICAMD_-_AMD64_FAMILY_25_MODEL_80_-_AMD_RYZEN_7_5800H_WITH_RADEON_GRAPHICS_________\\F",
+    "DeviceID": "ACPI\\VEN_ACPI\u0026DEV_0007",
+    "Name": "AMD Processor",
+    "Class": "Processor",
+    "DriverVersion": "10.0.19041.6093",
+    "InfName": "cpu.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\PNP0B00\\4\u0026302A01F5\u00260",
+    "DeviceID": "ACPI\\VEN_PNP\u0026DEV_0B00",
+    "Name": "系统 CMOS/实时时钟",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\PNP0C01\\4\u0026302A01F5\u00260",
+    "DeviceID": "ACPI\\VEN_PNP\u0026DEV_0C01",
+    "Name": "系统板",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ROOT\\AMDLOG\\0000",
+    "DeviceID": "ROOT\\AMDLOG",
+    "Name": "AMD Crash Defender",
+    "Class": "System",
+    "DriverVersion": "21.40.0.2",
+    "InfName": "oem69.inf",
+    "ProviderName": "AMD",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ROOT\\NDISVIRTUALBUS\\0000",
+    "DeviceID": "ROOT\\NdisVirtualBus",
+    "Name": "NDIS 虚拟网络适配器枚举器",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "ndisvirtualbus.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "USB\\VID_0BDA\u0026PID_4762\\0123456789",
+    "DeviceID": "USB\\VID_0BDA\u0026PID_4762\u0026REV_1412",
+    "Name": "USB Composite Device",
+    "Class": "USB",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "usb.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\AMDI0010\\1",
+    "DeviceID": "ACPI\\VEN_AMDI\u0026DEV_0010",
+    "Name": "AMD I2C Controller",
+    "Class": "System",
+    "DriverVersion": "1.2.0.118",
+    "InfName": "oem87.inf",
+    "ProviderName": "Advanced Micro Devices, Inc.",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\AMDI0010\\3",
+    "DeviceID": "ACPI\\VEN_AMDI\u0026DEV_0010",
+    "Name": "AMD I2C Controller",
+    "Class": "System",
+    "DriverVersion": "1.2.0.118",
+    "InfName": "oem87.inf",
+    "ProviderName": "Advanced Micro Devices, Inc.",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\NVDA0820\\NPCF",
+    "DeviceID": "ACPI\\VEN_NVDA\u0026DEV_0820",
+    "Name": "NVIDIA Platform Controllers and Framework",
+    "Class": "SoftwareDevice",
+    "DriverVersion": "31.0.15.4570",
+    "InfName": "oem93.inf",
+    "ProviderName": "NVIDIA",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HID\\VID_046D\u0026PID_C534\u0026MI_01\u0026COL05\\\u003cinstance\u003e",
+    "DeviceID": "HID\\VID_046D\u0026PID_C534\u0026REV_5101\u0026MI_01\u0026Col05",
+    "Name": "符合 HID 标准的供应商定义设备",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.7548",
+    "InfName": "input.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SCSI\\DISK\u0026VEN_NVME\u0026PROD_WDC_PC_SN730_SDB\\\u003cinstance\u003e",
+    "DeviceID": "SCSI\\DiskNVMe______________WDC_PC_SN730_SDBPNTY-512G-110111170001",
+    "Name": "磁盘驱动器",
+    "Class": "DiskDrive",
+    "DriverVersion": "10.0.19041.4597",
+    "InfName": "disk.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\PNP0000\\4\u0026302A01F5\u00260",
+    "DeviceID": "ACPI\\VEN_PNP\u0026DEV_0000",
+    "Name": "可编程中断控制器",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HID\\VID_0BDA\u0026PID_4762\u0026MI_00\\\u003cinstance\u003e",
+    "DeviceID": "HID\\VID_0BDA\u0026PID_4762\u0026REV_1412\u0026MI_00",
+    "Name": "HID-compliant mouse",
+    "Class": "Mouse",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "msmouse.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HID\\VID_046D\u0026PID_C534\u0026MI_00\\\u003cinstance\u003e",
+    "DeviceID": "HID\\VID_046D\u0026PID_C534\u0026REV_5101\u0026MI_00",
+    "Name": "HID Keyboard Device",
+    "Class": "Keyboard",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "keyboard.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_7901\u0026SUBSYS_383F17AA\u0026REV_81\\\u003cinstance\u003e",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_7901\u0026SUBSYS_383F17AA\u0026REV_81",
+    "Name": "标准 SATA AHCI 控制器",
+    "Class": "HDC",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "mshdc.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HID\\VID_048D\u0026PID_C101\u0026COL02\\\u003cinstance\u003e",
+    "DeviceID": "HID\\VID_048D\u0026PID_C101\u0026REV_0700\u0026Col02",
+    "Name": "HID Keyboard Device",
+    "Class": "Keyboard",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "keyboard.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_7901\u0026SUBSYS_383F17AA\u0026REV_81\\\u003cinstance\u003e",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_7901\u0026SUBSYS_383F17AA\u0026REV_81",
+    "Name": "标准 SATA AHCI 控制器",
+    "Class": "HDC",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "mshdc.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "UEFI\\RES_{69CCDA90-5028-0CEE-4DEA-72B18F08D854}\\0",
+    "DeviceID": "UEFI\\RES_{69ccda90-5028-0cee-4dea-72b18f08d854}\u0026REV_60374065",
+    "Name": "系统固件",
+    "Class": "Firmware",
+    "DriverVersion": "10.0.19041.7291",
+    "InfName": "c_firmware.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_1633\u0026SUBSYS_388617AA\u0026REV_00\\\u003cinstance\u003e",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_1633\u0026SUBSYS_388617AA\u0026REV_00",
+    "Name": "PCI Express 根端口",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.6456",
+    "InfName": "pci.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\DRIVERENUM\\{741A2100-1023-11E9-B56E-0800200C9A66}#NAHIMIC_MIRRORING\u00266\u00266759B03\u00260",
+    "DeviceID": "ROOT\\Nahimic_Mirroring",
+    "Name": "Nahimic mirroring device",
+    "Class": "MEDIA",
+    "DriverVersion": "2.0.0.0",
+    "InfName": "oem62.inf",
+    "ProviderName": "Nahimic",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HDAUDIO\\FUNC_01\u0026VEN_10DE\u0026DEV_009F\u0026SUBSYS_FFFFFFFF\u0026REV_1001\\\u003cinstance\u003e",
+    "DeviceID": "HDAUDIO\\FUNC_01\u0026VEN_10DE\u0026DEV_009F\u0026SUBSYS_FFFFFFFF\u0026REV_1001",
+    "Name": "NVIDIA High Definition Audio",
+    "Class": "MEDIA",
+    "DriverVersion": "1.3.40.14",
+    "InfName": "oem92.inf",
+    "ProviderName": "NVIDIA Corporation",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_8086\u0026DEV_2723\u0026SUBSYS_00848086\u0026REV_1A\\\u003cinstance\u003e",
+    "DeviceID": "PCI\\VEN_8086\u0026DEV_2723\u0026SUBSYS_00848086\u0026REV_1A",
+    "Name": "Intel(R) Wi-Fi 6 AX200 160MHz",
+    "Class": "Net",
+    "DriverVersion": "23.100.0.4",
+    "InfName": "oem9.inf",
+    "ProviderName": "Intel",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ROOT\\MSSMBIOS\\0000",
+    "DeviceID": "ROOT\\mssmbios",
+    "Name": "Microsoft System Management BIOS Driver",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "mssmbios.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\PNP0200\\4\u0026302A01F5\u00260",
+    "DeviceID": "ACPI\\VEN_PNP\u0026DEV_0200",
+    "Name": "直接内存访问控制器",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ROOT\\SYSTEM\\0000",
+    "DeviceID": "ROOT\\SWENUM",
+    "Name": "即插即用软件设备枚举器",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "swenum.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "HID\\VID_0BDA\u0026PID_4762\u0026MI_01\u0026COL02\\\u003cinstance\u003e",
+    "DeviceID": "HID\\VID_0BDA\u0026PID_4762\u0026REV_1412\u0026MI_01\u0026Col02",
+    "Name": "符合 HID 标准的用户控制设备",
+    "Class": "HIDClass",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "hidserv.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ACPI\\PNP0C02\\3\u00262411E6FE\u00260",
+    "DeviceID": "ACPI\\VEN_PNP\u0026DEV_0C02",
+    "Name": "母板资源",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "ROOT\\RDPBUS\\0000",
+    "DeviceID": "ROOT\\RDPBUS",
+    "Name": "远程桌面设备重定向程序总线",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.7058",
+    "InfName": "rdpbus.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\DRIVERENUM\\{C3A63EDD-2D27-4B66-B155-5E94B43D926A}#REALTEKHSA\u00266\u00266759B03\u00260",
+    "DeviceID": "SWC\\VEN_10EC\u0026HID_0001",
+    "Name": "Realtek Hardware Support Application",
+    "Class": "SoftwareComponent",
+    "DriverVersion": "11.0.6000.273",
+    "InfName": "oem58.inf",
+    "ProviderName": "Realtek",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_166D\u0026SUBSYS_00000000\u0026REV_00\\3\u00262411E6FE\u00260\u0026C3",
+    "DeviceID": "PCI\\VEN_1022\u0026DEV_166D\u0026SUBSYS_00000000\u0026REV_00",
+    "Name": "PCI 标准主机 CPU 桥",
+    "Class": "System",
+    "DriverVersion": "10.0.19041.3636",
+    "InfName": "machine.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\MSRRAS\\MS_NDISWANIPV6",
+    "DeviceID": "ms_ndiswanipv6",
+    "Name": "WAN 微型端口(IPv6)",
+    "Class": "Net",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "netrasa.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  },
+  {
+    "PnpDeviceID": "SWD\\MSRRAS\\MS_L2TPMINIPORT",
+    "DeviceID": "ms_l2tpminiport",
+    "Name": "WAN 微型端口(L2TP)",
+    "Class": "Net",
+    "DriverVersion": "10.0.19041.1",
+    "InfName": "netrasa.inf",
+    "ProviderName": "Microsoft",
+    "ProblemNumber": 0
+  }
+]
