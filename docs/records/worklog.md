@@ -553,3 +553,32 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed** — 文档写回，待 commit。
+
+---
+
+## Session: 端到端证据链闭环
+
+**Branch**: `main`
+
+### Summary
+
+把散点证据接成一条可验证的端到端链。链上每个输入都是真机实录，结论与真机 `-DryRun` 逐项对齐；离线与实战一旦分歧，对应的计数就会不匹配。
+
+### Main Changes
+
+- 新增 `internal/inventory/evidence_fixture_dump_test.go`：`LENOVO_EVIDENCE_FIXTURE_DUMP=1` 时用**被测代码自己的采集器**导出真机夹具（169 台设备含驱动版本 + 软件快照去重）。不用第三方脚本——那等于拿外部数据验被测系统。
+- 新增 `internal/app/evidence_chain_test.go`：链上 9 个环节 `ParseQuickFix → filterDriverRows → SelectLatestDrivers → TestDriverApplicable → ResolveLocalDriverVersion → CompareDriverStatus → partitionViewDrivers → WriteHistoryRecord → diffDeviceSnapshots → 按列归因`，逐状态断言真机数字。
+- 新增夹具三件（`internal/app/testdata/`）：真实 QuickFix 响应脱敏（24 条，token 全部 `REDACTED`）、169 台设备（167 台带版本，实例尾替为 `\<instance>`）、182 条去重应用。
+- 门禁 25 → 27 步：新增 `evidence chain runs on real fixtures`（链与 9 个环节必须在、夹具必须在且不小于 2KB）与 `recorded fixtures carry no live credentials or device serials`（token / 主板序列号 / 真实实例 ID 任一出现即失败）。
+
+### Testing
+
+- [实测] 链上结论与真机逐项吻合：`24 → 23 installable → 23 latest`；`Update 0 / Up to date 1 / Not installed 1 / Local newer 9 / Not applicable 12`；自动集 1 个 = `DRV201907160015`，目标 `ACPI\VPC2004\0`，账本按设备列归因。
+- [实测] **建链过程抓到三处此前不可见的偏差**：(1) 漏 `filterDriverRows` → 多评估 `DRV200011235378`，实为 62 字节 `TouchPadReadme.txt`（`.txt` 不在 `installableExts`）；(2) 漏软件快照 → 3 条退回 undetermined（Fn 键 / Energy Management / AMD Power 的本机版本来自 InstalledApps 而非 PnP 属性）；(3) `filterDriverRows` 与 `SelectLatestDrivers` 顺序写反（真机 view.go:247→248），两种顺序本机结果相同故测试照样绿。
+- [实测] 红灯注入 6 个接缝，5 个被精确捕获；第 6 个（时序）无区分力——`SelectLatestDrivers` 在默认路径（本机 OSID 42 单列表）是恒等变换，23 行落在 23 个 `{PartID, DriverName}` 组内。已用 `TestEvidenceChainLatestSelectionIsIdentityOnThisFixture` 把"为什么恒等"钉死，不冒充通过。
+- [实测] 探测脚本一度把 `view.go` 与 `evidence_chain_test.go` 写成彼此的内容（`Copy-Item $files "$file.probe"` 数组拷向同一路径），已从 git 恢复 `view.go`（474 行校验通过）并重写测试文件。此后放弃在生产源文件上做变异探测——静态规则由门禁守，破坏被测文件换来的结论不值。
+- [OK] `scripts/verify.ps1` 27/27 VERIFY_OK。
+
+### Status
+
+[OK] **Completed** — 文档写回，待 commit。
