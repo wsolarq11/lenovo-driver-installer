@@ -297,6 +297,37 @@ Assert-Step 'tests never write to the real audit directory' {
     }
 }
 
+Assert-Step 'automatic install set excludes downgrade and no-op statuses' {
+    # Invariant 3 admits only Update and Not installed into the unattended set.
+    # A loose "!= Not applicable" admits Local newer, which downgrades the
+    # device (82JQ: 9 of 11 candidates, AMD VGA 30.0.14052.9003 -> 27.20.15026.8004)
+    # and Up to date, which is a no-op. Membership is owned by one model
+    # predicate so the rule cannot drift back into the view layer.
+    $model = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\model\model.go') -Raw
+    if ($model -notmatch '(?s)func\s+InAutomaticInstallSet\(status\s+CompareStatus\)\s*bool\s*\{(.*?)\n\}') {
+        throw 'model.go must own InAutomaticInstallSet as the single membership authority'
+    }
+    $body = $Matches[1]
+    if ($body -match '!=') {
+        throw 'InAutomaticInstallSet must be an explicit allow-list (==); a "!=" comparison silently re-admits downgrade/no-op statuses'
+    }
+    foreach ($required in @('StatusUpdate', 'StatusNotInstalled')) {
+        if ($body -notmatch $required) {
+            throw "InAutomaticInstallSet must admit $required explicitly"
+        }
+    }
+    $view = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\view.go') -Raw
+    if ($view -match 'CompareStatus\s*!=\s*model\.StatusNotApplicable\s*\{\s*\n\s*applicable\s*=') {
+        throw 'view.go partitions the automatic install set with a loose comparison; use model.InAutomaticInstallSet'
+    }
+    # The interactive prompt must describe the set it actually installs, and the
+    # manual selection path must stay reachable for excluded statuses.
+    $interactive = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\interactive.go') -Raw
+    if ($interactive -match 'all-applicable|all applicable') {
+        throw 'interactive prompt still advertises the old "all applicable" set whose membership changed'
+    }
+}
+
 Assert-Step 'git diff check' {
     $diff = git diff --check
     if ($LASTEXITCODE -ne 0) { throw "git diff --check failed`n$diff" }

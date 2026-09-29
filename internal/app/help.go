@@ -39,8 +39,11 @@ Options:
 
 Interactive choices:
   y  Install the update-only driver set.
-  a  Install all applicable drivers.
-  s  Select driver numbers manually, for example 1,3,5.
+  a  Install the install set: the drivers this machine is behind on, plus the
+     ones not installed. Drivers already newer than the official list are left
+     out, so a never downgrades a device.
+  s  Select driver numbers manually, for example 1,3,5. This is the only way to
+     install a driver that is already newer on this machine.
   t  Switch to another supported OS list when multiple OS entries are available.
   n  Cancel.
 

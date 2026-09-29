@@ -61,14 +61,14 @@ func (a *App) SelectInteractive(
 
 func (a *App) promptSelection(view *DriverView, allowToggle bool, nextOSLabel string) SelectionAnswer {
 	if len(view.Updates) > 0 {
-		fmt.Fprintf(a.Stdout, "Ready: %d update-only drivers, %d all applicable drivers.\n", len(view.Updates), len(view.Applicable))
+		fmt.Fprintf(a.Stdout, "Ready: %d update-only drivers, %d in the install set.\n", len(view.Updates), len(view.Applicable))
 		showActionPreview(a.Stdout, 'y', "update-only", view.Updates)
-		showActionPreview(a.Stdout, 'a', "all applicable", view.Applicable)
+		showActionPreview(a.Stdout, 'a', "install set", view.Applicable)
 		return a.promptChoice(view, allowToggle, nextOSLabel, true)
 	}
 
-	fmt.Fprintf(a.Stdout, "No clear updates detected. %d applicable candidates remain.\n", len(view.Applicable))
-	showActionPreview(a.Stdout, 'a', "all applicable", view.Applicable)
+	fmt.Fprintf(a.Stdout, "No clear updates detected. %d drivers in the install set.\n", len(view.Applicable))
+	showActionPreview(a.Stdout, 'a', "install set", view.Applicable)
 	return a.promptChoice(view, allowToggle, nextOSLabel, false)
 }
 
@@ -77,9 +77,9 @@ func (a *App) promptChoice(view *DriverView, allowToggle bool, nextOSLabel strin
 	if allowToggle {
 		toggleText = ", t to switch to " + nextOSLabel
 	}
-	prompt := "Type a to install the all-applicable set"
+	prompt := "Type a to install the install set"
 	if hasUpdates {
-		prompt = "Type y to install the update-only set, a to install the all-applicable set"
+		prompt = "Type y to install the update-only set, a to install the install set"
 	}
 	fmt.Fprintf(a.Stdout, "%s, s to select%s, n to cancel: ", prompt, toggleText)
 	line, err := readLine(a.Stdin)

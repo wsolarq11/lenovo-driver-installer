@@ -360,14 +360,16 @@ func (a *App) assessSelectedDrivers(ctx context.Context, vc *ViewContext, select
 	return out
 }
 
-// partitionViewDrivers splits the assessed drivers into the applicable and
-// update-only groups used by the interactive view.
+// partitionViewDrivers splits the assessed drivers into the automatic install
+// set and the update-only group used by the interactive view. Membership in the
+// automatic set is decided by model.InAutomaticInstallSet, which excludes
+// Local newer (installing it downgrades the device) and Up to date (a no-op).
 func partitionViewDrivers(selected []*model.AssessedDriver) (applicable, updates []*model.AssessedDriver) {
 	for _, ad := range selected {
 		if ad == nil || ad.Driver == nil {
 			continue
 		}
-		if ad.CompareStatus != model.StatusNotApplicable {
+		if model.InAutomaticInstallSet(ad.CompareStatus) {
 			applicable = append(applicable, ad)
 		}
 		if ad.CompareStatus == model.StatusUpdate {

@@ -14,6 +14,28 @@ const (
 	StatusNotApplicable CompareStatus = "Not applicable"
 )
 
+// InAutomaticInstallSet reports whether a status may enter the automatic
+// install set (the interactive "all applicable" action). It is the single
+// authority for that membership, so the rule cannot drift between the view
+// partition and the plan/console wording.
+//
+// Invariant 3 ("default inaction") admits only a driver that is measurably
+// missing or measurably behind. Two statuses are deliberately excluded even
+// though their hardware matches:
+//
+//   - StatusLocalNewer: the machine already runs a newer version than the
+//     official list offers, so installing it DOWNGRADES the device. On 82JQ
+//     this covered 9 of 11 candidates, including AMD VGA 30.0.14052.9003 being
+//     replaced by 27.20.15026.8004. Its evidence basis is inference, not fact.
+//   - StatusUpToDate: versions match, so the install is a no-op.
+//
+// Excluding them constrains only what the tool does unattended. A driver in
+// either status stays selectable explicitly (interactive "s", or -GuiInstallCodes),
+// which is where the operator, not the tool, makes the call.
+func InAutomaticInstallSet(status CompareStatus) bool {
+	return status == StatusUpdate || status == StatusNotInstalled
+}
+
 // StatusEvidenceBasis classifies how strongly a comparison status is backed by
 // measured evidence. It is the single projection used by plan text, console
 // summary, interactive prompts, and GUI export so the fact/inference/
