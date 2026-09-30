@@ -342,6 +342,63 @@ Assert-Step 'automatic install set excludes downgrade and no-op statuses' {
         throw 'WPF install-all button still says "安装全部可安装"; the set no longer contains every applicable driver'
     }
 
+Assert-Step 'a run reports only what the recheck confirmed' {
+    # An installer can exit 0 without changing the machine. On 82JQ a drill for
+    # DRV202102040007 logged "Install success" plus "Recheck: unchanged" while the
+    # machine gained nothing, because the verdict came from the exit code alone.
+    # The recheck's binding must gate the summary, and the labels that carry no
+    # evidence must not be counted as successes.
+    $install = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\install.go') -Raw
+    # The pure binding verdicts live beside install.go, not inside it, so the
+    # gate follows them rather than pinning a file that a later split would move.
+    $bindingPath = Join-Path $repoRoot 'internal\app\install_binding.go'
+    if (-not (Test-Path -LiteralPath $bindingPath)) {
+        throw 'install_binding.go is gone; the binding verdicts lost their single owner'
+    }
+    $binding = Get-Content -LiteralPath $bindingPath -Raw
+    if ($binding -notmatch 'func\s+installBindingConfirmsEffect') {
+        throw 'installBindingConfirmsEffect is gone; the run summary is no longer gated on the recheck'
+    }
+    # Read the confirmation function's own body: the labels share one case arm,
+    # so matching case arms line by line would miss all three.
+    $cm = [regex]::Match($binding, '(?s)func\s+installBindingConfirmsEffect\(binding\s+string\)\s*bool\s*\{(.*?)\n\}')
+    if (-not $cm.Success) {
+        throw 'could not locate installBindingConfirmsEffect'
+    }
+    $confirms = $cm.Groups[1].Value
+    if ($confirms -notmatch '(?m)^\s*case\s') {
+        throw 'installBindingConfirmsEffect no longer enumerates confirmed bindings by name'
+    }
+    foreach ($label in @('bound', 'staged', 'unchanged-same')) {
+        if ($confirms -notmatch [regex]::Escape($label)) {
+            throw "binding $label no longer counts as a confirmed install"
+        }
+    }
+    foreach ($label in @('unchanged', 'undetected')) {
+        if ($confirms -match ('case[^\r\n]*"' + [regex]::Escape($label) + '"[^\r\n]*:\s*\r?\n\s*return\s+true')) {
+            throw "binding $label carries no evidence of effect but is counted as a confirmed install"
+        }
+    }
+    if ($binding -notmatch 'versionComparable\s+bool') {
+        throw 'installBindingLabel no longer takes version comparability; software-versioned drivers ' +
+              'will compare device versions that carry no version and be declared unchanged again'
+    }
+    if ($install -notmatch 'unverified=\%d') {
+        throw 'the Finished summary no longer reports an unverified count'
+    }
+    if ($install -notmatch 'installBindingConfirmsEffect\(binding\)') {
+        throw 'verifyInstalled no longer filters drivers through the confirmation gate'
+    }
+    $t = Join-Path $repoRoot 'internal\app\app_test.go'
+    $text = Get-Content -LiteralPath $t -Raw
+    foreach ($fn in @('TestInstallBindingLabelHasNoVerdictWithoutComparableVersions',
+                      'TestOnlyConfirmedBindingsCountAsSuccess')) {
+        if ($text -notmatch ('func\s+' + [regex]::Escape($fn))) {
+            throw "$fn is gone; the recheck-to-summary gate is unguarded"
+        }
+    }
+}
+
 Assert-Step 'driver selection order is a total order' {
     # PartID is not a total sort key: on 82JQ one PartID covers several groups
     # (249 alone holds five different WLAN vendors). A PartID-only stable sort
