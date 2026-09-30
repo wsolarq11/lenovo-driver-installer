@@ -65,8 +65,20 @@ func SelectLatestDrivers(drivers []*model.Driver, currentOsID string) []*model.D
 		}
 		selected = append(selected, best)
 	}
-	sort.SliceStable(selected, func(i, j int) bool {
-		return selected[i].PartID < selected[j].PartID
+	// The sort key must be total. PartID alone is not: on 82JQ a single PartID
+	// covers several groups (249 holds five different WLAN vendors), so a
+	// PartID-only sort left those rows in map-iteration order and the GUI export,
+	// the plan file and the console listing came out in a different order on
+	// every run of an identical input. The key mirrors the grouping key and adds
+	// DriverCode so no two rows can tie.
+	sort.Slice(selected, func(i, j int) bool {
+		if selected[i].PartID != selected[j].PartID {
+			return selected[i].PartID < selected[j].PartID
+		}
+		if selected[i].DriverName != selected[j].DriverName {
+			return selected[i].DriverName < selected[j].DriverName
+		}
+		return selected[i].DriverCode < selected[j].DriverCode
 	})
 	return selected
 }
