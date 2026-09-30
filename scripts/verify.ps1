@@ -342,6 +342,39 @@ Assert-Step 'automatic install set excludes downgrade and no-op statuses' {
         throw 'WPF install-all button still says "安装全部可安装"; the set no longer contains every applicable driver'
     }
 
+Assert-Step 'driver selection order is a total order' {
+    # PartID is not a total sort key: on 82JQ one PartID covers several groups
+    # (249 alone holds five different WLAN vendors). A PartID-only stable sort
+    # therefore left the surviving rows in map-iteration order, and consecutive
+    # -DryRun exports of identical input disagreed on row order. The tie-breaks
+    # below must match the grouping key so no two rows can tie.
+    $sel = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\compare\selection.go') -Raw
+    $m = [regex]::Match($sel, '(?s)sort\.Slice\(selected, func\(i, j int\) bool \{(.*?)\n\t\}\)')
+    if (-not $m.Success) {
+        throw 'could not locate the SelectLatestDrivers sort; ordering is unguarded'
+    }
+    $body = $m.Groups[1].Value
+    foreach ($key in @('PartID', 'DriverName', 'DriverCode')) {
+        if ($body -notmatch [regex]::Escape($key)) {
+            throw "the selection sort does not tie-break on $key; equal prefixes would fall back to map order"
+        }
+    }
+    if ($sel -match 'sort\.SliceStable\(selected') {
+        throw 'selection still uses SliceStable on a non-total key'
+    }
+    $t = Join-Path $repoRoot 'internal\app\evidence_firmware_determinism_test.go'
+    if (-not (Test-Path -LiteralPath $t)) {
+        throw 'evidence_firmware_determinism_test.go is gone; determinism is unguarded'
+    }
+    $text = Get-Content -LiteralPath $t -Raw
+    if ($text -notmatch 'func\s+TestSelectionOrderIsDeterministic') {
+        throw 'TestSelectionOrderIsDeterministic is gone'
+    }
+    if ($text -notmatch 'func\s+TestFirmwareRowsAreDroppedUnlessRequested') {
+        throw 'the firmware branch has no coverage and no recorded list can provide it'
+    }
+}
+
 Assert-Step 'the automatic install set is backed by measurements only' {
     # Two decisions, two files: which statuses may be installed unattended, and
     # how strongly each status is evidenced. If they drift apart, the tool
