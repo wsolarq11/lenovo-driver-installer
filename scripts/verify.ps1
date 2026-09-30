@@ -421,6 +421,50 @@ Assert-Step 'a run reports only what the recheck confirmed' {
     }
 }
 
+Assert-Step 'one comparison primitive decides every version question' {
+    # ord(a,b) has four values, not three: Undecided is not Less. Folding them
+    # together is how an unmeasurable value becomes a fact — nil reads as older
+    # than everything, so an unparseable version would be reported as behind the
+    # list and handed to the automatic set.
+    $version = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\compare\version.go') -Raw
+    if ($version -notmatch 'type\s+VersionOrder\s+int') {
+        throw 'VersionOrder is gone; the undecided outcome is lost again'
+    }
+    foreach ($v in @('OrderUndecided', 'OrderLess', 'OrderEqual', 'OrderGreater')) {
+        if ($version -notmatch ("\b$v\b")) {
+            throw "VersionOrder lost the $v outcome"
+        }
+    }
+    $ord = [regex]::Match($version, '(?s)func\s+Order\(a, b \*Version\)\s*VersionOrder\s*\{(.*?)\n\}')
+    if (-not $ord.Success) {
+        throw 'the single Order comparator is gone'
+    }
+    if ($ord.Groups[1].Value -notmatch '(?s)a\s*==\s*nil\s*\|\|\s*b\s*==\s*nil\s*\{\s*return\s+OrderUndecided') {
+        throw 'Order must return OrderUndecided for a missing version before it considers direction'
+    }
+    if ($version -notmatch 'func\s+ResolveComparableVersion\(raw, vendor string\)') {
+        throw 'ResolveComparableVersion is gone; callers will compare raw strings again'
+    }
+    # The recheck and the compare pass must speak through that one primitive.
+    $binding = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\install_binding.go') -Raw
+    if ($binding -match '==\s*packageVersion|==\s*after\b|==\s*before\b') {
+        throw 'the post-install recheck is comparing raw version strings again; the WLAN rows carry ' +
+              '"Intel_22.10.0.7/Realtek8852AE_6001.0.10.336/Mediatek_3.0.1.1314" in Version, which no ' +
+              'local version can equal, so those drivers could never be confirmed bound'
+    }
+    if ($binding -notmatch 'compare\.Order\(') {
+        throw 'the post-install recheck no longer uses the one comparator'
+    }
+    $matching = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\compare\matching.go') -Raw
+    if ($matching -match 'localVersion\.Compare\(') {
+        throw 'CompareDriverStatus calls Version.Compare directly again; the undecided outcome would be ' +
+              'folded into a direction'
+    }
+    if ($matching -notmatch 'Order\(localVersion, remoteVersion\)') {
+        throw 'CompareDriverStatus no longer routes through Order'
+    }
+}
+
 Assert-Step 'silent install dispatches on the package, not on the vendor column' {
     # The vendor Parameter column is falsified: DRV202102040007 declares
     # "-QuietInstall" and its binary contains no such literal while carrying

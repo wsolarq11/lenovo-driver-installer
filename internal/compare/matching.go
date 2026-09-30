@@ -284,20 +284,21 @@ func CompareDriverStatus(remote, local, vendor string) model.CompareStatus {
 		// automatic set under the fact-only rule.
 		return model.StatusUnknown
 	}
-	remoteVersion := GetMatchingRemoteComponent(remote, vendor)
+	remoteVersion := ResolveComparableVersion(remote, vendor)
 	if remoteVersion == nil {
 		remoteVersion = ParseVersionString(remote)
 	}
-	localVersion := ParseVersionString(local)
-	if remoteVersion != nil && localVersion != nil {
-		if c := localVersion.Compare(remoteVersion); c > 0 {
-			return model.StatusLocalNewer
-		} else if c == 0 {
-			return model.StatusUpToDate
-		}
+	localVersion := ResolveComparableVersion(local, vendor)
+	switch Order(localVersion, remoteVersion) {
+	case OrderUndecided:
+		return model.StatusUnknown
+	case OrderGreater:
+		return model.StatusLocalNewer
+	case OrderEqual:
+		return model.StatusUpToDate
+	default:
 		return model.StatusUpdate
 	}
-	return model.StatusUnknown
 }
 
 type softwareRule struct {

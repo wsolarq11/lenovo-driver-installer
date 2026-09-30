@@ -1,6 +1,9 @@
 package app
 
-import "lenovo-driver/internal/model"
+import (
+	"lenovo-driver/internal/compare"
+	"lenovo-driver/internal/model"
+)
 
 // Post-install binding verdicts. These are pure functions kept apart from the
 // IO-heavy verification pass in install.go so the rule that decides whether a
@@ -23,17 +26,31 @@ import "lenovo-driver/internal/model"
 // provisioning placeholder, which equals itself no matter what happened; on 82JQ
 // a drill for DRV202102040007 logged "Install success" with "Recheck: unchanged"
 // while the machine gained nothing.
-func installBindingLabel(before, after, packageVersion string) string {
-	switch {
-	case !model.IsMeasuredLocalVersion(after):
+//
+// The comparison itself is compare.Order, the same one CompareDriverStatus uses.
+// Raw string equality was used here before and could never succeed for a
+// composite package: the WLAN rows carry
+// "Intel_22.10.0.7/Realtek8852AE_6001.0.10.336/Mediatek_3.0.1.1314" in Version,
+// which no device's local version can equal, so those drivers could never be
+// reported as bound no matter what happened on the machine.
+func installBindingLabel(before, after, packageVersion, vendor string) string {
+	afterV := compare.ResolveComparableVersion(after, vendor)
+	packageV := compare.ResolveComparableVersion(packageVersion, vendor)
+	if !model.IsMeasuredLocalVersion(after) || afterV == nil {
 		return "undetected"
-	case after == packageVersion && before == packageVersion:
-		return "unchanged-same"
-	case after == packageVersion:
+	}
+	switch compare.Order(afterV, packageV) {
+	case compare.OrderUndecided:
+		return "undetected"
+	case compare.OrderEqual:
+		if compare.Order(compare.ResolveComparableVersion(before, vendor), packageV) == compare.OrderEqual {
+			return "unchanged-same"
+		}
 		return "bound"
-	case before == after:
-		return "unchanged"
 	default:
+		if compare.Order(compare.ResolveComparableVersion(before, vendor), afterV) == compare.OrderEqual {
+			return "unchanged"
+		}
 		return "staged"
 	}
 }

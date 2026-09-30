@@ -527,16 +527,35 @@ func TestParseOptionsSignatureFlag(t *testing.T) {
 
 func TestInstallBindingLabel(t *testing.T) {
 	cases := []struct {
-		name, before, after, pkg, want string
+		name, before, after, pkg, vendor, want string
 	}{
-		{"bound", "1.0", "2.0", "2.0", "bound"},
-		{"already bound", "2.0", "2.0", "2.0", "unchanged-same"},
-		{"staged", "1.0", "1.5", "2.0", "staged"},
-		{"unchanged", "1.0", "1.0", "2.0", "unchanged"},
-		{"undetected", "1.0", "", "2.0", "undetected"},
+		{"bound", "1.0", "2.0", "2.0", "", "bound"},
+		{"already bound", "2.0", "2.0", "2.0", "", "unchanged-same"},
+		{"staged", "1.0", "1.5", "2.0", "", "staged"},
+		{"unchanged", "1.0", "1.0", "2.0", "", "unchanged"},
+		{"undetected", "1.0", "", "2.0", "", "undetected"},
+		// The live case: the vendor row names three packages in one Version
+		// field. Raw string equality could never match a local version against
+		// it, so this driver could never be reported as bound at all.
+		{
+			"composite package resolves by vendor",
+			"6001.0.10.336",
+			"6001.0.10.336",
+			"Intel_22.10.0.7/Realtek8852AE_6001.0.10.336/Mediatek_3.0.1.1314",
+			"Realtek",
+			"unchanged-same",
+		},
+		{
+			"composite package installs the vendor's component",
+			"22.10.0.7",
+			"6001.0.10.340",
+			"Intel_22.10.0.7/Realtek8852AE_6001.0.10.336/Mediatek_3.0.1.1314",
+			"Realtek",
+			"staged",
+		},
 	}
 	for _, tc := range cases {
-		if got := installBindingLabel(tc.before, tc.after, tc.pkg); got != tc.want {
+		if got := installBindingLabel(tc.before, tc.after, tc.pkg, tc.vendor); got != tc.want {
 			t.Fatalf("%s: installBindingLabel(%q, %q, %q) = %q, want %q", tc.name, tc.before, tc.after, tc.pkg, got, tc.want)
 		}
 	}
@@ -548,7 +567,7 @@ func TestInstallBindingLabel(t *testing.T) {
 // so before==after carried no information and the run was counted as a success.
 func TestInstallBindingLabelHasNoVerdictWithoutComparableVersions(t *testing.T) {
 	if got := installBindingLabel(model.LocalVersionProvisioned, model.LocalVersionProvisioned,
-		"6.0.0.9"); got != "undetected" {
+		"6.0.0.9", ""); got != "undetected" {
 		t.Fatalf("provisioned recheck = %q, want undetected", got)
 	}
 	if model.IsMeasuredLocalVersion(model.LocalVersionProvisioned) {
@@ -563,19 +582,22 @@ func TestInstallBindingLabelHasNoVerdictWithoutComparableVersions(t *testing.T) 
 // them as unverified.
 func TestInstallBindingReadsRealSoftwareVersions(t *testing.T) {
 	for _, tc := range []struct {
-		name, before, after, pkg, want string
+		name, before, after, pkg, vendor, want string
 	}{
-		{"installed the listed version", "15.11.29.13", "15.11.29.65", "15.11.29.65", "bound"},
-		{"already on the same version", "2.0.0.25", "2.0.0.25", "2.0.0.25", "unchanged-same"},
-		{"moved but short of the package", "1.0.2.0", "2.0.0.20", "2.0.0.25", "staged"},
-		{"first time seen", "", "6.0.0.9", "6.0.0.9", "bound"},
+		{"installed the listed version", "15.11.29.13", "15.11.29.65", "15.11.29.65", "", "bound"},
+		{"already on the same version", "2.0.0.25", "2.0.0.25", "2.0.0.25", "", "unchanged-same"},
+		{"moved but short of the package", "1.0.2.0", "2.0.0.20", "2.0.0.25", "", "staged"},
+		{"first time seen", "", "6.0.0.9", "6.0.0.9", "", "bound"},
+		// The vendor writes "15.11.29.13 MS signed"; the trailing words are not
+		// part of the number and must not defeat the comparison.
+		{"suffixed vendor string", "15.11.29.13", "15.11.29.13", "15.11.29.13 MS signed", "", "unchanged-same"},
 	} {
-		if got := installBindingLabel(tc.before, tc.after, tc.pkg); got != tc.want {
+		if got := installBindingLabel(tc.before, tc.after, tc.pkg, tc.vendor); got != tc.want {
 			t.Errorf("%s: installBindingLabel(%q, %q, %q) = %q, want %q", tc.name, tc.before, tc.after, tc.pkg, got, tc.want)
 		}
 	}
 	// A genuinely moved kernel-driver version is still judged on its own evidence.
-	if got := installBindingLabel("1.0", "2.0", "2.0"); got != "bound" {
+	if got := installBindingLabel("1.0", "2.0", "2.0", ""); got != "bound" {
 		t.Fatalf("kernel-driver recheck = %q, want bound", got)
 	}
 }

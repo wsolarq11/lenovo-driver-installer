@@ -363,7 +363,7 @@ func (a *App) verifyInstalled(ctx context.Context, drivers []*model.AssessedDriv
 		if problemLabel == "" {
 			problemLabel = "none"
 		}
-		binding := installBindingLabel(beforeLocal, afterLocal, driver.Version)
+		binding := installBindingLabel(beforeLocal, afterLocal, driver.Version, ad.LocalVendor)
 		if installBindingConfirmsEffect(binding) {
 			verified = append(verified, ad)
 		} else {
