@@ -183,9 +183,23 @@ func vendorParameter(driver *model.Driver) string {
 	return driver.InstallCode
 }
 
-// HasSilentParameters reports whether the formula can drive this package
-// unattended, so orchestration can pick the silent path or the interactive
-// fallback without ever guessing an installer family.
+// SilentPlanFor reports whether the formula can drive this package unattended,
+// and names the mechanism the decision rests on.
+//
+// The second value exists for the audit trail. A run that installs a package
+// with nobody present has to be able to answer, afterwards, why the tool
+// believed it could: a wrong family and a right one produce the same exit code
+// and the same silent outcome, so the exit code cannot carry this. Without the
+// evidence the ledger says "exit=0" and the reason is gone.
+func SilentPlanFor(filePath string, driver *model.Driver) (bool, string) {
+	plan := planSilentInstall(filePath, driver, "")
+	return plan.ok, plan.evidence
+}
+
+// HasSilentParameters reports only the decision. Callers that write an audit row
+// want SilentPlanFor instead, so the evidence is never computed and then
+// dropped on the floor.
 func HasSilentParameters(filePath string, driver *model.Driver) bool {
-	return planSilentInstall(filePath, driver, "").ok
+	canRun, _ := SilentPlanFor(filePath, driver)
+	return canRun
 }

@@ -592,6 +592,33 @@ Assert-Step 'silent install dispatches on the package, not on the vendor column'
     }
 }
 
+Assert-Step 'the silent mechanism reaches the ledger as prose, never as a version' {
+    # The evidence that authorised an unattended install has to survive into
+    # the audit row. It is prose: it names the installer family. The ledger's
+    # VerifiedVersion column is not a free slot, and writing a mechanism into
+    # it would silently convert "Inno Setup marker" into a version claim. The
+    # evidence therefore lives inside Message, which nothing parses
+    # (TestAuditAttributionIgnoresMessageText).
+    $app = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\install.go') -Raw
+    $silent = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\install_silent.go') -Raw
+    $fam = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\install\installer_family.go') -Raw
+    if ($fam -notmatch 'func\s+SilentPlanFor\(') {
+        throw 'SilentPlanFor is gone; the evidence has no single source'
+    }
+    if ($silent -notmatch 'install\.SilentPlanFor\(') {
+        throw 'the app no longer asks for the silent mechanism; the audit row is blind again'
+    }
+    if ($app -notmatch 'silent via') {
+        throw 'the Installed row no longer records which mechanism authorised the run'
+    }
+    # The evidence variable must never appear as a bare positional argument:
+    # that is how it leaks into VerifiedVersion/BeforeVersion and turns a
+    # mechanism into a version claim.
+    if ($app -match ', silence, ') {
+        throw 'silence is a bare positional argument to a write; the evidence is leaking into a version column'
+    }
+}
+
 Assert-Step 'the provisioning placeholder never reaches a decision' {
     # "Provisioned" is a fact about HKLM\...\Provisioning\Results, not a version.
     # It reached a decision twice: as a local version in the recheck, and as

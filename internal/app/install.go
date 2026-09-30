@@ -83,8 +83,9 @@ installLoop:
 		}
 
 		isEXE := strings.EqualFold(filepath.Ext(outFile), ".exe")
-		if isEXE && !install.HasSilentParameters(outFile, driver) {
-			a.Log(ctx, "["+driver.DriverCode+"] No official silent install parameters; using interactive install.", "WARN")
+		silence, interactive := silentInstallEvidence(driver, outFile)
+		if interactive {
+			a.Log(ctx, "["+driver.DriverCode+"] No proven silent mechanism in the package; using interactive install: "+silence, "WARN")
 			a.handleInteractiveExe(ctx, ad, outFile, dlDir, &success, &failed)
 			continue
 		}
@@ -97,13 +98,13 @@ installLoop:
 			// wait for that reboot. Stop the pass and defer the rest instead of
 			// chaining installs across an uncommitted driver state.
 			a.Log(ctx, fmt.Sprintf("[%s] Installed; reboot required (exit %d). Deferring remaining drivers.", driver.DriverCode, code), "WARN")
-			a.writeHistoryRecordChecked(ctx, ad, "Installed", fmt.Sprintf("exit=%d reboot-required", code), "", "")
+			a.writeHistoryRecordChecked(ctx, ad, "Installed", fmt.Sprintf("exit=%d reboot-required; silent via %s", code, silence), "", "")
 			success = append(success, ad)
 			deferred = append(deferred, selected[i+1:]...)
 			break installLoop
 		case outcomeSuccess:
 			a.Log(ctx, "["+driver.DriverCode+"] Install success.", "INFO")
-			a.writeHistoryRecordChecked(ctx, ad, "Installed", "exit=0", "", "")
+			a.writeHistoryRecordChecked(ctx, ad, "Installed", "exit=0; silent via "+silence, "", "")
 			success = append(success, ad)
 		case outcomeEXERetry:
 			a.handleInteractiveExe(ctx, ad, outFile, dlDir, &success, &failed)

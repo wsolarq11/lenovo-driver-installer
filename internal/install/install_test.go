@@ -270,6 +270,61 @@ func TestSilentInstallerArgsCoversEveryProvenFamily(t *testing.T) {
 	}
 }
 
+// TestSilentPlanEvidenceNamesWhatAuthorisedIt pins the audit requirement. A run
+// that installs unattended has to be able to say afterwards which mechanism
+// authorised it, because a right family and a wrong one produce the same exit
+// code and the same silent outcome. Evidence that is computed and then dropped
+// is the same as no evidence at all.
+func TestSilentPlanEvidenceNamesWhatAuthorisedIt(t *testing.T) {
+	for _, tc := range []struct {
+		name, marker, want string
+	}{
+		{"inno", "Inno Setup Setup Data (6.4.3)", "Inno Setup"},
+		{"nsis", "NullsoftInst", "NSIS"},
+		{"7z sfx", "!@Install@!UTF-8!", "7-Zip"},
+		{"wix burn", "app.wixburn", "WiX Burn"},
+		{"installshield", "InstallShield", "InstallShield"},
+	} {
+		path := writeStubPackage(t, tc.marker)
+		canRun, evidence := SilentPlanFor(path, &model.Driver{DriverCode: "d1"})
+		if !canRun {
+			t.Errorf("%s: SilentPlanFor refused a proven family", tc.name)
+		}
+		if !strings.Contains(evidence, tc.want) {
+			t.Errorf("%s: evidence = %q, want it to name %q", tc.name, evidence, tc.want)
+		}
+	}
+	// Refusing must also say why, otherwise the interactive fallback is opaque.
+	path := writeStubPackage(t, "no marker here at all")
+	canRun, evidence := SilentPlanFor(path, &model.Driver{DriverCode: "d1"})
+	if canRun {
+		t.Error("a package with no marker must not be driven unattended")
+	}
+	if !strings.Contains(evidence, "no installer marker") {
+		t.Errorf("refusal evidence = %q, want it to say the marker was absent", evidence)
+	}
+}
+
+// TestSilentPlanEvidenceAgreesWithTheDecision keeps the two return values
+// honest with each other: a refusal that reads like a success, or a success
+// with no stated mechanism, are both unusable in an audit.
+func TestSilentPlanEvidenceAgreesWithTheDecision(t *testing.T) {
+	path := writeStubPackage(t, "Inno Setup Setup Data (6.4.3)")
+	drv := &model.Driver{
+		DriverCode:       "d1",
+		InstallParameter: "/add-driver *.inf /install /subdirs",
+	}
+	canRun, evidence := SilentPlanFor(path, drv)
+	if canRun || evidence == "" {
+		t.Fatalf("INF wrapper: canRun=%v evidence=%q, want a refusal with a reason", canRun, evidence)
+	}
+	// Same package, same driver: the thin wrapper must agree with the source of
+	// truth, otherwise orchestration and audit tell different stories.
+	if HasSilentParameters(path, drv) != canRun {
+		t.Fatal("HasSilentParameters disagrees with SilentPlanFor on the same driver")
+	}
+}
+
 // TestSilentInstallerArgsSkipsFlagForINFWrapper pins the largest group on the
 // 82JQ lists: 41 of 47 rows declare an INF payload, which needs no silent
 // switch because handing the INF to the driver store is already unattended.

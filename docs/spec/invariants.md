@@ -37,6 +37,7 @@
 - 顺序是规格的一部分：这些包都是自解压壳，一个二进制会同时命中多个标识，而**跑起来的是包装器**，所以包装器标识排在载荷标识之前。
 - 禁止项：识别不出的包**必须**走交互，不得“猜一组参数发过去”。安装器不认识的开关是静默 no-op——进程退出 0 而什么也没变，这正是“报假成功”的成因。
 - 强制点：门禁 `silent install dispatches on the package, not on the vendor column` 禁止 `strings.Fields(vendorParameter)` 重新出现，并逐族核对其仍下发该族自己的开关；测试 `TestSilentInstallerArgsUsesProvenFamilyNotVendorColumn`、`TestSilentInstallerArgsCoversEveryProvenFamily`、`TestSilentInstallerArgsSkipsFlagForINFWrapper`、`TestInstallEXEUnprovenFamilyIsTerminal`、`TestInstallEXERunsProvenPackageWithoutVendorColumn`。
+- 证据出口：无人值守安装的决定依据必须落到账本 `Message` 列（散文，命名家族），**绝不**写进 `VerifiedVersion`/`BeforeVersion` 列——那两列是版本，机制写进去就把“Inno Setup 标记”伪装成版本声明。强制点：门禁 `the silent mechanism reaches the ledger as prose, never as a version`（`install.go` 必须 `install.SilentPlanFor(` 且 `Installed` 行含 `silent via`，证据变量不得作裸位置参数）；测试 `TestSilentPlanEvidenceNamesWhatAuthorisedIt`、`TestSilentPlanEvidenceAgreesWithTheDecision`。
 - 已知弱点：`InstallShield` 一档目前只靠裸 `InstallShield` 字符串命中，是五档里最弱的一条；两个 NVIDIA 包（`DRV202102040021`、`DRV202109090053`）是它的真身，**在真机验证该族之前不得把它当作已证**。
 
 ### 3.1 自动安装集必须由实测证据支撑
