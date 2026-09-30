@@ -27,7 +27,7 @@ func TestUninstallPathsReadDistinctHives(t *testing.T) {
 		t.Fatal("no 64-bit uninstall entries; the probe cannot tell the hives apart")
 	}
 	if len(perUser) == 0 {
-		t.Fatal("no per-user uninstall entries; this machine has none, so the defect cannot be reproduced")
+		t.Skip("no per-user uninstall entries on this machine; the per-user-vs-machine hive defect cannot be reproduced here")
 	}
 	if regAppPathUser == regAppPath64 {
 		t.Logf("regAppPathUser and regAppPath64 are the same path text (%q), "+
