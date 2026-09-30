@@ -59,7 +59,12 @@ Assert-Step 'Go build' {
 
 Assert-Step 'Go test + coverage floor (side-effect packages)' {
     $coverageOutput = (& $GoExe test -cover ./... 2>&1)
-    if ($LASTEXITCODE -ne 0) { throw "go test -cover exited $LASTEXITCODE" }
+    if ($LASTEXITCODE -ne 0) {
+        # Surface the failing test's own output instead of a bare exit code:
+        # a silent red is the expensive drift this gate exists to prevent.
+        $coverageOutput | ForEach-Object { Write-Host $_ }
+        throw "go test -cover exited $LASTEXITCODE"
+    }
     $floors = @{
         'lenovo-driver/internal/inventory' = 8
         'lenovo-driver/internal/app'       = 22
