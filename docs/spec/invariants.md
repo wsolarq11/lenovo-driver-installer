@@ -33,12 +33,12 @@
 
 - 规则：**下发给安装器的静默参数，必须由该包自身字节里的标识决定，不得由厂商列表的 `Parameter` 列决定。** 厂商列只在一种含义上可信——它声明载荷是什么（41/47 行声明 `/add-driver *.inf`，那是 INF 包装包，本就无需任何静默开关）；它不声明哪个开关能静默那个安装器。
 - 理由：82JQ 实测证伪。`DRV202102040007` 声明 `-QuietInstall`，而 `AMD-2GY501AFHN99VBC0.exe` 的字节里**没有** `-QuietInstall` 的任何拼写（ASCII 与 UTF-16LE 双扫均不命中），却**有** `Inno Setup Setup Data`（Inno Setup 头标记，ASCII 命中）——证明该包是 Inno，而不是厂商列宣称的那个开关。信任该列的后果是：安装器弹窗、操作者手工点完、机器零变化，而退出码为 0。
-- 公式（`internal/install/installer_family.go`，按优先级首次命中，无遗漏分支）：INF 载荷声明 → 无需开关；`!@Install@!UTF-8!` → 7-Zip SFX `-s`；`NullsoftInst` → NSIS `/S`；`Inno Setup Setup Data` → Inno `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-`；`.wixburn` → WiX Burn `/quiet /norestart`；`InstallShield` → `/s /v"/qn /norestart"`；**无命中 → 交互**。
+- 公式（`internal/install/installer_family.go`，按优先级首次命中，无遗漏分支）：INF 载荷声明 → 无需开关；`!@Install@!UTF-8!` → 7-Zip SFX `-s`；`NullsoftInst` → NSIS `/S`；`Inno Setup Setup Data` → Inno `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-`；`.wixburn` → WiX Burn `/quiet /norestart`；`InstallShield` → **交互（开关未验证）**；**无命中 → 交互**。
 - 顺序是规格的一部分：这些包都是自解压壳，一个二进制会同时命中多个标识，而**跑起来的是包装器**，所以包装器标识排在载荷标识之前。
 - 禁止项：识别不出的包**必须**走交互，不得“猜一组参数发过去”。安装器不认识的开关是静默 no-op——进程退出 0 而什么也没变，这正是“报假成功”的成因。
 - 强制点：门禁 `silent install dispatches on the package, not on the vendor column` 禁止 `strings.Fields(vendorParameter)` 重新出现，并逐族核对其仍下发该族自己的开关；测试 `TestSilentInstallerArgsUsesProvenFamilyNotVendorColumn`、`TestSilentInstallerArgsCoversEveryProvenFamily`、`TestSilentInstallerArgsSkipsFlagForINFWrapper`、`TestInstallEXEUnprovenFamilyIsTerminal`、`TestInstallEXERunsProvenPackageWithoutVendorColumn`。
 - 证据出口：无人值守安装的决定依据必须落到账本 `Message` 列（散文，命名家族），**绝不**写进 `VerifiedVersion`/`BeforeVersion` 列——那两列是版本，机制写进去就把“Inno Setup 标记”伪装成版本声明。强制点：门禁 `the silent mechanism reaches the ledger as prose, never as a version`（`install.go` 必须 `install.SilentPlanFor(` 且 `Installed` 行含 `silent via`，证据变量不得作裸位置参数）；测试 `TestSilentPlanEvidenceNamesWhatAuthorisedIt`、`TestSilentPlanEvidenceAgreesWithTheDecision`。
-- 已知弱点：`InstallShield` 一档目前**没有任何实测真身**。82JQ 唯一的 NVIDIA 包——驱动条目 `DRV202102040021`（本地 `31.0.15.4630`）由其安装器文件 `DRV202109090053_NVVGA-TVLC18AF407GA0.exe` 提供——按 `setupapi.dev.log` 解压到 `is-6UIF7.tmp`，而 `is-*.tmp` 是本项目 `extraction.go` 模型认定的 Inno Setup 临时目录；同批 7 个脚本启动过的包（蓝牙/AMD IO/Realtek 声卡与 LAN/Fn/AMD VGA/NVIDIA）全部走 `is-*.tmp`。故该包命中 Inno 分支，不命中 InstallShield。`/s /v"/qn /norestart"` 是文档值，**在真机验证该族之前不得把它当作已证**，也不得宣称某包是它的真身。
+- 已知弱点：`InstallShield` 一档目前**没有任何实测真身**，故按禁止项降级为交互——识别出 `InstallShield` 标记但不派发开关，账本记录“识别但未验证”。82JQ 唯一的 NVIDIA 包——驱动条目 `DRV202102040021`（本地 `31.0.15.4630`）由其安装器文件 `DRV202109090053_NVVGA-TVLC18AF407GA0.exe` 提供——按 `setupapi.dev.log` 解压到 `is-6UIF7.tmp`，而 `is-*.tmp` 是本项目 `extraction.go` 模型认定的 Inno Setup 临时目录；同批 7 个脚本启动过的包（蓝牙/AMD IO/Realtek 声卡与 LAN/Fn/AMD VGA/NVIDIA）全部走 `is-*.tmp`。故该包命中 Inno 分支，不命中 InstallShield。`/s /v"/qn /norestart"` 虽是文档值，**在真机验证该族之前不得派发**，也不得宣称某包是它的真身。
 
 ### 3.1 自动安装集必须由实测证据支撑
 

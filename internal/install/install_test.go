@@ -243,7 +243,6 @@ func TestSilentInstallerArgsCoversEveryProvenFamily(t *testing.T) {
 		{"Inno Setup Setup Data (6.4.3)", "/VERYSILENT"},
 		{"\x00N\x00u\x00l\x00l\x00s\x00o\x00f\x00t\x00I\x00n\x00s\x00t\x00", "/S"},
 		{"!@Install@!UTF-8!", "-s"},
-		{"InstallShield Setup", "/s"},
 		{".wixburn", "/quiet"},
 	} {
 		path := writeStubPackage(t, tc.marker)
@@ -257,9 +256,18 @@ func TestSilentInstallerArgsCoversEveryProvenFamily(t *testing.T) {
 			t.Errorf("marker %q produced %#v, want it to contain %q", tc.marker, args, tc.want)
 		}
 	}
+	// InstallShield is recognised but unverified: its marker must not license
+	// an unattended run. A recognised-but-unverified family is exactly as
+	// dangerous as an unrecognised one, because a wrong switch reports success
+	// while changing nothing.
+	args, ok := silentInstallerArgs(writeStubPackage(t, "InstallShield Setup"),
+		&model.Driver{DriverCode: "d1"}, "")
+	if ok || len(args) != 0 {
+		t.Fatalf("InstallShield is unverified and must not be silenced: args=%#v ok=%v", args, ok)
+	}
 	// No evidence means no flags. A package the formula cannot place must go
 	// interactive rather than be launched with something invented.
-	args, ok := silentInstallerArgs(writeStubPackage(t, "nothing recognizable here"),
+	args, ok = silentInstallerArgs(writeStubPackage(t, "nothing recognizable here"),
 		&model.Driver{DriverCode: "d1"}, "")
 	if ok || len(args) != 0 {
 		t.Fatalf("an unproven package must not be silenced: args=%#v ok=%v", args, ok)
@@ -284,7 +292,6 @@ func TestSilentPlanEvidenceNamesWhatAuthorisedIt(t *testing.T) {
 		{"nsis", "NullsoftInst", "NSIS"},
 		{"7z sfx", "!@Install@!UTF-8!", "7-Zip"},
 		{"wix burn", "app.wixburn", "WiX Burn"},
-		{"installshield", "InstallShield", "InstallShield"},
 	} {
 		path := writeStubPackage(t, tc.marker)
 		canRun, evidence := SilentPlanFor(path, &model.Driver{DriverCode: "d1"})
@@ -295,9 +302,19 @@ func TestSilentPlanEvidenceNamesWhatAuthorisedIt(t *testing.T) {
 			t.Errorf("%s: evidence = %q, want it to name %q", tc.name, evidence, tc.want)
 		}
 	}
+	// InstallShield must refuse, and its refusal must still name the family so
+	// the audit can say "we saw InstallShield and refused it", not just "refused".
+	ipath := writeStubPackage(t, "InstallShield Setup")
+	canRun, evidence := SilentPlanFor(ipath, &model.Driver{DriverCode: "d1"})
+	if canRun {
+		t.Error("InstallShield is unverified and must not be driven unattended")
+	}
+	if !strings.Contains(evidence, "InstallShield") || !strings.Contains(evidence, "unverified") {
+		t.Errorf("InstallShield refusal = %q, want it to name the family and say it is unverified", evidence)
+	}
 	// Refusing must also say why, otherwise the interactive fallback is opaque.
 	path := writeStubPackage(t, "no marker here at all")
-	canRun, evidence := SilentPlanFor(path, &model.Driver{DriverCode: "d1"})
+	canRun, evidence = SilentPlanFor(path, &model.Driver{DriverCode: "d1"})
 	if canRun {
 		t.Error("a package with no marker must not be driven unattended")
 	}

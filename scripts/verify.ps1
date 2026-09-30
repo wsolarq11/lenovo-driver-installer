@@ -562,11 +562,10 @@ Assert-Step 'silent install dispatches on the package, not on the vendor column'
     }
     $body = $table.Groups[1].Value
     $cases = @{
-        'FamilyInnoPayload'   = '/VERYSILENT'
-        'FamilyNSIS'          = '/S'
-        'FamilySevenZipSFX'   = '-s'
-        'FamilyInstallShield' = '/s'
-        'FamilyWiXBurn'       = '/quiet'
+        'FamilyInnoPayload' = '/VERYSILENT'
+        'FamilyNSIS'        = '/S'
+        'FamilySevenZipSFX' = '-s'
+        'FamilyWiXBurn'     = '/quiet'
     }
     foreach ($key in $cases.Keys) {
         $cm = [regex]::Match($body, "(?s)case\s+$key\s*:(.*?)(?=case\s+Family|default\s*:)")
@@ -579,6 +578,12 @@ Assert-Step 'silent install dispatches on the package, not on the vendor column'
     }
     if ($body -notmatch '(?s)default\s*:\s*\n\s*return\s+nil') {
         throw 'an unproven family must produce no flags at all'
+    }
+    # InstallShield is recognised but its switch has never been verified on a
+    # real package, so it must not send flags. A recognised-but-unverified
+    # family is exactly as dangerous as an unrecognised one.
+    if ($body -match 'case\s+FamilyInstallShield\s*:') {
+        throw 'InstallShield is unverified on any real package and must not send flags; route it to interactive'
     }
     $t = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\install\install_test.go') -Raw
     foreach ($fn in @('TestSilentInstallerArgsUsesProvenFamilyNotVendorColumn',

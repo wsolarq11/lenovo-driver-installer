@@ -61,6 +61,12 @@ func (f InstallerFamily) String() string {
 // that is not listed here is never sent a guess, because a flag the installer
 // does not recognize is a silent no-op: the process exits 0 having changed
 // nothing, which is exactly how an install gets reported as done.
+//
+// InstallShield is deliberately absent. Its switch ("/s /v\"/qn /norestart\"")
+// is documented, but no real package on the 82JQ lists has been observed to be
+// InstallShield, so sending it would be an unverified guess — the exact failure
+// the formula exists to prevent. It stays recognised (the marker is real) but
+// routes to interactive until a real InstallShield package is verified.
 func (f InstallerFamily) silentArgs() []string {
 	switch f {
 	case FamilyInnoPayload:
@@ -69,9 +75,6 @@ func (f InstallerFamily) silentArgs() []string {
 		return []string{"/S"}
 	case FamilySevenZipSFX:
 		return []string{"-s"}
-	case FamilyInstallShield:
-		// InstallShield wraps an MSI engine, so silence needs both halves.
-		return []string{"/s", `/v"/qn /norestart"`}
 	case FamilyWiXBurn:
 		return []string{"/quiet", "/norestart"}
 	default:
@@ -165,6 +168,13 @@ func planSilentInstall(filePath string, driver *model.Driver, logPath string) si
 	family := detectInstallerFamily(filePath)
 	args := family.silentArgs()
 	if len(args) == 0 {
+		if family != FamilyUnproven {
+			// The package named a family the formula recognises but whose
+			// silent switch has never been verified on a real package. Sending
+			// it would be a guess, and a wrong one is a silent no-op that
+			// reports success while changing nothing.
+			return silentPlan{family: family, evidence: family.String() + " marker, but its silent switch is unverified; interactive"}
+		}
 		return silentPlan{family: family, evidence: "no installer marker in the package"}
 	}
 	// /LOG is Inno-only and is justified by the marker that just selected this
