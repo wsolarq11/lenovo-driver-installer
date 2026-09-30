@@ -132,3 +132,16 @@
 - **跨 edition 合并接缝闭合（2026-09-30）**：新采 OSID 248（Windows 11）真实响应夹具，23 条、token 全脱敏。合并 42+248 共 47 条 → `filterDriverRows` 去 2 条 readme → 46 条 → `SelectLatestDrivers` 选 23 组。**这条链让上一轮判定为「无区分力」的 `SelectLatestDrivers` 第一次有了牙齿**：21 组在两个 edition 版本不同（组内比较决定存活者），2 组仅存在于 248（`hasCurrent` 必须丢弃：`DRV202109090051` Monitor、`DRV202109090060` RealtekRTL8852AE），19 组最终选中的是**归属另一 edition 的新版**（如 Lenovo Energy Management 选 248 的 `15.11.29.65` 而非 42 的 `15.11.29.13`）。
 - **`-IncludeBios` 固件路径（2026-09-30）**：用 `reFirmware` 原正则实测，82JQ 的 **OSID 42 与 OSID 248 列表都不含任何固件包**——联想不为该机型在此接口发布 BIOS/UEFI/TPM/EC 包。故 `includeBios=true/false` 在真机夹具上均选出 23 行，是 no-op，**固件分支无法由本机夹具覆盖**。已用构造行覆盖该分支（6 类名称各自验证默认丢弃、显式请求时保留），并在链测试中断言两个真实列表下 includeBios 是 no-op——把"覆盖不到"从隐含变成显式事实。
 - **审计日志归档（2026-09-29）**：污染日志 `%LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_install.log`（190 行 / 16400 字节）已归档为 `lenovo_driver_install.log.polluted-20260930-005804.bak`，SHA256 `803DB4BCEA89362C2ED4CBC9FE49B0DF23788FAE16FCAC8DF913CA2706D78B17`，首行即最早的测试污染（`[d1]`），末行为最后一次真实 GUI 导出。构成：夹具噪声 46 行、真实操作 144 行——**归档而非删除**，两类证据都保留。归档后重跑真实 dry-run，新日志 24 行，夹具噪声 0 行，`Applicable candidates: 1`（修复后值）。
+
+## 4. 静默公式证据收紧（2026-09-30）
+
+这一轮把静默公式从「文档值 + 传闻」收紧到「字节实测」。过程中抓到两处**编造**（都出自我此前把注释当事实抄进了规范），一处降级。
+
+- **AMD 包字节复扫（本轮实测，可复现）**：对盘上 `DRV202102040007_AMD-2GY501AFHN99VBC0.exe`（1,096,984 字节，MD5 `eb35a6056b6b84d78a5004637baa5652`，与第 3 节演练时官方 MD5 **逐字一致**）做 ASCII 与 UTF-16LE 双扫。结果：`Inno Setup Setup Data` 命中（ASCII），`-QuietInstall` / `/VERYSILENT` / `/SILENT` / `InstallShield` / `!@Install@!UTF-8!` / `NullsoftInst` / `.wixburn` **全部不命中**。
+  - **推翻一条我此前的编造**：早先代码与规范写「二进制含有 `/VERYSILENT`（Inno Setup 的开关）与 `/SILENT`」——实测**两者都不存在**。真正的 Inno 证据是 `Inno Setup Setup Data` 头标记，不是 `/VERYSILENT`。已把源码头注释、规范 §2.1、门禁注释、测试注释四处同步改正。
+  - 结论不变：该包是 Inno（厂商列 `-QuietInstall` 是假的），但「凭什么」从「/VERYSILENT」改为「Inno 头标记」。
+- **`Parameter` 列分布（两个 OSID 夹具合计 47 行，本轮实测）**：`/add-driver *.inf /install /subdirs` 41 行（INF 包装）、`-n -s` 2 行（NVIDIA，每 OSID 一行，`Bootfile=//nvsetup.exe`）、`-QuietInstall` 2 行（AMD，每 OSID 一行）、空 1 行。共 3 个非空值。
+- **NVIDIA 包家族：字节未验证，且此前「InstallShield」归因是编造**：82JQ 唯一 NVIDIA 包（驱动条目 `DRV202102040021` → 安装器文件 `DRV202109090053_NVVGA-TVLC18AF407GA0.exe`，OSID 248 夹具 737,908,184 字节）从未做过字节扫描。`setupapi.dev.log` 显示它解压到 `is-6UIF7.tmp`，而本项目 `extraction.go` 模型认定 `is-*.tmp` 是 **Inno Setup** 临时目录——同批 7 个脚本启动过的包全部走 `is-*.tmp`。故该包**更可能命中 Inno 分支，而非 InstallShield**；早先「两个 NVIDIA 包 (InstallShield)」的归因无字节依据。
+- **InstallShield 分支降级为交互**：该族在 82JQ 无任何实测真身，其开关 `/s /v"/qn /norestart"` 从未在真包上验证。按公式自身禁止项「未验证的开关不得派发」，改为**识别出 `InstallShield` 标记但不派发开关**，账本记录「识别但未验证」→ 走交互。门禁 `silent install dispatches on the package, not on the vendor column` 增查「`case FamilyInstallShield:` 不得出现在 `silentArgs` 表」；Go 测试 `TestSilentInstallerArgsCoversEveryProvenFamily` 直接断言 InstallShield 标记 → 无 args（红灯注入已验）。
+- **静默依据进账本**：此前无人值守安装的决定依据（哪个家族标记）算了但没写进账本，`Installed` 行只有 `exit=0`。现 `SilentPlanFor` 返回 `(canRun, evidence)`，`install.go` 把 evidence 写入 `Message` 列（散文），门禁 `the silent mechanism reaches the ledger as prose, never as a version` 禁止证据变量作裸位置参数（会漏进 `VerifiedVersion` 列）。红灯注入「把 silence 塞进第 5 个参数」→ 门禁 FAIL。
+
