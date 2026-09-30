@@ -115,8 +115,14 @@
   - 门禁 30 → 31 步：`a run reports only what the recheck confirmed`。红灯双杀验证：把 `unchanged` 加入确认集 → Go 测试与门禁同时 FAIL（`binding unchanged carries no evidence of effect but is counted as a confirmed install`）；删掉 `versionComparable` 分支 → Go 测试 FAIL。
   - **门禁自身缺陷一并修**：初版门禁把函数位置硬编码在 `install.go`，代码拆分后误报（`installBindingConfirmsEffect is gone`）。且初版正则要求 `case "bound":` 单独成行，而代码是 `case "bound", "staged", "unchanged-same":`，三个 label 全部漏检。改为定位函数体后在体内匹配 label，并新增反向检查（`unchanged`/`undetected` 不得返回 true）。
 
-- **software-versioned 驱动仍无「装成没装成」的判据（部分修复）**：上一条已消除「谎报成功」——这类驱动现在诚实得到 `undetected` 与 `unverified=N`，不再冒充 `success`。但**复核本身仍无区分力**：真正的判据应回查软件快照（装前装后 `InstalledApps` 对比），与 `ResolveLocalDriverVersion` 的回退对称。这 5 类驱动（`Lenovo Fn|Energy Management|X-Rite|AMD Power|Intel.*Connectivity`）当前只能得出「无法确认」。
-- **`-QuietInstall` 等官方声明参数的真实性未经验证**：工具把它们当事实使用（`HasSilentParameters` 决定走静默还是交互），AMD Power 已实测为假——声明了 `-QuietInstall` 仍弹 GUI 需人工点击。
+- **software-versioned 驱动的装后复核已具备判据（2026-09-30，已修）**：上一条消除了「谎报成功」，但判据一度按驱动**名称**一刀切（`versionComparable = !TestSoftwareVersionedDriver(name)`），导致这 5 类驱动装对了也报 `unverified`——**诚实了，但没有牙齿**。
+  - 关键认识：可比性是**值**的属性，不是族的属性。`ResolveInstalledSoftwareVersion` 本来就先用 InstalledApps 查真版本（Energy Management 装后拿到 `15.11.29.65`），查不到才回退到 `Provisioned`。演练里返回 `Provisioned` 恰恰证明**没装上**——数据一直是对的，判据错了。
+  - 修复：`model` 新增 `LocalVersionProvisioned` 常量与 `IsMeasuredLocalVersion(local)`（排除空串与 provision 占位符），作为该事实的**唯一权威源**；原先散落 3 个包 5 处的 `"Provisioned"` 字面量（`compare/matching.go` ×3、`inventory/native_full_windows.go` ×1）全部接回。`installBindingLabel` 去掉布尔参数，判据收回函数内部（调用点不该自己决定可比性——这是「下游零推断」的反面，第一次实现时正是犯了这个错，导致 `model` 导入未用才暴露出来）。
+  - 门禁增查三条：判据必须出现在 `install_binding.go`（不能放在调用点）、`install.go` 不得再以 `TestSoftwareVersionedDriver` 传参（否则正确安装的软件驱动被误报 unverified）、`matching.go` 不得自己拼写 `"Provisioned"`。
+  - 红灯双杀：把 `Provisioned` 当真版本 → Go 测试 FAIL；改回按驱动名判定 → 门禁报 `installBindingLabel is keyed on the driver family again`。
+  - 回归测试 `TestInstallBindingReadsRealSoftwareVersions` 钉住四条真版本路径：`15.11.29.13→15.11.29.65` 判 `bound`、`2.0.0.25` 同版本判 `unchanged-same`、`1.0.2.0→2.0.0.20`（未达包版本）判 `staged`、首次见到判 `bound`。
+  - **我写错了一条测试期望**：`after == packageVersion` 我却期望 `staged`，实际应为 `bound`。改的是测试不是代码——代码行为本来就对。
+- **`-QuietInstall` 等官方声明参数的真实性未经验证**（仍未闭合）：工具把它们当事实使用（`HasSilentParameters` 决定走静默还是交互），AMD Power 已实测为假——声明了 `-QuietInstall` 仍弹 GUI 需人工点击。
 - **固件路径（`-IncludeBios`）在 82JQ 永久无法由本机夹具覆盖**：两个 edition 列表均无固件包，见下一条。只由构造行测试覆盖。
 - **跨 edition 合并接缝闭合（2026-09-30）**：新采 OSID 248（Windows 11）真实响应夹具，23 条、token 全脱敏。合并 42+248 共 47 条 → `filterDriverRows` 去 2 条 readme → 46 条 → `SelectLatestDrivers` 选 23 组。**这条链让上一轮判定为「无区分力」的 `SelectLatestDrivers` 第一次有了牙齿**：21 组在两个 edition 版本不同（组内比较决定存活者），2 组仅存在于 248（`hasCurrent` 必须丢弃：`DRV202109090051` Monitor、`DRV202109090060` RealtekRTL8852AE），19 组最终选中的是**归属另一 edition 的新版**（如 Lenovo Energy Management 选 248 的 `15.11.29.65` 而非 42 的 `15.11.29.13`）。
 - **`-IncludeBios` 固件路径（2026-09-30）**：用 `reFirmware` 原正则实测，82JQ 的 **OSID 42 与 OSID 248 列表都不含任何固件包**——联想不为该机型在此接口发布 BIOS/UEFI/TPM/EC 包。故 `includeBios=true/false` 在真机夹具上均选出 23 行，是 no-op，**固件分支无法由本机夹具覆盖**。已用构造行覆盖该分支（6 类名称各自验证默认丢弃、显式请求时保留），并在链测试中断言两个真实列表下 includeBios 是 no-op——把"覆盖不到"从隐含变成显式事实。
