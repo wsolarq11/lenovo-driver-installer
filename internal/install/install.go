@@ -204,7 +204,7 @@ func InstallDriverFile(filePath string, driver *model.Driver, workingDir string)
 
 func installEXE(filePath string, driver *model.Driver, workingDir string, run processRunner, fallback exeFallback) (int, error) {
 	logPath := filepath.Join(workingDir, driver.DriverCode+".log")
-	args, ok := silentInstallerArgs(driver, logPath)
+	args, ok := silentInstallerArgs(filePath, driver, logPath)
 	if !ok {
 		return -2, fmt.Errorf("no official silent install parameters for %s", driver.FileName)
 	}
@@ -242,45 +242,16 @@ func finishEXEFallback(driver *model.Driver, workingDir string, fallback exeFall
 	return silentCode, fmt.Errorf("%s", silentErr)
 }
 
-// silentInstallerArgs builds the silent-EXE command line from the official
-// package parameters only. It never injects a family-specific silent default.
-// The only family signal honored is the Inno-only /VERYSILENT flag, whose
-// presence is the evidence that justifies appending the Inno /LOG flag.
-// ok=false means the package has no usable silent parameters, and the caller
-// must not launch it as a silent install.
-func silentInstallerArgs(driver *model.Driver, logPath string) ([]string, bool) {
-	raw := driver.InstallParameter
-	if raw == "" {
-		raw = driver.InstallCode
-	}
-	if raw == "" || strings.HasPrefix(strings.ToLower(raw), "/add-driver") {
-		return nil, false
-	}
-	args := strings.Fields(raw)
-	if logPath != "" && hasInnoFlag(args) {
-		args = append(args, "/LOG="+logPath)
-	}
-	return args, true
-}
-
-// hasInnoFlag reports whether the official parameters contain /VERYSILENT,
-// which is an Inno-only switch. Its presence is the evidence that permits the
-// Inno-specific /LOG flag; its absence means no family assumption is made.
-func hasInnoFlag(args []string) bool {
-	for _, arg := range args {
-		if strings.EqualFold(arg, "/VERYSILENT") {
-			return true
-		}
-	}
-	return false
-}
-
-// HasSilentParameters reports whether a driver carries official silent
-// installer parameters, so orchestration can choose between the silent path
-// and an interactive fallback without guessing an installer family.
-func HasSilentParameters(driver *model.Driver) bool {
-	_, ok := silentInstallerArgs(driver, "")
-	return ok
+// silentInstallerArgs applies the formula in installer_family.go, which
+// dispatches on the family the package's own bytes prove. The vendor column is
+// no longer read as a silent switch: on 82JQ DRV202102040007 declared
+// "-QuietInstall" and the binary contains no such literal while carrying
+// "/VERYSILENT", so a run that trusted the column installed nothing and still
+// exited 0. ok=false means the formula found no evidence for any family, and
+// the caller must not launch this as a silent install.
+func silentInstallerArgs(filePath string, driver *model.Driver, logPath string) ([]string, bool) {
+	plan := planSilentInstall(filePath, driver, logPath)
+	return plan.args, plan.ok
 }
 
 func installINFPaths(paths []string, workingDir string) (int, error) {

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"lenovo-driver/internal/compare"
 	"lenovo-driver/internal/model"
 )
 
@@ -94,23 +93,6 @@ func installExtractedDir(driver *model.Driver, dir, workingDir string) (int, boo
 	if strings.EqualFold(filepath.Base(dir), "Display.Driver") {
 		dir = filepath.Dir(dir)
 	}
-	args, hasArgs := silentInstallerArgs(driver, "")
-	if hasArgs {
-		for _, name := range []string{"setup.exe", "nvsetup.exe"} {
-			path := filepath.Join(dir, name)
-			if !fileExists(path) {
-				continue
-			}
-			result := RunProcessWithTimeout(path, args, 900, dir)
-			if result.TimedOut {
-				return -1, true
-			}
-			if compare.InstallSucceeded(result.ExitCode) {
-				return result.ExitCode, true
-			}
-			return result.ExitCode, true
-		}
-	}
 	infs, _ := collectINFs(dir)
 	if len(infs) > 0 {
 		code, err := installINFPaths(infs, workingDir)
@@ -120,6 +102,23 @@ func installExtractedDir(driver *model.Driver, dir, workingDir string) (int, boo
 			}
 		}
 		return code, true
+	}
+	// No INF to hand to the driver store, so the payload must be an installer.
+	// Its identity is proven per candidate rather than assumed, because the
+	// extracted directory is a different package from the driver file and may
+	// well be a different family.
+	for _, name := range []string{"setup.exe", "nvsetup.exe"} {
+		path := filepath.Join(dir, name)
+		if !fileExists(path) {
+			continue
+		}
+		if args, ok := silentInstallerArgs(path, driver, ""); ok {
+			result := RunProcessWithTimeout(path, args, 900, dir)
+			if result.TimedOut {
+				return -1, true
+			}
+			return result.ExitCode, true
+		}
 	}
 	return 0, false
 }

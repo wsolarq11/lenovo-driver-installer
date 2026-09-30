@@ -421,6 +421,66 @@ Assert-Step 'a run reports only what the recheck confirmed' {
     }
 }
 
+Assert-Step 'silent install dispatches on the package, not on the vendor column' {
+    # The vendor Parameter column is falsified: DRV202102040007 declares
+    # "-QuietInstall" and its binary contains no such literal while carrying
+    # "/VERYSILENT", the Inno Setup switch. Trusting the column launched a window
+    # that the operator dismissed, and the machine gained nothing. Lenovo's own
+    # tool dispatches on installer family, so the formula must too.
+    $family = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\install\installer_family.go') -Raw
+    if ($family -notmatch 'func\s+planSilentInstall') {
+        throw 'planSilentInstall is gone; the silent dispatch has no single owner'
+    }
+    # The column may still say what the payload is. It may never say which flag
+    # silences it.
+    if ($family -notmatch 'vendorParameter') {
+        throw 'vendorParameter is gone; the remaining use of the vendor column is no longer visible in one place'
+    }
+    if ($family -match 'strings\.Fields\(') {
+        throw 'the vendor column is being split into command-line arguments again; it is a hint about the ' +
+              'payload, never a silent switch'
+    }
+    # Every family the table names must carry that family''s own documented flags,
+    # or an unproven package will be launched with something invented.
+    # Scope to the table function. Several methods in this file name the same
+    # families, so matching case arms in the whole file would read String()'s
+    # "return Inno Setup" instead of the switch that sends the flags.
+    $table = [regex]::Match($family, '(?s)func\s+\(f\s+InstallerFamily\)\s+silentArgs\(\).*?\{(.*?)\n\}')
+    if (-not $table.Success) {
+        throw 'could not locate the silent-args table'
+    }
+    $body = $table.Groups[1].Value
+    $cases = @{
+        'FamilyInnoPayload'   = '/VERYSILENT'
+        'FamilyNSIS'          = '/S'
+        'FamilySevenZipSFX'   = '-s'
+        'FamilyInstallShield' = '/s'
+        'FamilyWiXBurn'       = '/quiet'
+    }
+    foreach ($key in $cases.Keys) {
+        $cm = [regex]::Match($body, "(?s)case\s+$key\s*:(.*?)(?=case\s+Family|default\s*:)")
+        if (-not $cm.Success) {
+            throw "$key has no case in the silent-args table"
+        }
+        if ($cm.Groups[1].Value -notmatch [regex]::Escape($cases[$key])) {
+            throw "$key no longer sends its own documented switch ($($cases[$key]))"
+        }
+    }
+    if ($body -notmatch '(?s)default\s*:\s*\n\s*return\s+nil') {
+        throw 'an unproven family must produce no flags at all'
+    }
+    $t = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\install\install_test.go') -Raw
+    foreach ($fn in @('TestSilentInstallerArgsUsesProvenFamilyNotVendorColumn',
+                      'TestSilentInstallerArgsCoversEveryProvenFamily',
+                      'TestSilentInstallerArgsSkipsFlagForINFWrapper',
+                      'TestInstallEXEUnprovenFamilyIsTerminal',
+                      'TestInstallEXERunsProvenPackageWithoutVendorColumn')) {
+        if ($t -notmatch ('func\s+' + [regex]::Escape($fn))) {
+            throw "$fn is gone; the formula is unguarded"
+        }
+    }
+}
+
 Assert-Step 'the provisioning placeholder never reaches a decision' {
     # "Provisioned" is a fact about HKLM\...\Provisioning\Results, not a version.
     # It reached a decision twice: as a local version in the recheck, and as

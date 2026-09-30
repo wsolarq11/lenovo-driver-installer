@@ -83,7 +83,7 @@ installLoop:
 		}
 
 		isEXE := strings.EqualFold(filepath.Ext(outFile), ".exe")
-		if isEXE && !install.HasSilentParameters(driver) {
+		if isEXE && !install.HasSilentParameters(outFile, driver) {
 			a.Log(ctx, "["+driver.DriverCode+"] No official silent install parameters; using interactive install.", "WARN")
 			a.handleInteractiveExe(ctx, ad, outFile, dlDir, &success, &failed)
 			continue
