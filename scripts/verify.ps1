@@ -342,6 +342,33 @@ Assert-Step 'automatic install set excludes downgrade and no-op statuses' {
         throw 'WPF install-all button still says "安装全部可安装"; the set no longer contains every applicable driver'
     }
 
+Assert-Step 'software-versioned compare falls back to the measured device version' {
+    # Not installed is the only status the automatic set acts on, so what
+    # produces it has to rest on measurement. A software-versioned driver whose
+    # name is missing from InstalledApps used to return an empty local version,
+    # which CompareDriverStatus turned into "not installed" while the device was
+    # in fact running a vendor package. On 82JQ that put a redundant reinstall
+    # of ACPI\VPC2004 in front of the user. The measured device version must win
+    # whenever the software lookup finds nothing.
+    $matching = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\compare\matching.go') -Raw
+    if ($matching -notmatch 'func\s+deviceVersionFrom') {
+        throw 'deviceVersionFrom is gone; the device-measured version has no single extraction point'
+    }
+    $m = [regex]::Match($matching, '(?s)if\s+TestSoftwareVersionedDriver\(driver\.DriverName\)\s*\{(.*?)\n\t\}')
+    if (-not $m.Success) {
+        throw 'could not locate the TestSoftwareVersionedDriver branch in matching.go'
+    }
+    $branch = $m.Groups[1].Value
+    if ($branch -notmatch 'deviceVersionFrom') {
+        throw 'the software-versioned branch returns the software version with no device fallback; ' +
+              'a failed InstalledApps lookup would again be read as evidence of absence'
+    }
+    $t = Join-Path $repoRoot 'internal\compare\software_version_fallback_test.go'
+    if (-not (Test-Path -LiteralPath $t)) {
+        throw 'software_version_fallback_test.go is gone; the fallback rule is unguarded'
+    }
+}
+
 Assert-Step 'evidence chain runs on real fixtures' {
     # The chain's whole value is that it reproduces the live dry-run on recorded
     # 82JQ data. A missing fixture or a renamed loader would leave the tests
