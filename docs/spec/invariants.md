@@ -29,11 +29,28 @@
 - 约束：计划、控制台、交互提示、GUI 导出统一输出 fact / inference / undetermined。
 - 强制点：四级（实测 fact / 推断 inference / 待定 undetermined）贯穿所有输出通道，任何通道不得把推断或待定渲染成事实。
 
+### 2.1 静默安装按包自身证明的家族派发
+
+- 规则：**下发给安装器的静默参数，必须由该包自身字节里的标识决定，不得由厂商列表的 `Parameter` 列决定。** 厂商列只在一种含义上可信——它声明载荷是什么（41/47 行声明 `/add-driver *.inf`，那是 INF 包装包，本就无需任何静默开关）；它不声明哪个开关能静默那个安装器。
+- 理由：82JQ 实测证伪。`DRV202102040007` 声明 `-QuietInstall`，而 `AMD-2GY501AFHN99VBC0.exe` 的二进制里**没有** `-QuietInstall` 这个字面量，却**有** `/VERYSILENT`（Inno Setup 的开关）与 `/SILENT`。信任该列的后果是：安装器弹窗、操作者手工点完、机器零变化，而退出码为 0。
+- 公式（`internal/install/installer_family.go`，按优先级首次命中，无遗漏分支）：INF 载荷声明 → 无需开关；`!@Install@!UTF-8!` → 7-Zip SFX `-s`；`NullsoftInst` → NSIS `/S`；`Inno Setup Setup Data` → Inno `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-`；`.wixburn` → WiX Burn `/quiet /norestart`；`InstallShield` → `/s /v"/qn /norestart"`；**无命中 → 交互**。
+- 顺序是规格的一部分：这些包都是自解压壳，一个二进制会同时命中多个标识，而**跑起来的是包装器**，所以包装器标识排在载荷标识之前。
+- 禁止项：识别不出的包**必须**走交互，不得“猜一组参数发过去”。安装器不认识的开关是静默 no-op——进程退出 0 而什么也没变，这正是“报假成功”的成因。
+- 强制点：门禁 `silent install dispatches on the package, not on the vendor column` 禁止 `strings.Fields(vendorParameter)` 重新出现，并逐族核对其仍下发该族自己的开关；测试 `TestSilentInstallerArgsUsesProvenFamilyNotVendorColumn`、`TestSilentInstallerArgsCoversEveryProvenFamily`、`TestSilentInstallerArgsSkipsFlagForINFWrapper`、`TestInstallEXEUnprovenFamilyIsTerminal`、`TestInstallEXERunsProvenPackageWithoutVendorColumn`。
+- 已知弱点：`InstallShield` 一档目前只靠裸 `InstallShield` 字符串命中，是五档里最弱的一条；两个 NVIDIA 包（`DRV202102040021`、`DRV202109090053`）是它的真身，**在真机验证该族之前不得把它当作已证**。
+
 ### 3.1 自动安装集必须由实测证据支撑
 
 - 规则：**凡可进入自动安装集的状态，其 `StatusEvidenceBasis` 必须是 `fact`。** 自动安装集是唯一无人值守地改变机器状态的路径；集内出现 inference 或 undetermined，等于让工具依据没测到的东西动手。
 - 含义：`Not installed` 必须是「硬件 ID 命中的设备没有绑定驱动版本」这一**实测**，而不是「在软件列表里没查到」这一证据缺失。软件侧查不到时必须回退到设备实测版本。
 - 强制点：`TestAutomaticSetStatusesAreMeasured`（正）+ `TestNonFactStatusesStayOutOfTheAutomaticSet`（反）；门禁 `the automatic install set is backed by measurements only` 防止测试被删除以放行改动。
+
+### 4.1 比较只有一个原语，且「未决」是独立值
+
+- 规则：**版本比较的结果有四个值，不是三个：`<`、`=`、`>`、**`⊥`（未决）**。`⊥` 必须独立于 `<`，不得折叠进任何方向。** 系统内所有版本判断——状态判定、装后复核、跨 edition 选择——都必须经由同一个原语 `compare.Order`，禁止调用方各自实现（尤其禁止原始字符串相等）。
+- 理由：`⊥` 折叠成 `<` 就是"不可测量的值冒充事实"。`Version.Compare` 历史上把 `nil` 当作"比任何东西都小"，于是解析不出版本的驱动会被报成"落后于列表"并进入自动安装集——与 `Provisioned` 占位符冒充 `Up to date` 是同一族缺陷。`Provisioned` 正是靠这条修掉的：它既不能证明已装，也不能证明未装（系统确实为它持有一个 `.ppkg`），所以判 `StatusUnknown`，由 §3.1 的事实级白名单挡在自动集之外。改成 `Not installed` 是错的，那等于在系统持有包的情况下断言它不存在。
+- 前置：两侧必须先**归一到同一个可比分量**。厂商 `Version` 字段在 82JQ 两个 edition 的 47 行里有 49 种形态：裸版本（`31.0.15.4630`）、带前缀（`Intel_22.10.0.7`）、带后缀（`15.11.29.13 MS signed`）、**组合串**（`Intel_22.10.0.7/Realtek8852AE_6001.0.10.336/Mediatek_3.0.1.1314`，一个字段三个包）、以及非版本（`Inbox`）。`compare.ResolveComparableVersion` 负责按 vendor 选出对应分量。**不做这一步的直接后果**：装后复核原本用原始字符串相等，而 WLAN 那些行的 `Version` 是组合串，任何设备的本机版本都不可能等于它——**这些驱动永远无法被判定为 `bound`**，装没装成都报"没变化"。
+- 强制点：门禁 `one comparison primitive decides every version question` 要求 `VersionOrder` 四值齐全、`Order` 对缺失版本先返回 `OrderUndecided` 再谈方向、`CompareDriverStatus` 不得直接调 `Version.Compare`、`installBindingLabel` 不得出现 `== packageVersion` 一类原始字符串比较。
 
 ## 5. 审计先于状态变更
 

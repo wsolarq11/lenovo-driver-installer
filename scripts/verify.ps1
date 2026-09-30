@@ -421,6 +421,44 @@ Assert-Step 'a run reports only what the recheck confirmed' {
     }
 }
 
+Assert-Step 'the invariants spec carries every rule the code enforces' {
+    # docs/spec/invariants.md is the semantic single source. A rule that lives
+    # only in a gate is a rule nobody reads; a rule that lives only in the spec is
+    # a rule nothing checks. Each sub-section must name the gate that forces it.
+    $inv = Get-Content -LiteralPath (Join-Path $repoRoot 'docs\spec\invariants.md') -Raw
+    $self = [regex]::Match((Get-Content -LiteralPath $PSCommandPath -Raw), '(?s)Assert-Step\s+''the invariants spec carries every rule the code enforces''\s*\{(.*?)\n\}')
+    $body = $self.Groups[1].Value
+    $required = @(
+        '### 3.1 自动安装集必须由实测证据支撑',
+        '### 2.1 静默安装按包自身证明的家族派发',
+        '### 4.1 比较只有一个原语'
+    )
+    foreach ($heading in $required) {
+        if ($inv -notmatch [regex]::Escape($heading)) {
+            throw "invariants.md is missing '$heading'; the spec has drifted from the code"
+        }
+    }
+    # The silent rule must keep naming the gate that forces it, or the two drift
+    # apart silently.
+    if ($inv -notmatch 'silent install dispatches on the package, not on the vendor column') {
+        throw 'invariants.md no longer names the silent-dispatch gate'
+    }
+    if ($inv -notmatch 'one comparison primitive decides every version question') {
+        throw 'invariants.md no longer names the comparison-primitive gate'
+    }
+    # A sub-section may be added, but the six top-level invariants are what the
+    # frozen decision record cites. Renumbering them would invalidate that record.
+    $top = [regex]::Matches($inv, '(?m)^## (\d+)\.')
+    if ($top.Count -ne 6) {
+        throw "invariants.md has $($top.Count) top-level invariants, want 6; docs/decisions/distribution-frozen.md cites six"
+    }
+    for ($i = 0; $i -lt $top.Count; $i++) {
+        if ([int]$top[$i].Groups[1].Value -ne ($i + 1)) {
+            throw "top-level invariants are out of order at position $($i + 1)"
+        }
+    }
+}
+
 Assert-Step 'the CI trigger is public' {
     # A CI run on a private repository burns a runner and, when it fails for a
     # visibility reason, the fix is to make the repo public and run again. Doing
