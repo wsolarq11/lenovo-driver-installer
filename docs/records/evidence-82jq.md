@@ -115,6 +115,11 @@
   - 门禁 30 → 31 步：`a run reports only what the recheck confirmed`。红灯双杀验证：把 `unchanged` 加入确认集 → Go 测试与门禁同时 FAIL（`binding unchanged carries no evidence of effect but is counted as a confirmed install`）；删掉 `versionComparable` 分支 → Go 测试 FAIL。
   - **门禁自身缺陷一并修**：初版门禁把函数位置硬编码在 `install.go`，代码拆分后误报（`installBindingConfirmsEffect is gone`）。且初版正则要求 `case "bound":` 单独成行，而代码是 `case "bound", "staged", "unchanged-same":`，三个 label 全部漏检。改为定位函数体后在体内匹配 label，并新增反向检查（`unchanged`/`undetected` 不得返回 true）。
 
+- **占位符第二次抵达决策（2026-09-30，已修）**：同一个 `Provisioned` 在**决策侧**也冒充事实。`CompareDriverStatus` 原本 `local == "Provisioned" → StatusUpToDate`——而 `UpToDate` 是 **fact 级**，于是「Windows provision 过这个包」被当成「驱动已是最新」交给了自动集，尽管机器上无应用、无卸载项、无对应设备（本次演练亲手测过）。
+  - 严格占优的判据是「证据能settle什么」：占位符既不能证明已装，也不能证明未装（系统确实为它持有一个包）。所以判 `StatusUnknown`（undetermined）——既不进自动集，也不谎报缺失。**改成 `NotInstalled` 是错的**：那等于在系统持有包的情况下断言它不存在。
+  - 真机确认：`AMD Power Processor 6.0.0.9 / Provisioned / Unknown`，`Applicable candidates : 0` 不变。链测试状态分布 `Up to date 1 → 0`、`Unknown 0 → 1`，`Local newer 10 / Not applicable 12` 不变。
+  - 测试 `TestProvisionedIsNotAVersion` 挂在真实入口 `partitionViewDrivers` 上（我先写了 `inAutomaticInstallSet` 这个**并不存在的**函数，改用真实函数后才有约束力），同时断言实测旧版本仍判 `Update`——占位符没有顺带废掉比较规则。
+  - 门禁 31 → 32 步：`the provisioning placeholder never reaches a decision`，用正则定位 `local == model.LocalVersionProvisioned` 的分支体、要求其返回 `StatusUnknown`，并要求该测试存在。红灯：改回 `StatusUpToDate` → Go 测试与门禁同时 FAIL。
 - **software-versioned 驱动的装后复核已具备判据（2026-09-30，已修）**：上一条消除了「谎报成功」，但判据一度按驱动**名称**一刀切（`versionComparable = !TestSoftwareVersionedDriver(name)`），导致这 5 类驱动装对了也报 `unverified`——**诚实了，但没有牙齿**。
   - 关键认识：可比性是**值**的属性，不是族的属性。`ResolveInstalledSoftwareVersion` 本来就先用 InstalledApps 查真版本（Energy Management 装后拿到 `15.11.29.65`），查不到才回退到 `Provisioned`。演练里返回 `Provisioned` 恰恰证明**没装上**——数据一直是对的，判据错了。
   - 修复：`model` 新增 `LocalVersionProvisioned` 常量与 `IsMeasuredLocalVersion(local)`（排除空串与 provision 占位符），作为该事实的**唯一权威源**；原先散落 3 个包 5 处的 `"Provisioned"` 字面量（`compare/matching.go` ×3、`inventory/native_full_windows.go` ×1）全部接回。`installBindingLabel` 去掉布尔参数，判据收回函数内部（调用点不该自己决定可比性——这是「下游零推断」的反面，第一次实现时正是犯了这个错，导致 `model` 导入未用才暴露出来）。
