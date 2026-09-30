@@ -20,8 +20,13 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 
 <!-- TRELLIS:END -->
 
-## 驱动审计脚本不变量
+## CI 触发顺序
 
+凡需要触发 CI，一律**先转公开再跑**。禁止先以私有跑 CI、发现跑不通、再转公开重跑——那是把一次已知的失败当探测用，白烧一轮 runner，还会让失败原因在两次运行之间被覆盖。
+
+门禁 `scripts/verify.ps1` 的 `the CI trigger is public` 强制这条：工作流里出现私有可见性设置即编译期报错。
+
+## 驱动审计脚本不变量
 > 语义展开与强制点见 `docs/spec/invariants.md`。
 
 部署形态已定为个人单机审计脚本。产品尾（自签名、支持矩阵、安装器/卸载器、升级、遥测、品牌合规）不在本规格内，保持冻结。

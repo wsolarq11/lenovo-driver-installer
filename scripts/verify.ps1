@@ -421,6 +421,35 @@ Assert-Step 'a run reports only what the recheck confirmed' {
     }
 }
 
+Assert-Step 'the CI trigger is public' {
+    # A CI run on a private repository burns a runner and, when it fails for a
+    # visibility reason, the fix is to make the repo public and run again. Doing
+    # it the other way round turns a known failure into a probe and overwrites
+    # the real reason between two runs. So visibility is decided before the
+    # trigger, never after one fails.
+    $workflows = Join-Path $repoRoot '.github\workflows'
+    if (-not (Test-Path -LiteralPath $workflows)) {
+        return
+    }
+    foreach ($wf in Get-ChildItem -LiteralPath $workflows -Filter '*.yml') {
+        $text = Get-Content -LiteralPath $wf.FullName -Raw
+        # Repository and organization visibility are the two settings that make
+        # a workflow file unusable; a self-hosted runner or a manual dispatch is
+        # unrelated and must not trip this.
+        foreach ($setting in @('visibility', 'visibilityComment')) {
+            $cm = [regex]::Match($text, "(?im)^\s*$setting\s*:\s*(\S+)\s*$")
+            if ($cm.Success) {
+                $value = $cm.Groups[1].Value.Trim("'`"")
+                if ($value -match '^(?i)(private|internal)$') {
+                    throw ("$($wf.Name) sets $setting to '$value'. Make the repository public before " +
+                           "triggering CI: a private run cannot reach the steps it declares, and retrying " +
+                           "after converting only overwrites the reason the first run gave")
+                }
+            }
+        }
+    }
+}
+
 Assert-Step 'one comparison primitive decides every version question' {
     # ord(a,b) has four values, not three: Undecided is not Less. Folding them
     # together is how an unmeasurable value becomes a fact — nil reads as older
