@@ -272,7 +272,7 @@ func CompareDriverStatus(remote, local, vendor string) model.CompareStatus {
 	if remote == "" {
 		return model.StatusUnknown
 	}
-	if local == "Provisioned" {
+	if local == model.LocalVersionProvisioned {
 		return model.StatusUpToDate
 	}
 	remoteVersion := GetMatchingRemoteComponent(remote, vendor)
@@ -318,8 +318,8 @@ func ResolveInstalledSoftwareVersion(driverName string, snapshot *model.Software
 			}
 		}
 	}
-	if reAmdPowerProcessor.MatchString(driverName) && snapshot.ProvisionedAmdPower == "Provisioned" {
-		return "Provisioned"
+	if reAmdPowerProcessor.MatchString(driverName) && snapshot.ProvisionedAmdPower == model.LocalVersionProvisioned {
+		return model.LocalVersionProvisioned
 	}
 	if reLenovoFn.MatchString(driverName) && snapshot.LenovoFnServiceVersion != "" {
 		return snapshot.LenovoFnServiceVersion

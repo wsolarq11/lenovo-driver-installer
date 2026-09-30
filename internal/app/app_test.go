@@ -536,22 +536,46 @@ func TestInstallBindingLabel(t *testing.T) {
 		{"undetected", "1.0", "", "2.0", "undetected"},
 	}
 	for _, tc := range cases {
-		if got := installBindingLabel(tc.before, tc.after, tc.pkg, true); got != tc.want {
+		if got := installBindingLabel(tc.before, tc.after, tc.pkg); got != tc.want {
 			t.Fatalf("%s: installBindingLabel(%q, %q, %q) = %q, want %q", tc.name, tc.before, tc.after, tc.pkg, got, tc.want)
 		}
 	}
 }
 
 // TestInstallBindingLabelHasNoVerdictWithoutComparableVersions pins the defect
-// the 82JQ drill exposed. A software-versioned driver reports "Provisioned" both
-// before and after regardless of whether the package installed, so before==after
-// carried no information and every such run was counted as a success.
+// the 82JQ drill exposed. A package Windows has provisioned but not installed
+// reports "Provisioned" before and after regardless of what the installer did,
+// so before==after carried no information and the run was counted as a success.
 func TestInstallBindingLabelHasNoVerdictWithoutComparableVersions(t *testing.T) {
-	if got := installBindingLabel("Provisioned", "Provisioned", "6.0.0.9", false); got != "undetected" {
-		t.Fatalf("software-versioned recheck = %q, want undetected", got)
+	if got := installBindingLabel(model.LocalVersionProvisioned, model.LocalVersionProvisioned,
+		"6.0.0.9"); got != "undetected" {
+		t.Fatalf("provisioned recheck = %q, want undetected", got)
+	}
+	if model.IsMeasuredLocalVersion(model.LocalVersionProvisioned) {
+		t.Fatal("the provisioning placeholder must not count as a measured version")
+	}
+}
+
+// TestInstallBindingReadsRealSoftwareVersions is the counterpart: a
+// software-versioned driver that installed correctly reads its real version back
+// from the installed-app list, and that version must carry the verdict. Keying
+// comparability on the driver family instead of the value reported every one of
+// them as unverified.
+func TestInstallBindingReadsRealSoftwareVersions(t *testing.T) {
+	for _, tc := range []struct {
+		name, before, after, pkg, want string
+	}{
+		{"installed the listed version", "15.11.29.13", "15.11.29.65", "15.11.29.65", "bound"},
+		{"already on the same version", "2.0.0.25", "2.0.0.25", "2.0.0.25", "unchanged-same"},
+		{"moved but short of the package", "1.0.2.0", "2.0.0.20", "2.0.0.25", "staged"},
+		{"first time seen", "", "6.0.0.9", "6.0.0.9", "bound"},
+	} {
+		if got := installBindingLabel(tc.before, tc.after, tc.pkg); got != tc.want {
+			t.Errorf("%s: installBindingLabel(%q, %q, %q) = %q, want %q", tc.name, tc.before, tc.after, tc.pkg, got, tc.want)
+		}
 	}
 	// A genuinely moved kernel-driver version is still judged on its own evidence.
-	if got := installBindingLabel("1.0", "2.0", "2.0", true); got != "bound" {
+	if got := installBindingLabel("1.0", "2.0", "2.0"); got != "bound" {
 		t.Fatalf("kernel-driver recheck = %q, want bound", got)
 	}
 }

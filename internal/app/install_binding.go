@@ -1,5 +1,7 @@
 package app
 
+import "lenovo-driver/internal/model"
+
 // Post-install binding verdicts. These are pure functions kept apart from the
 // IO-heavy verification pass in install.go so the rule that decides whether a
 // run may call a driver installed has one owner and no side effects.
@@ -13,18 +15,17 @@ package app
 // means no comparable version could be read. Only bound, staged and
 // unchanged-same are evidence that the package took effect.
 //
-// versionComparable is false for software-versioned drivers, whose version lives
-// in the installed-app list rather than on any device. Comparing their device
-// versions is not weaker evidence, it is no evidence: "Provisioned" equals
-// "Provisioned" whether or not the package installed, so those rows always came
-// back "unchanged" and were counted as success. On 82JQ a drill for
-// DRV202102040007 (AMD Power Processor) logged "Install success" alongside
-// "Recheck: unchanged" while the machine gained nothing.
-func installBindingLabel(before, after, packageVersion string, versionComparable bool) string {
+// The value itself decides comparability, never the driver family. Keying it on
+// the family name threw away real evidence: a software-versioned driver that
+// installed correctly reads its real version back from the installed-app list
+// (Energy Management reports 15.11.29.65), and calling that "uncomparable"
+// reported a successful install as unverified. The only unusable value is the
+// provisioning placeholder, which equals itself no matter what happened; on 82JQ
+// a drill for DRV202102040007 logged "Install success" with "Recheck: unchanged"
+// while the machine gained nothing.
+func installBindingLabel(before, after, packageVersion string) string {
 	switch {
-	case after == "":
-		return "undetected"
-	case !versionComparable:
+	case !model.IsMeasuredLocalVersion(after):
 		return "undetected"
 	case after == packageVersion && before == packageVersion:
 		return "unchanged-same"

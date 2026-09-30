@@ -183,7 +183,7 @@ func provisioningAMD() string {
 		pkg, _ := nativeReadString(key, "PackageFileName")
 		nativeCloseKey(key)
 		if strings.EqualFold(pkg, "AMD.Power.Processor.ppkg") {
-			return "Provisioned"
+			return model.LocalVersionProvisioned
 		}
 	}
 	return ""

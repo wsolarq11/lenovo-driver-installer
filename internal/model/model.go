@@ -82,6 +82,24 @@ const (
 	AuditCategoryExternal            AuditCategory = "External"
 )
 
+// LocalVersionProvisioned is the local-version placeholder reported for a
+// package Windows has provisioned but not necessarily installed. On 82JQ
+// AMD.Power.Processor.ppkg exists under HKLM\SOFTWARE\Microsoft\Provisioning\
+// Results while the machine has no such application, no uninstall entry and no
+// matching device. It is a real fact about the machine and a false fact about
+// the driver: it must never stand in for a version number, because comparing it
+// to itself proves nothing. Single owner so no collector can invent its own
+// spelling.
+const LocalVersionProvisioned = "Provisioned"
+
+// IsMeasuredLocalVersion reports whether a local version is a measured version
+// number that can carry a before/after comparison. The provisioning placeholder
+// and the empty string cannot, so callers must not decide that an install took
+// effect from them.
+func IsMeasuredLocalVersion(local string) bool {
+	return local != "" && local != LocalVersionProvisioned
+}
+
 // DriverAssessment is the comparison and source-audit results computed for a
 // driver after it is selected for the view. It is a separate type from Driver
 // so the transport payload from the Lenovo API is never mutated by assessment
