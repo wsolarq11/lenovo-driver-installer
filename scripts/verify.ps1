@@ -421,6 +421,26 @@ Assert-Step 'a run reports only what the recheck confirmed' {
     }
 }
 
+Assert-Step 'the provisioning placeholder never reaches a decision' {
+    # "Provisioned" is a fact about HKLM\...\Provisioning\Results, not a version.
+    # It reached a decision twice: as a local version in the recheck, and as
+    # StatusUpToDate in CompareDriverStatus, which is fact-grade and therefore
+    # treated as measured. A placeholder must be undetermined everywhere.
+    $matching = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\compare\matching.go') -Raw
+    $cm = [regex]::Match($matching, '(?s)if\s+local\s*==\s*model\.LocalVersionProvisioned\s*\{(.*?)\n\t\}')
+    if (-not $cm.Success) {
+        throw 'CompareDriverStatus no longer handles the provisioning placeholder'
+    }
+    if ($cm.Groups[1].Value -notmatch 'return\s+model\.StatusUnknown') {
+        throw 'the provisioning placeholder is judged again; it proves neither presence nor absence, ' +
+              'so only an undetermined status is honest'
+    }
+    $t = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\evidence_chain_test.go') -Raw
+    if ($t -notmatch 'func\s+TestProvisionedIsNotAVersion') {
+        throw 'TestProvisionedIsNotAVersion is gone; the placeholder-to-status rule is unguarded'
+    }
+}
+
 Assert-Step 'driver selection order is a total order' {
     # PartID is not a total sort key: on 82JQ one PartID covers several groups
     # (249 alone holds five different WLAN vendors). A PartID-only stable sort
