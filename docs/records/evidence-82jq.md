@@ -145,3 +145,25 @@
 - **InstallShield 分支降级为交互**：该族在 82JQ 无任何实测真身，其开关 `/s /v"/qn /norestart"` 从未在真包上验证。按公式自身禁止项「未验证的开关不得派发」，改为**识别出 `InstallShield` 标记但不派发开关**，账本记录「识别但未验证」→ 走交互。门禁 `silent install dispatches on the package, not on the vendor column` 增查「`case FamilyInstallShield:` 不得出现在 `silentArgs` 表」；Go 测试 `TestSilentInstallerArgsCoversEveryProvenFamily` 直接断言 InstallShield 标记 → 无 args（红灯注入已验）。
 - **静默依据进账本**：此前无人值守安装的决定依据（哪个家族标记）算了但没写进账本，`Installed` 行只有 `exit=0`。现 `SilentPlanFor` 返回 `(canRun, evidence)`，`install.go` 把 evidence 写入 `Message` 列（散文），门禁 `the silent mechanism reaches the ledger as prose, never as a version` 禁止证据变量作裸位置参数（会漏进 `VerifiedVersion` 列）。红灯注入「把 silence 塞进第 5 个参数」→ 门禁 FAIL。
 
+## 5. 静默公式统一（2026-09-30）
+
+上一轮 (§4) 收紧到「字节实测家族」，但公式仍把**两个正交维度**混在一起：家族标记实测到了（`Inno Setup Setup Data` 命中），就当作「该族开关可派发」（给 Inno 下发 `/VERYSILENT`）。这是拿 `markerEvidence(F)` 冒充 `flagEvidence(F)`。用户指正「数据公式未统一且不够精确」，本轮拆开：
+
+- **两个正交证据**：`markerEvidence(F)` = 该族字节标记是否在真包上实测命中（fact / undetermined）；`flagEvidence(F)` = 该族静默开关是否在真机**端到端**跑通过（fact / undetermined）。**派发只由 `flagEvidence(F)==fact` 决定**，与家族识别无关。
+- **82JQ 现实**：`markerEvidence(Inno)=fact`（字节复扫命中），但 `flagEvidence(Inno)=undetermined`（`/VERYSILENT` 从未无人值守跑通过；真机只证明「装了、驱动绑上」，且那是操作者点完向导的路径）。其余各族连 marker 都未实测。
+- **统一公式**：`.inf`/`.zip`/`.cab` → 无人值守（工具直接 pnputil / `DiInstallDriverW`，无 GUI，无需开关即无开关可错）；**所有 `.exe` → 交互**（带 GUI 的安装器需要开关，而开关一律 `undetermined`，`⊥` 落到不动作分支）。
+- **代码收敛**：删 `silentArgs` 开关表、`silentPlan.args/ok`、`HasSilentParameters`、`silentInstallerArgs`、`installEXE`/`finishEXEFallback`、`extraction.go` 的 `setup.exe/nvsetup.exe` 静默分支、app 的 `outcomeEXERetry` 死路径；`InstallDriverFile` 的 `.exe` 分支改为 fail-closed（「no silent switch is verified」）。`planSilentInstall` 现在对每个 `.exe` 返回证据散文（命名家族或「no installer marker」+「interactive」）。
+- **门禁收紧**：`silent install dispatches on the package, not on the vendor column` 改为禁止 `installer_family.go` 重新出现任何 `return []string{`（即禁止开关表回潮），并要求 `familyMarkers` 仍在（拒绝证据必须能命名家族）。测试从 5 个「族开关」断言换成 5 个「全员拒绝」断言。
+- **尚未闭合（恢复某族的前提）**：一次可复现的真机钻探——无人值守运行某 `.exe` 开关 + 装后复核 `bound` + 记录退出码与字节证据。在此之前任何 `.exe` 静默开关都不得派发。
+
+## 6. Inno `/VERYSILENT` 真机钻探（2026-09-30 23:45，用户授权）
+
+用户授权执行上一轮挂起的破坏性钻探。目标：验证 Inno `/VERYSILENT` 是否能在真机无人值守运行。结果**只闭合了「静默性」维度，「装成」维度因环境无适用对象仍不可达**。
+
+- **对象**：盘上 `D:\Users\Administrator\TEMP\AMD-2GY501AFHN99VBC0.exe`（`DRV202102040007` AMD Power Processor，MD5 `EB35A6056B6B84D78A5004637BAA5652` 与官方一致，1,096,984 字节，Inno Setup）。命令 `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /LOG=...`（正确的 Inno 静默开关，不是之前伪造的 `-QuietInstall`）。
+- **静默性 = fact**：全程 `MainWindowTitle` 为空（`sawWindow=False`），11.9 秒自动退出 `ExitCode=0`，Inno 日志 `Installation process succeeded`、`Need to restart Windows? No`。对比此前带伪造 `-QuietInstall` 时弹窗需人工点击——`/VERYSILENT` 确实让 Inno 静默。
+- **包结构**：解压出 `AMD.Power.Processor.ppkg` + `AMDPPMSettings.exe` + License/Readme 到 `is-HSN7L.tmp`，安装完成后 Inno 自动清理该临时目录（`Test-Path` 为 False）。
+- **装成维度 = 无法验证（区分力为零）**：该包是 `.ppkg` Provisioning 包，不是 INF 驱动版本提升。装前 `HKLM\SOFTWARE\Microsoft\Provisioning\Results` 已存在 `PackageFileName=AMD.Power.Processor.ppkg`（key `{33aec352-aa8d-4916-b5ae-00005d9f9bfe}`），装后不变（幂等）；显卡驱动版本 `30.0.14052.9003` 前后一致（本就不该变）。
+- **对公式的影响**：`flagEvidence(Inno)` 从「完全 undetermined」升级为「静默性 fact、装成 undetermined」。统一公式派发门槛是「端到端装成 + bound = fact」，故**仍不恢复 Inno 自动派发**。钻探证明的是「静默开关本身有效」，不是「静默装成可验证」。
+- **为何无法闭合**：82JQ 当前 23 组状态 = `Not applicable 12 / Local newer 10 / Unknown 1`，**没有任何 `Not installed` 或 `Update` 的 INF 载荷包**可做「从无到有 bound」的端到端验证。这是环境事实，不是方法缺陷。要闭合装成维度，需要等 82JQ 出现一个真正需要安装/更新的 INF 载荷 Inno 包，或换一台有适用对象的真机。
+

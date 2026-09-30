@@ -29,16 +29,19 @@
 - 约束：计划、控制台、交互提示、GUI 导出统一输出 fact / inference / undetermined。
 - 强制点：四级（实测 fact / 推断 inference / 待定 undetermined）贯穿所有输出通道，任何通道不得把推断或待定渲染成事实。
 
-### 2.1 静默安装按包自身证明的家族派发
+### 2.1 静默安装：开关派发只由端到端验证决定
 
-- 规则：**下发给安装器的静默参数，必须由该包自身字节里的标识决定，不得由厂商列表的 `Parameter` 列决定。** 厂商列只在一种含义上可信——它声明载荷是什么（41/47 行声明 `/add-driver *.inf`，那是 INF 包装包，本就无需任何静默开关）；它不声明哪个开关能静默那个安装器。
-- 理由：82JQ 实测证伪。`DRV202102040007` 声明 `-QuietInstall`，而 `AMD-2GY501AFHN99VBC0.exe` 的字节里**没有** `-QuietInstall` 的任何拼写（ASCII 与 UTF-16LE 双扫均不命中），却**有** `Inno Setup Setup Data`（Inno Setup 头标记，ASCII 命中）——证明该包是 Inno，而不是厂商列宣称的那个开关。信任该列的后果是：安装器弹窗、操作者手工点完、机器零变化，而退出码为 0。
-- 公式（`internal/install/installer_family.go`，按优先级首次命中，无遗漏分支）：INF 载荷声明 → 无需开关；`!@Install@!UTF-8!` → 7-Zip SFX `-s`；`NullsoftInst` → NSIS `/S`；`Inno Setup Setup Data` → Inno `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-`；`.wixburn` → WiX Burn `/quiet /norestart`；`InstallShield` → **交互（开关未验证）**；**无命中 → 交互**。
-- 顺序是规格的一部分：这些包都是自解压壳，一个二进制会同时命中多个标识，而**跑起来的是包装器**，所以包装器标识排在载荷标识之前。
-- 禁止项：识别不出的包**必须**走交互，不得“猜一组参数发过去”。安装器不认识的开关是静默 no-op——进程退出 0 而什么也没变，这正是“报假成功”的成因。
-- 强制点：门禁 `silent install dispatches on the package, not on the vendor column` 禁止 `strings.Fields(vendorParameter)` 重新出现，并逐族核对其仍下发该族自己的开关；测试 `TestSilentInstallerArgsUsesProvenFamilyNotVendorColumn`、`TestSilentInstallerArgsCoversEveryProvenFamily`、`TestSilentInstallerArgsSkipsFlagForINFWrapper`、`TestInstallEXEUnprovenFamilyIsTerminal`、`TestInstallEXERunsProvenPackageWithoutVendorColumn`。
-- 证据出口：无人值守安装的决定依据必须落到账本 `Message` 列（散文，命名家族），**绝不**写进 `VerifiedVersion`/`BeforeVersion` 列——那两列是版本，机制写进去就把“Inno Setup 标记”伪装成版本声明。强制点：门禁 `the silent mechanism reaches the ledger as prose, never as a version`（`install.go` 必须 `install.SilentPlanFor(` 且 `Installed` 行含 `silent via`，证据变量不得作裸位置参数）；测试 `TestSilentPlanEvidenceNamesWhatAuthorisedIt`、`TestSilentPlanEvidenceAgreesWithTheDecision`。
-- 已知弱点：`InstallShield` 一档目前**没有任何实测真身**，故按禁止项降级为交互——识别出 `InstallShield` 标记但不派发开关，账本记录“识别但未验证”。82JQ 唯一的 NVIDIA 包——驱动条目 `DRV202102040021`（本地 `31.0.15.4630`）由其安装器文件 `DRV202109090053_NVVGA-TVLC18AF407GA0.exe` 提供——按 `setupapi.dev.log` 解压到 `is-6UIF7.tmp`，而 `is-*.tmp` 是本项目 `extraction.go` 模型认定的 Inno Setup 临时目录；同批 7 个脚本启动过的包（蓝牙/AMD IO/Realtek 声卡与 LAN/Fn/AMD VGA/NVIDIA）全部走 `is-*.tmp`。故该包命中 Inno 分支，不命中 InstallShield。`/s /v"/qn /norestart"` 虽是文档值，**在真机验证该族之前不得派发**，也不得宣称某包是它的真身。
+- 规则：**一个 `.exe` 包能否无人值守，取决于「静默开关是否端到端验证过」，不是「是否认出了安装器家族」。** 家族识别与开关验证是两个正交证据，只有后者能授权无人值守运行。
+- 理由：82JQ 实测证伪了两件事。其一，厂商 `Parameter` 列是伪造的：`DRV202102040007` 声明 `-QuietInstall`，而 `AMD-2GY501AFHN99VBC0.exe` 字节里**没有** `-QuietInstall` 的任何拼写（ASCII 与 UTF-16LE 双扫均不命中），却**有** `Inno Setup Setup Data` 标记。其二，认出 Inno 不等于验证了 `/VERYSILENT`：该开关从未在真机端到端跑通过（真机只证明过「包装了、驱动绑上了」，没证明过「无人在场时开关生效」）。信任未验证开关的后果：安装器弹窗、操作者手工点完、机器零变化，退出码 0。
+- 公式（`internal/install/installer_family.go`，单一出口）：
+  - `.inf`/`.zip`/`.cab` → **无人值守**：工具直接把 INF 交给 pnputil / `DiInstallDriverW`，该路径无 GUI，**无需开关即无开关可错**。
+  - `.exe` → **交互**：带 GUI 的安装器需要静默开关，而 82JQ 上**没有任何 `.exe` 静默开关端到端验证过**（`⊥`），`⊥` 一律落到不动作分支。家族仍从包自身字节识别并写进证据，但识别≠验证。
+- 顺序是规格的一部分：这些包都是自解压壳，一个二进制会同时命中多个标识，而跑起来的是包装器，所以包装器标识排在载荷标识之前；但命中只决定「证据里写哪个家族名」，不决定「是否派发开关」。
+- 禁止项：**不得给任何 `.exe` 家族下发静默开关**，直到某家族开关在真机端到端验证为 `fact`。安装器不认识的开关是静默 no-op——进程退出 0 而什么也没变，这正是「报假成功」的成因。
+- 强制点：门禁 `silent install dispatches on the package, not on the vendor column` 禁止 `installer_family.go` 里重新出现任何开关数组（`return []string{`），并要求 `familyMarkers` 仍在（拒绝证据必须能命名家族）；测试 `TestSilentPlanRefusesUnverifiedInno`、`TestSilentPlanRefusesEveryUnverifiedFamily`、`TestSilentPlanEvidenceNamesTheRefusedFamily`、`TestSilentPlanEvidenceAgreesWithTheDecision`、`TestInstallDriverFileEXEIsTerminal`。
+- 证据出口：拒绝决定必须落到账本 `Message` 列（散文，命名家族与「interactive」），**绝不**写进 `VerifiedVersion`/`BeforeVersion` 列——那两列是版本，机制写进去就把「Inno Setup 标记」伪装成版本声明。强制点：门禁 `the silent mechanism reaches the ledger as prose, never as a version`（`install_silent.go` 必须 `install.SilentPlanFor(` 且 `Installed` 行含 `silent via`，证据变量不得作裸位置参数）。
+- 已知弱点：**当前没有任何 `.exe` 静默开关端到端验证过，所以全部 `.exe` 走交互。** 真机只证明过「INF 载荷包（Inno 自解压，`[Run]` 是 pnputil）装了且驱动绑上」，但那是操作者点完向导的路径，不构成 `/VERYSILENT` 的无人值守证据。将来要恢复某个家族，前提是一次可复现的真机钻探：无人值守运行 + 装后复核 `bound` + 记录退出码与字节证据。
+
 
 ### 3.1 自动安装集必须由实测证据支撑
 

@@ -40,16 +40,14 @@
 | `.inf` | 先 `DiInstallDriverW`（newdev.dll）；回退 `pnputil.exe /add-driver <file> /install`；退出码 `1` 视为需重启成功 |
 | `.zip` | 展开、遍历提取的 INF，每个走原生优先 INF 安装 |
 | `.cab` | `expand.exe <file> -F:* <dir>`，再原生优先 INF 安装 |
-| `.exe` | 先静默安装器，超时/失败后提取回退 |
+| `.exe` | 交互（无 `.exe` 静默开关端到端验证过；见 invariant §2.1） |
 
 安装通道不使用 Windows Update。运行时原生-only：官方列表 → 校验下载 → 原生 `DiInstallDriverW`（INF），API 不可用时用系统原生 `pnputil` 回退；从不派生 PowerShell。
 
-EXE 回退行为：
+EXE 交互行为：
 
-- 若 `<working-dir>\<DriverCode>.log` 钉住 `is-*.tmp` 目录，优先用该目录。
-- 无日志证据时，只对 NVIDIA 驱动名扫描近期 `is-*.tmp` 根，且只取含 `Display.Driver` 的目录。
-- 回退跑 `setup.exe` 或 `nvsetup.exe`，INF 为最后选项。
-- 静默 EXE 失败且无可用提取回退时，CLI 提供 `r`（交互重跑）或 `s`（跳过）。
+- 所有 `.exe` 都走交互：CLI 提示 `r`（运行安装器，操作者点完向导）或 `s`（跳过）。
+- 不派发任何静默开关：没有任何 `.exe` 静默开关端到端验证过，派发开关是静默 no-op（进程退出 0 而什么也没变）。
 
 进程全部受超时约束，超时用 `taskkill.exe /PID <pid> /T /F` 杀整棵进程树。
 
