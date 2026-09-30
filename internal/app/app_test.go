@@ -530,14 +530,48 @@ func TestInstallBindingLabel(t *testing.T) {
 		name, before, after, pkg, want string
 	}{
 		{"bound", "1.0", "2.0", "2.0", "bound"},
-		{"already bound", "2.0", "2.0", "2.0", "unchanged"},
+		{"already bound", "2.0", "2.0", "2.0", "unchanged-same"},
 		{"staged", "1.0", "1.5", "2.0", "staged"},
 		{"unchanged", "1.0", "1.0", "2.0", "unchanged"},
 		{"undetected", "1.0", "", "2.0", "undetected"},
 	}
 	for _, tc := range cases {
-		if got := installBindingLabel(tc.before, tc.after, tc.pkg); got != tc.want {
+		if got := installBindingLabel(tc.before, tc.after, tc.pkg, true); got != tc.want {
 			t.Fatalf("%s: installBindingLabel(%q, %q, %q) = %q, want %q", tc.name, tc.before, tc.after, tc.pkg, got, tc.want)
+		}
+	}
+}
+
+// TestInstallBindingLabelHasNoVerdictWithoutComparableVersions pins the defect
+// the 82JQ drill exposed. A software-versioned driver reports "Provisioned" both
+// before and after regardless of whether the package installed, so before==after
+// carried no information and every such run was counted as a success.
+func TestInstallBindingLabelHasNoVerdictWithoutComparableVersions(t *testing.T) {
+	if got := installBindingLabel("Provisioned", "Provisioned", "6.0.0.9", false); got != "undetected" {
+		t.Fatalf("software-versioned recheck = %q, want undetected", got)
+	}
+	// A genuinely moved kernel-driver version is still judged on its own evidence.
+	if got := installBindingLabel("1.0", "2.0", "2.0", true); got != "bound" {
+		t.Fatalf("kernel-driver recheck = %q, want bound", got)
+	}
+}
+
+// TestOnlyConfirmedBindingsCountAsSuccess is the gate between the recheck and the
+// run summary. "unchanged" and "undetected" must not be reported as installed.
+func TestOnlyConfirmedBindingsCountAsSuccess(t *testing.T) {
+	for _, tc := range []struct {
+		binding string
+		want    bool
+	}{
+		{"bound", true},
+		{"staged", true},
+		{"unchanged-same", true},
+		{"unchanged", false},
+		{"undetected", false},
+		{"", false},
+	} {
+		if got := installBindingConfirmsEffect(tc.binding); got != tc.want {
+			t.Errorf("installBindingConfirmsEffect(%q) = %v, want %v", tc.binding, got, tc.want)
 		}
 	}
 }

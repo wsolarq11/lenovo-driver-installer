@@ -132,12 +132,16 @@ installLoop:
 		a.Log(ctx, fmt.Sprintf("Deferred %d driver(s) until after reboot.", len(deferred)), "WARN")
 	}
 
+	var unverified []string
 	if len(success) > 0 && !vc.Opts.DownloadOnly {
-		a.verifyInstalled(ctx, success)
+		success, unverified = a.verifyInstalled(ctx, success)
+		if len(unverified) > 0 {
+			a.Log(ctx, fmt.Sprintf("Unverified %d driver(s); the installer exited successfully but the machine shows no comparable change: %s", len(unverified), strings.Join(unverified, ", ")), "ERROR")
+		}
 	}
 
 	elapsed := time.Since(a.startedAt).Minutes()
-	a.Log(ctx, fmt.Sprintf("Finished: success=%d, failed=%d, deferred=%d, elapsed=%.2f min", len(success), len(failed), len(deferred), elapsed), "INFO")
+	a.Log(ctx, fmt.Sprintf("Finished: success=%d, failed=%d, deferred=%d, unverified=%d, elapsed=%.2f min", len(success), len(failed), len(deferred), len(unverified), elapsed), "INFO")
 	a.Log(ctx, "Log file: "+a.LogPath, "INFO")
 	if len(failed) > 0 {
 		return fmt.Errorf("%d driver(s) failed", len(failed))
@@ -302,28 +306,11 @@ func classifyInstallResult(code int, installErr error, isEXE bool) installOutcom
 	return outcomeFailed
 }
 
-// installBindingLabel classifies a post-install recheck into one of four
-// outcomes. "bound" means the active local version is now the package version;
-// "staged" means the version moved but has not reached the package version;
-// "unchanged" means the installer ran without replacing the active driver; and
-// "undetected" means the local version still cannot be read. The label is pure
-// so the wording never drifts between the log and the history record.
-func installBindingLabel(before, after, packageVersion string) string {
-	switch {
-	case after == "":
-		return "undetected"
-	case after == packageVersion && before == packageVersion:
-		return "unchanged"
-	case after == packageVersion:
-		return "bound"
-	case before == after:
-		return "unchanged"
-	default:
-		return "staged"
-	}
-}
-
-func (a *App) verifyInstalled(ctx context.Context, drivers []*model.AssessedDriver) {
+// verifyInstalled re-reads machine state after the install pass and returns the
+// drivers whose binding actually confirms the package took effect. Drivers it
+// cannot confirm are reported as unverified and must not enter the run summary
+// as successes: an installer can exit 0 without having changed anything.
+func (a *App) verifyInstalled(ctx context.Context, drivers []*model.AssessedDriver) (verified []*model.AssessedDriver, unverified []string) {
 	a.Log(ctx, "Running post-install verification pass...", "INFO")
 	localDevices, err := inventory.GetLocalDeviceSnapshot(ctx)
 	if err != nil {
@@ -376,7 +363,13 @@ func (a *App) verifyInstalled(ctx context.Context, drivers []*model.AssessedDriv
 		if problemLabel == "" {
 			problemLabel = "none"
 		}
-		binding := installBindingLabel(beforeLocal, afterLocal, driver.Version)
+		binding := installBindingLabel(beforeLocal, afterLocal, driver.Version,
+			!compare.TestSoftwareVersionedDriver(driver.DriverName))
+		if installBindingConfirmsEffect(binding) {
+			verified = append(verified, ad)
+		} else {
+			unverified = append(unverified, ad.Driver.DriverCode)
+		}
 		message := fmt.Sprintf("binding=%s; local=%s; before=%s; problem=%s", binding, afterLocal, beforeLabel, problemLabel)
 		// Causal gate: a rollback offer is only honest when the problem is NEW
 		// (clean before install, problem after). A problem that pre-existed the
@@ -405,6 +398,8 @@ func (a *App) verifyInstalled(ctx context.Context, drivers []*model.AssessedDriv
 			}
 		case "staged":
 			a.Log(ctx, fmt.Sprintf("[%s] Recheck: staged %s -> %s; package %s not yet bound (reboot may be needed).", driver.DriverCode, beforeLabel, afterLocal, driver.Version), "WARN")
+		case "unchanged-same":
+			a.Log(ctx, fmt.Sprintf("[%s] Recheck: machine already ran %s; reinstall confirmed no-op.", driver.DriverCode, afterLocal), "INFO")
 		case "unchanged":
 			packageVersion := compare.GetMatchingRemoteComponent(driver.Version, ad.LocalVendor)
 			if packageVersion != nil && packageVersion.String() != afterLocal {
@@ -412,6 +407,8 @@ func (a *App) verifyInstalled(ctx context.Context, drivers []*model.AssessedDriv
 			} else {
 				a.Log(ctx, fmt.Sprintf("[%s] Recheck: unchanged (%s); reboot may be needed.", driver.DriverCode, afterLocal), "WARN")
 			}
+		case "undetected":
+			a.Log(ctx, fmt.Sprintf("[%s] Recheck: no comparable local version (%s); this driver's version lives outside the device list, so the recheck cannot confirm the install.", driver.DriverCode, beforeLabel), "ERROR")
 		default:
 			a.Log(ctx, "["+driver.DriverCode+"] Recheck: version not detectable yet.", "WARN")
 		}
@@ -426,6 +423,10 @@ func (a *App) verifyInstalled(ctx context.Context, drivers []*model.AssessedDriv
 	} else if len(offers) > 0 {
 		a.Log(ctx, "Rollback offers : "+a.rollbackOfferPath(), "WARN")
 	}
+	if len(verified) == 0 && len(unverified) > 0 {
+		a.Log(ctx, "No installed driver could be confirmed from machine state.", "ERROR")
+	}
+	return verified, unverified
 }
 
 // manualRollbackGuidance builds the human instruction for a post-install device
