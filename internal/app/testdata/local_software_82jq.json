@@ -727,6 +727,26 @@
     {
       "DisplayName": "Microsoft Windows Desktop Runtime 10.0.12 (x64)",
       "DisplayVersion": "10.0.12.50000"
+    },
+    {
+      "DisplayName": "DeepSeek Harness 0.2.0-rc.2",
+      "DisplayVersion": "0.2.0-rc.2"
+    },
+    {
+      "DisplayName": "WorkBuddy 5.6.2",
+      "DisplayVersion": "5.6.2"
+    },
+    {
+      "DisplayName": "Bun",
+      "DisplayVersion": ""
+    },
+    {
+      "DisplayName": "Ruby 4.0.6-1-x64",
+      "DisplayVersion": "4.0.6-1"
+    },
+    {
+      "DisplayName": "Rustup: the Rust toolchain installer",
+      "DisplayVersion": "1.29.1"
     }
   ],
   "ProvisionedAmdPower": "Provisioned",

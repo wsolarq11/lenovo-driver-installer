@@ -99,8 +99,8 @@ func chainAssess(t *testing.T) []*model.AssessedDriver {
 	t.Helper()
 	devices := loadRealDevices(t)
 	snapshot := loadRealSoftware(t)
-	if len(devices) != 169 {
-		t.Fatalf("device fixture shrank: got %d, want 169", len(devices))
+	if len(devices) != 145 {
+		t.Fatalf("device fixture shrank: got %d, want 145", len(devices))
 	}
 	// A fixture that lost its version column would quietly push every compare to
 	// "undetermined" and still satisfy a structural assertion.
@@ -110,7 +110,10 @@ func chainAssess(t *testing.T) []*model.AssessedDriver {
 			withVersion++
 		}
 	}
-	if withVersion < 160 {
+	// Exact rather than a floor: the fixture is a fixed recording, so a change
+	// in either number means the machine state moved and every number asserted
+	// from here on has to be re-derived instead of inherited.
+	if withVersion != 143 {
 		t.Fatalf("device fixture lost versions: %d/%d carry one", withVersion, len(devices))
 	}
 

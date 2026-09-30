@@ -100,16 +100,6 @@
     "ProblemNumber": 0
   },
   {
-    "PnpDeviceID": "SWD\\PRINTENUM\\PRINTQUEUES",
-    "DeviceID": "PRINTENUM\\LocalPrintQueue",
-    "Name": "本地打印队列",
-    "Class": "PrintQueue",
-    "DriverVersion": "10.0.19041.1",
-    "InfName": "printqueue.inf",
-    "ProviderName": "Microsoft",
-    "ProblemNumber": 0
-  },
-  {
     "PnpDeviceID": "USB\\VID_8087\u0026PID_0029\\\u003cinstance\u003e",
     "DeviceID": "USB\\VID_8087\u0026PID_0029\u0026REV_0001",
     "Name": "英特尔(R) 无线 Bluetooth(R)",
@@ -157,26 +147,6 @@
     "DriverVersion": "5.12.0.38",
     "InfName": "oem89.inf",
     "ProviderName": "Advanced Micro Devices, Inc",
-    "ProblemNumber": 0
-  },
-  {
-    "PnpDeviceID": "SWD\\DRIVERENUM\\{741A2100-1023-11E9-B56E-0800200C9A66}#NAHIMIC_BTLINK\u00266\u00266759B03\u00260",
-    "DeviceID": "ROOT\\NahimicBTLink",
-    "Name": "Nahimic Easy Surround device",
-    "Class": "MEDIA",
-    "DriverVersion": "2.0.0.0",
-    "InfName": "oem63.inf",
-    "ProviderName": "Nahimic",
-    "ProblemNumber": 0
-  },
-  {
-    "PnpDeviceID": "SWD\\MSRRAS\\MS_PPPOEMINIPORT",
-    "DeviceID": "ms_pppoeminiport",
-    "Name": "WAN 微型端口(PPPOE)",
-    "Class": "Net",
-    "DriverVersion": "10.0.19041.1",
-    "InfName": "netrasa.inf",
-    "ProviderName": "Microsoft",
     "ProblemNumber": 0
   },
   {
@@ -260,36 +230,6 @@
     "ProblemNumber": 22
   },
   {
-    "PnpDeviceID": "SWD\\DRIVERENUM\\AMDUWP\u00265\u0026A2BEA0B\u00260",
-    "DeviceID": "SWC\\VID1002\u0026PID0001",
-    "Name": "AMD-UWP Version Control",
-    "Class": "SoftwareComponent",
-    "DriverVersion": "29.2140.0.0",
-    "InfName": "oem68.inf",
-    "ProviderName": "Advanced Micro Devices, Inc.",
-    "ProblemNumber": 0
-  },
-  {
-    "PnpDeviceID": "SWD\\RADIO\\{D523D36F-B430-49C3-9484-E2A4A186C166}",
-    "DeviceID": "",
-    "Name": "通用软件设备",
-    "Class": "SoftwareDevice",
-    "DriverVersion": "10.0.19041.1",
-    "InfName": "c_swdevice.inf",
-    "ProviderName": "Microsoft",
-    "ProblemNumber": 0
-  },
-  {
-    "PnpDeviceID": "SWD\\MSRRAS\\{5E259276-BC7E-40E3-B93B-8F89B5F3ABC0}",
-    "DeviceID": "",
-    "Name": "通用软件设备",
-    "Class": "SoftwareDevice",
-    "DriverVersion": "10.0.19041.1",
-    "InfName": "c_swdevice.inf",
-    "ProviderName": "Microsoft",
-    "ProblemNumber": 0
-  },
-  {
     "PnpDeviceID": "ACPI\\ACPI0010\\1",
     "DeviceID": "ACPI\\VEN_ACPI\u0026DEV_0010",
     "Name": "ACPI 处理器容器设备",
@@ -350,16 +290,6 @@
     "ProblemNumber": 0
   },
   {
-    "PnpDeviceID": "SWD\\MSRRAS\\MS_PPTPMINIPORT",
-    "DeviceID": "ms_pptpminiport",
-    "Name": "WAN 微型端口(PPTP)",
-    "Class": "Net",
-    "DriverVersion": "10.0.19041.1",
-    "InfName": "netrasa.inf",
-    "ProviderName": "Microsoft",
-    "ProblemNumber": 0
-  },
-  {
     "PnpDeviceID": "HDAUDIO\\FUNC_01\u0026VEN_10EC\u0026DEV_0287\u0026SUBSYS_17AA3846\u0026REV_1000\\\u003cinstance\u003e",
     "DeviceID": "HDAUDIO\\FUNC_01\u0026VEN_10EC\u0026DEV_0287\u0026SUBSYS_17AA3846\u0026REV_1000",
     "Name": "Realtek High Definition Audio",
@@ -386,26 +316,6 @@
     "Class": "System",
     "DriverVersion": "10.0.19041.7663",
     "InfName": "wvid.inf",
-    "ProviderName": "Microsoft",
-    "ProblemNumber": 0
-  },
-  {
-    "PnpDeviceID": "SWD\\PRINTENUM\\{E8E2D2BC-4632-436B-B41A-AE972C947B8B}",
-    "DeviceID": "PRINTENUM\\{0f4130dd-19c7-7ab6-99a1-980f03b2ee4e}",
-    "Name": "本地打印队列",
-    "Class": "PrintQueue",
-    "DriverVersion": "10.0.19041.1",
-    "InfName": "printqueue.inf",
-    "ProviderName": "Microsoft",
-    "ProblemNumber": 0
-  },
-  {
-    "PnpDeviceID": "SWD\\MSRRAS\\MS_AGILEVPNMINIPORT",
-    "DeviceID": "ms_agilevpnminiport",
-    "Name": "WAN Miniport (IKEv2)",
-    "Class": "Net",
-    "DriverVersion": "10.0.19041.1",
-    "InfName": "netavpna.inf",
     "ProviderName": "Microsoft",
     "ProblemNumber": 0
   },
@@ -467,16 +377,6 @@
     "DriverVersion": "10.0.19041.7663",
     "InfName": "spaceport.inf",
     "ProviderName": "Microsoft",
-    "ProblemNumber": 0
-  },
-  {
-    "PnpDeviceID": "SWD\\DRIVERENUM\\{741A2100-1023-11E9-B56E-0800200C9A66}#AVOLUTE_NH4APO\u00266\u00266759B03\u00260",
-    "DeviceID": "SWC\\VEN_AVOL\u0026AID_0802",
-    "Name": "Nahimic APO 4",
-    "Class": "SoftwareComponent",
-    "DriverVersion": "4.7.2.0",
-    "InfName": "oem61.inf",
-    "ProviderName": "A-Volute",
     "ProblemNumber": 0
   },
   {
@@ -566,16 +466,6 @@
     "Class": "System",
     "DriverVersion": "10.0.19041.3636",
     "InfName": "machine.inf",
-    "ProviderName": "Microsoft",
-    "ProblemNumber": 0
-  },
-  {
-    "PnpDeviceID": "SWD\\PRINTENUM\\{708B8179-FE4C-494C-9671-5607322ADC96}",
-    "DeviceID": "PRINTENUM\\{084f01fa-e634-4d77-83ee-074817c03581}",
-    "Name": "本地打印队列",
-    "Class": "PrintQueue",
-    "DriverVersion": "10.0.19041.1",
-    "InfName": "printqueue.inf",
     "ProviderName": "Microsoft",
     "ProblemNumber": 0
   },
@@ -750,16 +640,6 @@
     "ProblemNumber": 0
   },
   {
-    "PnpDeviceID": "SWD\\RADIO\\{3DB5895D-CC28-44B3-AD3D-6F01A782B8D2}",
-    "DeviceID": "",
-    "Name": "通用软件设备",
-    "Class": "SoftwareDevice",
-    "DriverVersion": "10.0.19041.1",
-    "InfName": "c_swdevice.inf",
-    "ProviderName": "Microsoft",
-    "ProblemNumber": 0
-  },
-  {
     "PnpDeviceID": "HID\\VID_048D\u0026PID_C101\u0026COL05\\\u003cinstance\u003e",
     "DeviceID": "HID\\VID_048D\u0026PID_C101\u0026REV_0700\u0026Col05",
     "Name": "符合 HID 标准的系统控制器",
@@ -777,16 +657,6 @@
     "DriverVersion": "6.0.0.82",
     "InfName": "oem65.inf",
     "ProviderName": "AMD",
-    "ProblemNumber": 0
-  },
-  {
-    "PnpDeviceID": "SWD\\RADIO\\BLUETOOTH_38FC9887E186",
-    "DeviceID": "",
-    "Name": "通用软件设备",
-    "Class": "SoftwareDevice",
-    "DriverVersion": "10.0.19041.1",
-    "InfName": "c_swdevice.inf",
-    "ProviderName": "Microsoft",
     "ProblemNumber": 0
   },
   {
@@ -826,26 +696,6 @@
     "Class": "Computer",
     "DriverVersion": "10.0.19041.1",
     "InfName": "hal.inf",
-    "ProviderName": "Microsoft",
-    "ProblemNumber": 0
-  },
-  {
-    "PnpDeviceID": "SWD\\MSRRAS\\MS_NDISWANBH",
-    "DeviceID": "ms_ndiswanbh",
-    "Name": "WAN 微型端口(网络监视器)",
-    "Class": "Net",
-    "DriverVersion": "10.0.19041.1",
-    "InfName": "netrasa.inf",
-    "ProviderName": "Microsoft",
-    "ProblemNumber": 0
-  },
-  {
-    "PnpDeviceID": "SWD\\MSRRAS\\MS_NDISWANIP",
-    "DeviceID": "ms_ndiswanip",
-    "Name": "WAN 微型端口(IP)",
-    "Class": "Net",
-    "DriverVersion": "10.0.19041.1",
-    "InfName": "netrasa.inf",
     "ProviderName": "Microsoft",
     "ProblemNumber": 0
   },
@@ -980,16 +830,6 @@
     "ProblemNumber": 0
   },
   {
-    "PnpDeviceID": "SWD\\MSRRAS\\MS_SSTPMINIPORT",
-    "DeviceID": "ms_sstpminiport",
-    "Name": "WAN 微型端口(SSTP)",
-    "Class": "Net",
-    "DriverVersion": "10.0.19041.1",
-    "InfName": "netsstpa.inf",
-    "ProviderName": "Microsoft",
-    "ProblemNumber": 0
-  },
-  {
     "PnpDeviceID": "ACPI_HAL\\UEFI\\0",
     "DeviceID": "ACPI_HAL\\UEFI",
     "Name": "Microsoft UEFI 兼容系统",
@@ -1017,16 +857,6 @@
     "DriverVersion": "10.0.19041.7548",
     "InfName": "usbxhci.inf",
     "ProviderName": "Microsoft",
-    "ProblemNumber": 0
-  },
-  {
-    "PnpDeviceID": "SWD\\DRIVERENUM\\{C3A63EDD-2D27-4B66-B155-5E94B43D926A}#REALTEKAPO\u00266\u00266759B03\u00260",
-    "DeviceID": "SWC\\VEN_10EC\u0026AID_0011",
-    "Name": "Realtek Audio Effects Component",
-    "Class": "SoftwareComponent",
-    "DriverVersion": "12.23.1057.27",
-    "InfName": "oem60.inf",
-    "ProviderName": "Realtek",
     "ProblemNumber": 0
   },
   {
@@ -1066,16 +896,6 @@
     "Class": "HIDClass",
     "DriverVersion": "10.0.19041.1",
     "InfName": "mtconfig.inf",
-    "ProviderName": "Microsoft",
-    "ProblemNumber": 0
-  },
-  {
-    "PnpDeviceID": "SWD\\MMDEVAPI\\{0.0.0.00000000}.{B0E84016-6852-4677-81A7-B2D364799262}",
-    "DeviceID": "MMDEVAPI\\AudioEndpoints",
-    "Name": "音频端点",
-    "Class": "AudioEndpoint",
-    "DriverVersion": "10.0.19041.1",
-    "InfName": "audioendpoint.inf",
     "ProviderName": "Microsoft",
     "ProblemNumber": 0
   },
@@ -1170,16 +990,6 @@
     "ProblemNumber": 0
   },
   {
-    "PnpDeviceID": "SWD\\MMDEVAPI\\MICROSOFTGSWAVETABLESYNTH",
-    "DeviceID": "",
-    "Name": "通用软件设备",
-    "Class": "SoftwareDevice",
-    "DriverVersion": "10.0.19041.1",
-    "InfName": "c_swdevice.inf",
-    "ProviderName": "Microsoft",
-    "ProblemNumber": 0
-  },
-  {
     "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_15DF\u0026SUBSYS_382A17AA\u0026REV_00\\\u003cinstance\u003e",
     "DeviceID": "PCI\\VEN_1022\u0026DEV_15DF\u0026SUBSYS_382A17AA\u0026REV_00",
     "Name": "AMD PSP 10.0 Device",
@@ -1187,16 +997,6 @@
     "DriverVersion": "5.18.0.0",
     "InfName": "oem85.inf",
     "ProviderName": "Advanced Micro Devices Inc.",
-    "ProblemNumber": 0
-  },
-  {
-    "PnpDeviceID": "SWD\\DRIVERENUM\\{C3A63EDD-2D27-4B66-B155-5E94B43D926A}#REALTEKSRV\u00266\u00266759B03\u00260",
-    "DeviceID": "SWC\\VEN_10EC\u0026SID_0001",
-    "Name": "Realtek Audio Universal Service",
-    "Class": "SoftwareComponent",
-    "DriverVersion": "1.0.0.533",
-    "InfName": "oem59.inf",
-    "ProviderName": "Realtek",
     "ProblemNumber": 0
   },
   {
@@ -1560,16 +1360,6 @@
     "ProblemNumber": 0
   },
   {
-    "PnpDeviceID": "SWD\\DRIVERENUM\\{741A2100-1023-11E9-B56E-0800200C9A66}#NAHIMIC_MIRRORING\u00266\u00266759B03\u00260",
-    "DeviceID": "ROOT\\Nahimic_Mirroring",
-    "Name": "Nahimic mirroring device",
-    "Class": "MEDIA",
-    "DriverVersion": "2.0.0.0",
-    "InfName": "oem62.inf",
-    "ProviderName": "Nahimic",
-    "ProblemNumber": 0
-  },
-  {
     "PnpDeviceID": "HDAUDIO\\FUNC_01\u0026VEN_10DE\u0026DEV_009F\u0026SUBSYS_FFFFFFFF\u0026REV_1001\\\u003cinstance\u003e",
     "DeviceID": "HDAUDIO\\FUNC_01\u0026VEN_10DE\u0026DEV_009F\u0026SUBSYS_FFFFFFFF\u0026REV_1001",
     "Name": "NVIDIA High Definition Audio",
@@ -1650,42 +1440,12 @@
     "ProblemNumber": 0
   },
   {
-    "PnpDeviceID": "SWD\\DRIVERENUM\\{C3A63EDD-2D27-4B66-B155-5E94B43D926A}#REALTEKHSA\u00266\u00266759B03\u00260",
-    "DeviceID": "SWC\\VEN_10EC\u0026HID_0001",
-    "Name": "Realtek Hardware Support Application",
-    "Class": "SoftwareComponent",
-    "DriverVersion": "11.0.6000.273",
-    "InfName": "oem58.inf",
-    "ProviderName": "Realtek",
-    "ProblemNumber": 0
-  },
-  {
     "PnpDeviceID": "PCI\\VEN_1022\u0026DEV_166D\u0026SUBSYS_00000000\u0026REV_00\\3\u00262411E6FE\u00260\u0026C3",
     "DeviceID": "PCI\\VEN_1022\u0026DEV_166D\u0026SUBSYS_00000000\u0026REV_00",
     "Name": "PCI 标准主机 CPU 桥",
     "Class": "System",
     "DriverVersion": "10.0.19041.3636",
     "InfName": "machine.inf",
-    "ProviderName": "Microsoft",
-    "ProblemNumber": 0
-  },
-  {
-    "PnpDeviceID": "SWD\\MSRRAS\\MS_NDISWANIPV6",
-    "DeviceID": "ms_ndiswanipv6",
-    "Name": "WAN 微型端口(IPv6)",
-    "Class": "Net",
-    "DriverVersion": "10.0.19041.1",
-    "InfName": "netrasa.inf",
-    "ProviderName": "Microsoft",
-    "ProblemNumber": 0
-  },
-  {
-    "PnpDeviceID": "SWD\\MSRRAS\\MS_L2TPMINIPORT",
-    "DeviceID": "ms_l2tpminiport",
-    "Name": "WAN 微型端口(L2TP)",
-    "Class": "Net",
-    "DriverVersion": "10.0.19041.1",
-    "InfName": "netrasa.inf",
     "ProviderName": "Microsoft",
     "ProblemNumber": 0
   }

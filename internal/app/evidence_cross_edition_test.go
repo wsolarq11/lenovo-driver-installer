@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"lenovo-driver/internal/api"
@@ -29,6 +30,28 @@ func loadRealQuickFixAlt(t *testing.T) *api.QuickFixResponse {
 		t.Fatalf("decode OSID 248 fixture: %v", err)
 	}
 	return &resp
+}
+
+// TestSoftwareDevicesCannotMatchLenovoPackages justifies dropping SWD rows from
+// the device fixture. Those rows carry per-machine GUIDs — SWD\DRIVERENUM\{…},
+// SWD\RADIO\{…}, SWD\MSRRAS\{…} — that change on reinstall, so recording them
+// would make the fixture unreproducible. They are excluded only because no
+// Lenovo package targets a software device; this states that premise rather than
+// leaving the exclusion resting on a comment.
+func TestSoftwareDevicesCannotMatchLenovoPackages(t *testing.T) {
+	drivers := api.ParseQuickFix(loadRealQuickFix(t), chainOSID)
+	for _, d := range drivers {
+		id := strings.TrimSpace(d.HardwareID)
+		if id == "" {
+			continue
+		}
+		if strings.HasPrefix(id, `SWD\`) {
+			t.Errorf("%s %q targets a software device id; Lenovo packages match PCI/USB/ACPI hardware ids",
+				d.DriverCode, id)
+		}
+	}
+	t.Logf("%d packages checked; none targets a SWD id, so the excluded software devices "+
+		"cannot change a comparison outcome", len(drivers))
 }
 
 // TestEvidenceChainAcrossEditions closes the seam the single-edition chain could
