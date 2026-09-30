@@ -534,8 +534,8 @@ Assert-Step 'one comparison primitive decides every version question' {
 
 Assert-Step 'silent install dispatches on the package, not on the vendor column' {
     # The vendor Parameter column is falsified: DRV202102040007 declares
-    # "-QuietInstall" and its binary contains no such literal while carrying
-    # "/VERYSILENT", the Inno Setup switch. Trusting the column launched a window
+    # "-QuietInstall" and its binary contains no such literal but carries the
+    # Inno header "Inno Setup Setup Data". Trusting the column launched a window
     # that the operator dismissed, and the machine gained nothing. Lenovo's own
     # tool dispatches on installer family, so the formula must too.
     $family = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\install\installer_family.go') -Raw

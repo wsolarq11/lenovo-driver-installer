@@ -204,9 +204,10 @@ func writeStubPackage(t *testing.T, marker string) string {
 
 // TestSilentInstallerArgsUsesProvenFamilyNotVendorColumn pins the defect the
 // 82JQ drill exposed. DRV202102040007 declared "-QuietInstall" and the binary
-// contained no such literal while carrying "/VERYSILENT"; trusting the column
-// sent the installer a flag it does not recognize, so it showed a window, the
-// operator clicked through, and the machine gained nothing.
+// contained no such literal but carries the Inno header "Inno Setup Setup
+// Data"; trusting the column sent the installer a flag it does not recognize,
+// so it showed a window, the operator clicked through, and the machine gained
+// nothing.
 func TestSilentInstallerArgsUsesProvenFamilyNotVendorColumn(t *testing.T) {
 	path := writeStubPackage(t, "Inno Setup Setup Data (6.4.3)")
 	args, ok := silentInstallerArgs(path, &model.Driver{

@@ -245,10 +245,10 @@ func finishEXEFallback(driver *model.Driver, workingDir string, fallback exeFall
 // silentInstallerArgs applies the formula in installer_family.go, which
 // dispatches on the family the package's own bytes prove. The vendor column is
 // no longer read as a silent switch: on 82JQ DRV202102040007 declared
-// "-QuietInstall" and the binary contains no such literal while carrying
-// "/VERYSILENT", so a run that trusted the column installed nothing and still
-// exited 0. ok=false means the formula found no evidence for any family, and
-// the caller must not launch this as a silent install.
+// "-QuietInstall" and the binary contains no such literal but carries the Inno
+// header "Inno Setup Setup Data", so a run that trusted the column installed
+// nothing and still exited 0. ok=false means the formula found no evidence for
+// any family, and the caller must not launch this as a silent install.
 func silentInstallerArgs(filePath string, driver *model.Driver, logPath string) ([]string, bool) {
 	plan := planSilentInstall(filePath, driver, logPath)
 	return plan.args, plan.ok

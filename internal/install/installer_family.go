@@ -11,12 +11,16 @@ import (
 //
 // Lenovo's own tool installs silently because it dispatches on the installer
 // family rather than on the driver's Parameter column. Measured on the 82JQ
-// lists: that column carries only three values across 47 rows, and one of them
-// is false. AMD-2GY501AFHN99VBC0.exe declares "-QuietInstall" and the binary
-// contains neither that literal nor any spelling of it, while it does contain
-// "/VERYSILENT" — the Inno Setup switch. The other two are "-n -s" on the two
-// NVIDIA packages (InstallShield) and "/add-driver *.inf /install /subdirs" on
-// 41 rows that are INF payload wrappers needing no vendor switch at all.
+// lists: that column carries three non-empty values, and one of them is false.
+// AMD-2GY501AFHN99VBC0.exe declares "-QuietInstall" and the binary contains
+// no spelling of it, but does carry "Inno Setup Setup Data" — the Inno Setup
+// header — which proves the package is Inno no matter what the column says.
+// The other two are "-n -s" on the
+// NVIDIA package (whose outer wrapper's family is not established by its
+// bytes; setupapi.dev.log shows it extracting to the Inno-style temp dir
+// is-6UIF7.tmp, so the "-n -s" column is a hint, not proof) and
+// "/add-driver *.inf /install /subdirs" on 41 rows that are INF payload
+// wrappers needing no vendor switch at all.
 //
 // So the column is a hint and the binary is the evidence. This file owns the
 // table; nothing else may invent an installer family.
