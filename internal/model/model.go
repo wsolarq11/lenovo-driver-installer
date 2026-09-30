@@ -41,15 +41,31 @@ func InAutomaticInstallSet(status CompareStatus) bool {
 // summary, interactive prompts, and GUI export so the fact/inference/
 // undetermined wording never drifts between consumers.
 //
-//	fact:         both remote and local versions were measured and compared.
-//	inference:    the status depends on source audit or the absence of a local match.
+//	fact:         the status rests on a measurement taken on this machine.
+//	inference:    the status depends on source audit rather than measurement.
 //	undetermined: the comparison could not reach a decision.
+//
+// Every status that can enter the automatic install set must be a fact: that set
+// is the only unattended path that changes machine state, so an inference there
+// would mean the tool acts on a guess. TestAutomaticSetStatusesAreMeasured
+// enforces that pairing, because the two decisions are made in different places
+// and would otherwise drift apart.
+//
+// NotInstalled and LocalNewer used to be inference, justified as "the absence
+// of a local match". That described the old compare path, which for
+// software-versioned drivers consulted only InstalledApps and ignored the
+// device. compare.ResolveLocalDriverVersion now falls back to the device's
+// measured version, so the absence is gone: NotInstalled means a matched device
+// carries no bound driver version, and LocalNewer means two measured versions
+// were compared arithmetically. Both are measurements.
+//
+// Unknown means a version could not be parsed on one side, and NotApplicable
+// means no device on this machine matches the driver at all — in both cases
+// there is nothing measured to compare.
 func StatusEvidenceBasis(status CompareStatus) string {
 	switch status {
-	case StatusUpdate, StatusUpToDate:
+	case StatusUpdate, StatusUpToDate, StatusNotInstalled, StatusLocalNewer:
 		return "fact"
-	case StatusNotInstalled, StatusLocalNewer:
-		return "inference"
 	default:
 		return "undetermined"
 	}
