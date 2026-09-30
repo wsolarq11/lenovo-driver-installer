@@ -372,34 +372,57 @@ func TestSoftwareVersionedDriver(driverName string) bool {
 	return reSoftwareVersioned.MatchString(driverName)
 }
 
+// deviceVersionFrom collapses the matched devices' measured driver versions into
+// the single string the compare step consumes. A device with no version, or with
+// several distinct ones, is reported as the empty string or the joined list
+// respectively; in both cases the caller decides what that means.
+func deviceVersionFrom(matchedDevices []model.Device, driverVersions []string) string {
+	if len(matchedDevices) == 0 {
+		return ""
+	}
+	seen := map[string]bool{}
+	var unique []string
+	for _, v := range driverVersions {
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		unique = append(unique, v)
+	}
+	sort.Strings(unique)
+	switch len(unique) {
+	case 0:
+		return ""
+	case 1:
+		return unique[0]
+	default:
+		return strings.Join(unique, ", ")
+	}
+}
+
 // ResolveLocalDriverVersion mirrors Resolve-LocalDriverVersion.
 func ResolveLocalDriverVersion(driver *model.Driver, matchedDevices []model.Device, driverVersions []string, snapshot *model.SoftwareSnapshot) (localVersion, localVendor string) {
 	softwareVersion := ResolveInstalledSoftwareVersion(driver.DriverName, snapshot)
 	if TestSoftwareVersionedDriver(driver.DriverName) {
 		localVendor = GetDeviceVendor(deviceNames(matchedDevices))
 		localVersion = softwareVersion
+		// Software-versioned drivers normally resolve through InstalledApps,
+		// but "not present in InstalledApps" is absence of evidence, not evidence
+		// of absence. The device still carries a version read straight from PnP,
+		// which is a measured fact and must outrank a failed lookup: returning
+		// "" here made CompareDriverStatus report Not installed for a device that
+		// already runs a vendor package, and Not installed is the one status the
+		// automatic set acts on. On 82JQ that put a redundant reinstall of
+		// ACPI\VPC2004 (Lenovo Energy Management, oem90.inf, 15.11.29.65) in front
+		// of the user.
+		if localVersion == "" {
+			localVersion = deviceVersionFrom(matchedDevices, driverVersions)
+		}
 		return localVersion, localVendor
 	}
 	if len(matchedDevices) > 0 {
 		localVendor = GetDeviceVendor(deviceNames(matchedDevices))
-		seen := map[string]bool{}
-		var unique []string
-		for _, v := range driverVersions {
-			if v == "" || seen[v] {
-				continue
-			}
-			seen[v] = true
-			unique = append(unique, v)
-		}
-		sort.Strings(unique)
-		switch len(unique) {
-		case 1:
-			localVersion = unique[0]
-		case 0:
-			localVersion = ""
-		default:
-			localVersion = strings.Join(unique, ", ")
-		}
+		localVersion = deviceVersionFrom(matchedDevices, driverVersions)
 	}
 	if localVersion == "" {
 		localVersion = softwareVersion

@@ -170,11 +170,16 @@ func TestEvidenceChainReal82JQ(t *testing.T) {
 		counts[model.StatusNotApplicable])
 
 	// Asserted one by one: any step that drifts shows up as a count mismatch.
+	// Not installed is 0 and Local newer is 10 because a software-versioned
+	// driver now falls back to the device's measured version. Before that fix
+	// DRV201907160015 read as "not installed" — and therefore sat in the
+	// automatic set — while ACPI\VPC2004 was running Lenovo's oem90.inf at
+	// 15.11.29.65, newer than the 15.11.29.13 the list offers.
 	wantStatus := map[model.CompareStatus]int{
 		model.StatusUpdate:        0,
 		model.StatusUpToDate:      1,
-		model.StatusNotInstalled:  1,
-		model.StatusLocalNewer:    9,
+		model.StatusNotInstalled:  0,
+		model.StatusLocalNewer:    10,
 		model.StatusNotApplicable: 12,
 	}
 	for status, want := range wantStatus {
@@ -184,18 +189,16 @@ func TestEvidenceChainReal82JQ(t *testing.T) {
 	}
 
 	applicable, updates := partitionViewDrivers(assessed)
-	if len(applicable) != 1 {
-		t.Fatalf("automatic install set = %d, want 1 (live dry-run reported 1)", len(applicable))
-	}
-	if got := applicable[0].Driver.DriverCode; got != "DRV201907160015" {
-		t.Fatalf("automatic install set contains %s, want DRV201907160015", got)
-	}
-	if applicable[0].CompareStatus != model.StatusNotInstalled {
-		t.Fatalf("sole automatic-set driver is %q, want Not installed", applicable[0].CompareStatus)
+	// Empty, and that is the correct outcome: this machine has no driver the
+	// official list would improve on, so the evidence chain concludes "act on
+	// nothing" rather than "act on something we are unsure about".
+	if len(applicable) != 0 {
+		t.Fatalf("automatic install set = %d, want 0 (live dry-run reports 0)", len(applicable))
 	}
 	if len(updates) != 0 {
 		t.Fatalf("update-only set = %d, want 0", len(updates))
 	}
+	t.Logf("automatic install set is empty: no driver on 82JQ is measurably behind the list")
 }
 
 // TestEvidenceChainLatestSelectionIsIdentityOnThisFixture records why the
@@ -245,19 +248,24 @@ func TestEvidenceChainLatestSelectionIsIdentityOnThisFixture(t *testing.T) {
 // post-install diff attributes. The seam is only real if those ids come from
 // the chain, so this reuses the assessed drivers rather than inventing device
 // ids the way an isolated ledger test has to.
+//
+// The automatic set is empty on this machine, so the driver exercised here is
+// the one that was wrongly in it before the fallback fix: Local newer is
+// excluded from unattended install but stays reachable through the manual "s"
+// selection, which is exactly the path whose audit trail has to hold up.
 func TestEvidenceChainReachesLedger(t *testing.T) {
 	var target *model.AssessedDriver
 	for _, ad := range chainAssess(t) {
-		if ad.CompareStatus == model.StatusNotInstalled && len(ad.MatchedDeviceIDs) > 0 {
+		if ad.CompareStatus == model.StatusLocalNewer && len(ad.MatchedDeviceIDs) > 0 {
 			target = ad
 			break
 		}
 	}
 	if target == nil {
-		t.Fatal("no install-set driver matched a real device; the chain cannot be closed")
+		t.Fatal("no Local newer driver matched a real device; the manual path has no evidence to audit")
 	}
 	ids := target.MatchedDeviceIDs
-	t.Logf("%s targets %d device(s): %v", target.Driver.DriverCode, len(ids), ids)
+	t.Logf("%s (%s) targets %d device(s): %v", target.Driver.DriverCode, target.CompareStatus, len(ids), ids)
 
 	app := newTestApp(t)
 	app.HistoryPath = filepath.Join(t.TempDir(), "history.csv")
