@@ -582,3 +582,31 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed** — 文档写回，待 commit。
+
+---
+
+## Session: 决策由实测证据占有
+
+**Branch**: `main`
+
+### Summary
+
+上一轮把证据接成了链。这一轮把要求提到“严格占有决策”：链上每一个进入决策的量都必须有 fact 级证据，证据缺失不得被当成关于机器的事实。结果推翻了自己上一轮的结论。
+
+### Main Changes
+
+- **根因**：`ResolveLocalDriverVersion` 对 5 类 software-versioned 驱动（`Lenovo Fn|Energy Management|X-Rite|AMD Power|Intel.*Connectivity`）只取 InstalledApps 版本，不看设备侧。联想 Energy Management 是服务而非 InstalledApps 条目 → 查不到 → `""` → `CompareDriverStatus` 首行 `if local == ""` → `Not installed` → **自动安装集唯一据以行动的状态**。实测 `ACPI\VPC2004\0` 装着联想 `oem90.inf` / `15.11.29.65` / Problem 0，官方只给 `15.11.29.13`。
+- 修复：抽 `deviceVersionFrom` 单一提取点，两条路径对称化——软件版本优先，为空时回退设备实测版本。影响面 5 类驱动。
+- 链断言更新到新真相，账本接缝改用 `DRV201907160015`（现 `Local newer`，经 `s` 手动路径可达）。
+- 门禁 27 → 28 步：新增 `software-versioned compare falls back to the measured device version`。
+
+### Testing
+
+- [实测] **结论被推翻**：真机 `Applicable candidates: 1 → 0`；`Not installed 1 → 0`，`Local newer 9 → 10`；`DRV201907160015` 现为 `Local newer`（`15.11.29.65` vs `15.11.29.13`）。**这台机器没有任何驱动值得装**——上一轮“装一个”的结论是缺陷产物。
+- [实测] 三个新测试：回退生效 / 软件侧有值时仍优先软件侧 / `local == ""` 必对应“设备在但无驱动”（`TestDriverApplicable` 已在上游排除无匹配设备，该保证被钉死）。
+- [实测] 红灯双杀：移除回退后 Go 测试与静态门禁**同时** FAIL，错误信息为 `a failed InstalledApps lookup would again be read as evidence of absence`；还原后 28/28 VERIFY_OK。
+- [实测] 写第三个测试时我断言“无证据时应报 undetermined”，实测 FAIL 后确认**是测试写错**：该路径在架构里不存在（`TestDriverApplicable` 先过滤），改写为断言架构真实提供的保证。
+
+### Status
+
+[OK] **Completed** — 文档写回，待 commit。
