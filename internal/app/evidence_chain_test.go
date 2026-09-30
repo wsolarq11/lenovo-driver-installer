@@ -160,6 +160,30 @@ func chainAssess(t *testing.T) []*model.AssessedDriver {
 	return assessed
 }
 
+// TestProvisionedIsNotAVersion pins the second place the placeholder reached a
+// decision. It read "Provisioned" -> Up to date, handing the automatic set a
+// fact-grade claim for a package the machine has provisioned but never
+// installed. Undetermined is the only status the evidence supports: it keeps
+// the driver out of the automatic set without asserting absence.
+func TestProvisionedIsNotAVersion(t *testing.T) {
+	if got := compare.CompareDriverStatus("6.0.0.9", model.LocalVersionProvisioned, ""); got != model.StatusUnknown {
+		t.Fatalf("provisioned local = %q, want Unknown", got)
+	}
+	if model.StatusEvidenceBasis(model.StatusUnknown) != "undetermined" {
+		t.Fatal("Unknown must stay undetermined so the placeholder never reaches the automatic set")
+	}
+	_, updates := partitionViewDrivers([]*model.AssessedDriver{
+		{Driver: &model.Driver{DriverCode: "DRV202102040007"}, CompareStatus: model.StatusUnknown},
+	})
+	if len(updates) != 0 {
+		t.Fatalf("a provisioned placeholder entered the automatic set: %d member(s)", len(updates))
+	}
+	// A measured version is still compared, so the placeholder did not disable the rule.
+	if got := compare.CompareDriverStatus("6.0.0.9", "5.0.0.1", ""); got != model.StatusUpdate {
+		t.Fatalf("measured older local = %q, want Update", got)
+	}
+}
+
 func TestEvidenceChainReal82JQ(t *testing.T) {
 	assessed := chainAssess(t)
 
@@ -178,9 +202,17 @@ func TestEvidenceChainReal82JQ(t *testing.T) {
 	// DRV201907160015 read as "not installed" — and therefore sat in the
 	// automatic set — while ACPI\VPC2004 was running Lenovo's oem90.inf at
 	// 15.11.29.65, newer than the 15.11.29.13 the list offers.
+	//
+	// Unknown is 1 and Up to date is 0: DRV202102040007 (AMD Power Processor)
+	// reads "Provisioned", which is a fact about HKLM\...\Provisioning\Results,
+	// not a version. It used to report Up to date, a fact-grade claim that put
+	// the driver on the same footing as measured drivers while the machine has
+	// no application and no uninstall entry for it. Undetermined keeps it out
+	// of the automatic set without asserting absence either.
 	wantStatus := map[model.CompareStatus]int{
 		model.StatusUpdate:        0,
-		model.StatusUpToDate:      1,
+		model.StatusUpToDate:      0,
+		model.StatusUnknown:       1,
 		model.StatusNotInstalled:  0,
 		model.StatusLocalNewer:    10,
 		model.StatusNotApplicable: 12,

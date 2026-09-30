@@ -273,7 +273,16 @@ func CompareDriverStatus(remote, local, vendor string) model.CompareStatus {
 		return model.StatusUnknown
 	}
 	if local == model.LocalVersionProvisioned {
-		return model.StatusUpToDate
+		// Windows provisioned the package but that proves neither that the driver
+		// is installed nor that it is absent: the 82JQ drill found
+		// AMD.Power.Processor.ppkg under Provisioning\Results with no
+		// application, no uninstall entry and no matching device. Reporting
+		// UpToDate handed the automatic set a fact-grade claim the machine does
+		// not support. Neither alternative is better: NotInstalled would assert
+		// absence while the system holds a package for it. A status the evidence
+		// cannot settle must stay undetermined, which keeps it out of the
+		// automatic set under the fact-only rule.
+		return model.StatusUnknown
 	}
 	remoteVersion := GetMatchingRemoteComponent(remote, vendor)
 	if remoteVersion == nil {
