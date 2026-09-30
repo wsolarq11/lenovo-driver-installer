@@ -70,7 +70,7 @@ func GetMachineInfo(ctx context.Context) (MachineInfo, error) {
 }
 
 func nativeReadKeyString(path, name string) string {
-	h := nativeOpenKey(path)
+	h := nativeOpenKey(hklm, path)
 	if h == 0 {
 		return ""
 	}
@@ -99,15 +99,26 @@ func GetOSInfo(ctx context.Context) (OSInfo, error) {
 func GetInstalledApps(ctx context.Context) ([]model.InstalledApp, error) {
 	_ = ctx
 	var apps []model.InstalledApp
-	for _, path := range []string{regAppPath64, regAppPath32, regAppPathUser} {
-		apps = append(apps, readUninstallEntries(path)...)
+	// Each hive is named at the call site. regAppPathUser and regAppPath64 are
+	// the same key path under different hives, so a shared default root would
+	// read the machine's 64-bit uninstall list twice and report every one of
+	// those programs as a second copy of itself.
+	for _, loc := range []struct {
+		root uintptr
+		path string
+	}{
+		{hklm, regAppPath64},
+		{hklm, regAppPath32},
+		{hkcu, regAppPathUser},
+	} {
+		apps = append(apps, readUninstallEntries(loc.root, loc.path)...)
 	}
 	return apps, nil
 }
 
-func readUninstallEntries(path string) []model.InstalledApp {
+func readUninstallEntries(root uintptr, path string) []model.InstalledApp {
 	var apps []model.InstalledApp
-	enum := nativeOpenKey(path)
+	enum := nativeOpenKey(root, path)
 	if enum == 0 {
 		return nil
 	}
@@ -118,7 +129,7 @@ func readUninstallEntries(path string) []model.InstalledApp {
 			break
 		}
 		keyPath := path + `\` + sub
-		key := nativeOpenKey(keyPath)
+		key := nativeOpenKey(root, keyPath)
 		if key == 0 {
 			continue
 		}
@@ -154,7 +165,7 @@ func GetSoftwareSnapshot(ctx context.Context, installedApps []model.InstalledApp
 }
 
 func provisioningAMD() string {
-	enum := nativeOpenKey(regProvisioning)
+	enum := nativeOpenKey(hklm, regProvisioning)
 	if enum == 0 {
 		return ""
 	}
@@ -165,7 +176,7 @@ func provisioningAMD() string {
 			break
 		}
 		keyPath := regProvisioning + `\` + sub
-		key := nativeOpenKey(keyPath)
+		key := nativeOpenKey(hklm, keyPath)
 		if key == 0 {
 			continue
 		}
@@ -183,7 +194,7 @@ func fnServiceVersion() string {
 	// the ControlSet001 service key to avoid depending on the active control
 	// set aliasing.
 	for _, cset := range []string{`SYSTEM\CurrentControlSet001\Services\LenovoFnAndFunctionKeys`, `SYSTEM\CurrentControlSet\Services\LenovoFnAndFunctionKeys`} {
-		h := nativeOpenKey(cset)
+		h := nativeOpenKey(hklm, cset)
 		if h == 0 {
 			continue
 		}

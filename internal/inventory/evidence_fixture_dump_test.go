@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	"lenovo-driver/internal/model"
@@ -48,8 +49,17 @@ func TestDumpDeviceFixture(t *testing.T) {
 		byID[e.PnpDeviceID] = e
 	}
 	out := make([]fixtureDevice, 0, len(devices))
-	var missing int
+	var missing, softwareDevices int
 	for _, d := range devices {
+		// SWD rows are software-enumerated devices carrying a per-machine GUID
+		// (SWD\MSDAS\{CE958E9A-424F-4C88-86F4-11314821E75A} appeared here on a
+		// later boot). Recording one would make the fixture unreproducible after a
+		// reinstall while telling the compare step nothing: no Lenovo package
+		// matches a software device's hardware id.
+		if strings.HasPrefix(d.PnpDeviceID, `SWD\`) {
+			softwareDevices++
+			continue
+		}
 		merged := d
 		if e, ok := byID[d.PnpDeviceID]; ok {
 			merged = e
@@ -83,7 +93,8 @@ func TestDumpDeviceFixture(t *testing.T) {
 	// A fixture that silently lost its version column would make every
 	// downstream compare fall back to "undetermined" and still pass a
 	// structural check, so state the coverage explicitly.
-	t.Logf("wrote %d devices to %s (%d without driver evidence)", len(out), path, missing)
+	t.Logf("wrote %d devices to %s (%d without driver evidence, %d software-enumerated rows skipped)",
+		len(out), path, missing, softwareDevices)
 
 	if err := dumpSoftwareFixture(t); err != nil {
 		t.Fatalf("software fixture: %v", err)

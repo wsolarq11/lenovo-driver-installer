@@ -20,6 +20,7 @@ const (
 	digcfPresent    = 0x00000002
 	digcfAllClasses = 0x00000004
 	hklm            = 0x80000002
+	hkcu            = 0x80000001
 	keyRead         = 0x00020019
 	spdrpDeviceDesc = 0x0 // SPDRP_DEVICEDESC
 	spdrpHardwareID = 0x1 // SPDRP_HARDWAREID
@@ -193,7 +194,7 @@ func (row nativeDeviceRow) applyTo(dev *model.Device) {
 // the standard PnP driver properties into row.
 func fillDriverClassProperties(row *nativeDeviceRow) {
 	enumPath := `SYSTEM\CurrentControlSet\Enum\` + row.instanceID
-	enumKey := nativeOpenKey(enumPath)
+	enumKey := nativeOpenKey(hklm, enumPath)
 	if enumKey == 0 {
 		return
 	}
@@ -204,7 +205,7 @@ func fillDriverClassProperties(row *nativeDeviceRow) {
 	}
 
 	classPath := `SYSTEM\CurrentControlSet\Control\Class\` + driver
-	classKey := nativeOpenKey(classPath)
+	classKey := nativeOpenKey(hklm, classPath)
 	if classKey == 0 {
 		return
 	}
@@ -331,13 +332,18 @@ func nativeDeviceRegistryString(hdev uintptr, dev *spDevInfoData, property uint3
 	return decodeUTF16(buf[:size])
 }
 
-func nativeOpenKey(path string) uintptr {
+// nativeOpenKey opens a subkey under an explicitly named hive. The root is a
+// parameter rather than being encoded into the path because every caller reads a
+// different hive's path shape and a silent default is how readUninstallEntries
+// ended up opening the HKCU path against HKLM and listing the machine's
+// 64-bit programs twice.
+func nativeOpenKey(root uintptr, path string) uintptr {
 	p, err := syscall.UTF16PtrFromString(path)
 	if err != nil {
 		return 0
 	}
 	var h uintptr
-	r, _, _ := nativeAPI.regOpenKeyEx.Call(hklm, uintptr(unsafe.Pointer(p)), 0, keyRead, uintptr(unsafe.Pointer(&h)))
+	r, _, _ := nativeAPI.regOpenKeyEx.Call(root, uintptr(unsafe.Pointer(p)), 0, keyRead, uintptr(unsafe.Pointer(&h)))
 	if r != 0 {
 		return 0
 	}
