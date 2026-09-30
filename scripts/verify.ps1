@@ -430,7 +430,7 @@ Assert-Step 'the invariants spec carries every rule the code enforces' {
     $body = $self.Groups[1].Value
     $required = @(
         '### 3.1 自动安装集必须由实测证据支撑',
-        '### 2.1 静默安装按包自身证明的家族派发',
+        '### 2.1 静默安装：开关派发只由端到端验证决定',
         '### 4.1 比较只有一个原语'
     )
     foreach ($heading in $required) {
@@ -536,61 +536,32 @@ Assert-Step 'silent install dispatches on the package, not on the vendor column'
     # The vendor Parameter column is falsified: DRV202102040007 declares
     # "-QuietInstall" and its binary contains no such literal but carries the
     # Inno header "Inno Setup Setup Data". Trusting the column launched a window
-    # that the operator dismissed, and the machine gained nothing. Lenovo's own
-    # tool dispatches on installer family, so the formula must too.
+    # that the operator dismissed, and the machine gained nothing. The formula
+    # therefore recognises the family from the package's own bytes, and drives
+    # every .exe to interactive because no .exe silent switch has a verified
+    # end-to-end run on 82JQ. Recognising a family is not verifying its switch.
     $family = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\install\installer_family.go') -Raw
     if ($family -notmatch 'func\s+planSilentInstall') {
         throw 'planSilentInstall is gone; the silent dispatch has no single owner'
     }
-    # The column may still say what the payload is. It may never say which flag
-    # silences it.
-    if ($family -notmatch 'vendorParameter') {
-        throw 'vendorParameter is gone; the remaining use of the vendor column is no longer visible in one place'
+    # No family may send flags: any switch array here is a guess being launched,
+    # and a wrong switch is a silent no-op that reports success while changing
+    # nothing. The moment one switch is verified end-to-end, this assert and the
+    # refusing tests change together.
+    if ($family -match 'return\s+\[\]string\{') {
+        throw 'a switch array reappeared; no .exe silent switch is verified, so no family may send flags'
     }
-    if ($family -match 'strings\.Fields\(') {
-        throw 'the vendor column is being split into command-line arguments again; it is a hint about the ' +
-              'payload, never a silent switch'
-    }
-    # Every family the table names must carry that family''s own documented flags,
-    # or an unproven package will be launched with something invented.
-    # Scope to the table function. Several methods in this file name the same
-    # families, so matching case arms in the whole file would read String()'s
-    # "return Inno Setup" instead of the switch that sends the flags.
-    $table = [regex]::Match($family, '(?s)func\s+\(f\s+InstallerFamily\)\s+silentArgs\(\).*?\{(.*?)\n\}')
-    if (-not $table.Success) {
-        throw 'could not locate the silent-args table'
-    }
-    $body = $table.Groups[1].Value
-    $cases = @{
-        'FamilyInnoPayload' = '/VERYSILENT'
-        'FamilyNSIS'        = '/S'
-        'FamilySevenZipSFX' = '-s'
-        'FamilyWiXBurn'     = '/quiet'
-    }
-    foreach ($key in $cases.Keys) {
-        $cm = [regex]::Match($body, "(?s)case\s+$key\s*:(.*?)(?=case\s+Family|default\s*:)")
-        if (-not $cm.Success) {
-            throw "$key has no case in the silent-args table"
-        }
-        if ($cm.Groups[1].Value -notmatch [regex]::Escape($cases[$key])) {
-            throw "$key no longer sends its own documented switch ($($cases[$key]))"
-        }
-    }
-    if ($body -notmatch '(?s)default\s*:\s*\n\s*return\s+nil') {
-        throw 'an unproven family must produce no flags at all'
-    }
-    # InstallShield is recognised but its switch has never been verified on a
-    # real package, so it must not send flags. A recognised-but-unverified
-    # family is exactly as dangerous as an unrecognised one.
-    if ($body -match 'case\s+FamilyInstallShield\s*:') {
-        throw 'InstallShield is unverified on any real package and must not send flags; route it to interactive'
+    # Family recognition survives for the audit trail even though no family runs
+    # unattended: the refusal evidence must name what was recognised.
+    if ($family -notmatch 'familyMarkers') {
+        throw 'familyMarkers is gone; the refusal evidence can no longer name the recognised family'
     }
     $t = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\install\install_test.go') -Raw
-    foreach ($fn in @('TestSilentInstallerArgsUsesProvenFamilyNotVendorColumn',
-                      'TestSilentInstallerArgsCoversEveryProvenFamily',
-                      'TestSilentInstallerArgsSkipsFlagForINFWrapper',
-                      'TestInstallEXEUnprovenFamilyIsTerminal',
-                      'TestInstallEXERunsProvenPackageWithoutVendorColumn')) {
+    foreach ($fn in @('TestSilentPlanRefusesUnverifiedInno',
+                      'TestSilentPlanRefusesEveryUnverifiedFamily',
+                      'TestSilentPlanEvidenceNamesTheRefusedFamily',
+                      'TestSilentPlanEvidenceAgreesWithTheDecision',
+                      'TestInstallDriverFileEXEIsTerminal')) {
         if ($t -notmatch ('func\s+' + [regex]::Escape($fn))) {
             throw "$fn is gone; the formula is unguarded"
         }

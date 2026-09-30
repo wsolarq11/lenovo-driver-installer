@@ -624,21 +624,19 @@ func TestOnlyConfirmedBindingsCountAsSuccess(t *testing.T) {
 
 func TestClassifyInstallResult(t *testing.T) {
 	cases := []struct {
-		name  string
-		code  int
-		err   error
-		isEXE bool
-		want  installOutcome
+		name string
+		code int
+		err  error
+		want installOutcome
 	}{
-		{"reboot 3010", 3010, nil, false, outcomeRebootRequired},
-		{"reboot 1641", 1641, nil, false, outcomeRebootRequired},
-		{"terminal error", -2, errors.New("boom"), false, outcomeFailed},
-		{"success", 0, nil, false, outcomeSuccess},
-		{"exe retry", 1603, nil, true, outcomeEXERetry},
-		{"non-exe fail", 1603, nil, false, outcomeFailed},
+		{"reboot 3010", 3010, nil, outcomeRebootRequired},
+		{"reboot 1641", 1641, nil, outcomeRebootRequired},
+		{"terminal error", -2, errors.New("boom"), outcomeFailed},
+		{"success", 0, nil, outcomeSuccess},
+		{"non-exe fail", 1603, nil, outcomeFailed},
 	}
 	for _, tc := range cases {
-		if got := classifyInstallResult(tc.code, tc.err, tc.isEXE); got != tc.want {
+		if got := classifyInstallResult(tc.code, tc.err); got != tc.want {
 			t.Fatalf("%s: classifyInstallResult = %d, want %d", tc.name, got, tc.want)
 		}
 	}

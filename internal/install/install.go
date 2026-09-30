@@ -43,10 +43,6 @@ type ProcessResult struct {
 	KillErr  error
 }
 
-type processRunner func(filePath string, args []string, timeoutSeconds int, workingDirectory string) ProcessResult
-
-type exeFallback func(driver *model.Driver, workingDir string) (int, bool)
-
 // timeoutErr builds the terminal timeout error for a ProcessResult that hit
 // its deadline, appending the process-tree kill failure detail when the child
 // could not be terminated (so a half-alive subprocess is never silently
@@ -189,7 +185,12 @@ func InstallDriverFile(filePath string, driver *model.Driver, workingDir string)
 		}
 		return installINFs(extract, workingDir)
 	case ".exe":
-		return installEXE(filePath, driver, workingDir, RunProcessWithTimeout, ExtractedDriverFallback)
+		// No .exe silent switch has been verified end-to-end on 82JQ, so an EXE
+		// installer must be driven by an operator. The app routes .exe packages
+		// to the interactive fallback before calling here; reaching this branch
+		// directly means the caller skipped that decision and must not guess a
+		// switch.
+		return -2, fmt.Errorf("EXE packages require interactive installation: no silent switch is verified")
 	default:
 		result := RunProcessWithTimeout(filePath, nil, 1800, workingDir)
 		if result.StartErr != nil {
@@ -200,58 +201,6 @@ func InstallDriverFile(filePath string, driver *model.Driver, workingDir string)
 		}
 		return result.ExitCode, nil
 	}
-}
-
-func installEXE(filePath string, driver *model.Driver, workingDir string, run processRunner, fallback exeFallback) (int, error) {
-	logPath := filepath.Join(workingDir, driver.DriverCode+".log")
-	args, ok := silentInstallerArgs(filePath, driver, logPath)
-	if !ok {
-		return -2, fmt.Errorf("no official silent install parameters for %s", driver.FileName)
-	}
-	result := run(filePath, args, 900, workingDir)
-	if result.TimedOut {
-		// No exit code was produced; a used fallback may still recover, otherwise
-		// this is a terminal timeout error.
-		return finishEXEFallback(driver, workingDir, fallback, "EXE install timed out", -1)
-	}
-	if compare.InstallSucceeded(result.ExitCode) {
-		return result.ExitCode, nil
-	}
-	// The silent installer ran and exited non-zero. Report the concrete exit
-	// code (nil error) so the caller can decide on an interactive rerun, after
-	// giving the automatic extracted fallback a chance first.
-	return finishEXEFallback(driver, workingDir, fallback, fmt.Sprintf("silent install exit %d", result.ExitCode), result.ExitCode)
-}
-
-// finishEXEFallback gives the automatic extracted-package fallback one chance
-// to recover a failed silent EXE install. Under the InstallDriverFile contract
-// it returns (0, nil) on fallback success, (code, nil) when a concrete exit
-// code is available (the caller may retry interactively), and (code, err) only
-// when no exit code exists at all (timeout) and the fallback could not help.
-func finishEXEFallback(driver *model.Driver, workingDir string, fallback exeFallback, silentErr string, silentCode int) (int, error) {
-	fallbackCode, used := fallback(driver, workingDir)
-	if used && fallbackCode == 0 {
-		return 0, nil
-	}
-	if used {
-		return fallbackCode, nil
-	}
-	if silentCode >= 0 {
-		return silentCode, nil
-	}
-	return silentCode, fmt.Errorf("%s", silentErr)
-}
-
-// silentInstallerArgs applies the formula in installer_family.go, which
-// dispatches on the family the package's own bytes prove. The vendor column is
-// no longer read as a silent switch: on 82JQ DRV202102040007 declared
-// "-QuietInstall" and the binary contains no such literal but carries the Inno
-// header "Inno Setup Setup Data", so a run that trusted the column installed
-// nothing and still exited 0. ok=false means the formula found no evidence for
-// any family, and the caller must not launch this as a silent install.
-func silentInstallerArgs(filePath string, driver *model.Driver, logPath string) ([]string, bool) {
-	plan := planSilentInstall(filePath, driver, logPath)
-	return plan.args, plan.ok
 }
 
 func installINFPaths(paths []string, workingDir string) (int, error) {

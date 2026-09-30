@@ -82,7 +82,6 @@ installLoop:
 			continue
 		}
 
-		isEXE := strings.EqualFold(filepath.Ext(outFile), ".exe")
 		silence, interactive := silentInstallEvidence(driver, outFile)
 		if interactive {
 			a.Log(ctx, "["+driver.DriverCode+"] No proven silent mechanism in the package; using interactive install: "+silence, "WARN")
@@ -92,7 +91,7 @@ installLoop:
 
 		a.Log(ctx, "["+driver.DriverCode+"] Installing "+driver.FileName, "INFO")
 		code, installErr := install.InstallDriverFile(outFile, driver, dlDir)
-		switch classifyInstallResult(code, installErr, isEXE) {
+		switch classifyInstallResult(code, installErr) {
 		case outcomeRebootRequired:
 			// Reboot-required installs are success, but every later install must
 			// wait for that reboot. Stop the pass and defer the rest instead of
@@ -106,8 +105,6 @@ installLoop:
 			a.Log(ctx, "["+driver.DriverCode+"] Install success.", "INFO")
 			a.writeHistoryRecordChecked(ctx, ad, "Installed", "exit=0; silent via "+silence, "", "")
 			success = append(success, ad)
-		case outcomeEXERetry:
-			a.handleInteractiveExe(ctx, ad, outFile, dlDir, &success, &failed)
 		case outcomeFailed:
 			if installErr != nil {
 				message := installErr.Error()
@@ -284,14 +281,15 @@ type installOutcome int
 const (
 	outcomeSuccess installOutcome = iota
 	outcomeRebootRequired
-	outcomeEXERetry
 	outcomeFailed
 )
 
 // classifyInstallResult maps one InstallDriverFile result to the install-loop
 // outcome. Kept pure so the reboot-deferral decision is testable offline
-// without downloading or installing anything.
-func classifyInstallResult(code int, installErr error, isEXE bool) installOutcome {
+// without downloading or installing anything. EXE packages never reach here:
+// they are routed to the interactive fallback before InstallDriverFile, because
+// no .exe silent switch is verified.
+func classifyInstallResult(code int, installErr error) installOutcome {
 	if compare.TestRebootExitCode(code) {
 		return outcomeRebootRequired
 	}
@@ -300,9 +298,6 @@ func classifyInstallResult(code int, installErr error, isEXE bool) installOutcom
 	}
 	if code == 0 {
 		return outcomeSuccess
-	}
-	if isEXE {
-		return outcomeEXERetry
 	}
 	return outcomeFailed
 }

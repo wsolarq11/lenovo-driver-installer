@@ -1,7 +1,9 @@
 package install
 
 import (
+	"archive/zip"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,129 +13,6 @@ import (
 
 	"lenovo-driver/internal/model"
 )
-
-func TestExtractedDriverFallbackPrefersLogDir(t *testing.T) {
-	work := t.TempDir()
-	tempRoot := t.TempDir()
-	t.Setenv("TEMP", tempRoot)
-	extractDir := filepath.Join(tempRoot, "is-ABC123.tmp")
-	if err := os.MkdirAll(extractDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	setupPath := filepath.Join(extractDir, "setup.exe")
-	if err := os.WriteFile(setupPath, []byte("MZ Inno Setup Setup Data (6.4.3)"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	logPath := filepath.Join(work, "d1.log")
-	if err := os.WriteFile(logPath, []byte("Destination: "+extractDir+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	driver := &model.Driver{DriverCode: "d1", DriverName: "Test Driver", InstallParameter: "/VERYSILENT"}
-	_, used := ExtractedDriverFallback(driver, work)
-	if !used {
-		t.Fatal("fallback should use the log-pinned extraction directory")
-	}
-}
-
-func TestTempDirFromLog(t *testing.T) {
-	logPath := filepath.Join(t.TempDir(), "d1.log")
-	content := "Destination: C:\\Windows\\TempInst\\is-ABC123.tmp\n"
-	if err := os.WriteFile(logPath, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got := tempDirFromLog(logPath); got != `C:\Windows\TempInst\is-ABC123.tmp` {
-		t.Fatalf("tempDirFromLog = %q", got)
-	}
-}
-
-func TestInstallEXETimeoutAttemptsFallback(t *testing.T) {
-	fallbackCalled := false
-	code, err := installEXE(
-		writeStubPackage(t, "Inno Setup Setup Data (6.4.3)"),
-		&model.Driver{DriverCode: "d1", InstallParameter: "/VERYSILENT"},
-		t.TempDir(),
-		func(filePath string, args []string, timeoutSeconds int, workingDirectory string) ProcessResult {
-			return ProcessResult{ExitCode: -1, TimedOut: true}
-		},
-		func(driver *model.Driver, workingDir string) (int, bool) {
-			fallbackCalled = true
-			return 0, true
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if code != 0 {
-		t.Fatalf("installEXE timeout code = %d, want 0", code)
-	}
-	if !fallbackCalled {
-		t.Fatal("EXE timeout did not attempt extracted fallback")
-	}
-}
-
-func TestInstallEXESurfacesCleanExitWhenFallbackUnused(t *testing.T) {
-	code, err := installEXE(
-		writeStubPackage(t, "Inno Setup Setup Data (6.4.3)"),
-		&model.Driver{DriverCode: "d1", InstallParameter: "/VERYSILENT"},
-		t.TempDir(),
-		func(filePath string, args []string, timeoutSeconds int, workingDirectory string) ProcessResult {
-			return ProcessResult{ExitCode: 1603}
-		},
-		func(driver *model.Driver, workingDir string) (int, bool) {
-			return 0, false
-		},
-	)
-	if err != nil {
-		t.Fatalf("unexpected error for clean non-zero exit: %v", err)
-	}
-	if code != 1603 {
-		t.Fatalf("installEXE failure code = %d, want 1603", code)
-	}
-}
-
-func TestInstallEXETimeoutWithoutFallbackIsHardError(t *testing.T) {
-	code, err := installEXE(
-		writeStubPackage(t, "Inno Setup Setup Data (6.4.3)"),
-		&model.Driver{DriverCode: "d1", InstallParameter: "/VERYSILENT"},
-		t.TempDir(),
-		func(filePath string, args []string, timeoutSeconds int, workingDirectory string) ProcessResult {
-			return ProcessResult{ExitCode: -1, TimedOut: true}
-		},
-		func(driver *model.Driver, workingDir string) (int, bool) {
-			return 0, false
-		},
-	)
-	if err == nil || !strings.Contains(err.Error(), "timed out") {
-		t.Fatalf("timeout with no usable fallback should be a terminal error: %v", err)
-	}
-	if code != -1 {
-		t.Fatalf("installEXE timeout code = %d, want -1", code)
-	}
-}
-
-func TestExtractedTempDirsScansRecentRootsOnlyForNvidia(t *testing.T) {
-	tempRoot := t.TempDir()
-	t.Setenv("TEMP", tempRoot)
-	t.Setenv("SystemRoot", t.TempDir())
-	recentDir := filepath.Join(tempRoot, "is-RECENT.tmp")
-	if err := os.MkdirAll(recentDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	work := t.TempDir()
-
-	if got := extractedTempDirs(&model.Driver{DriverCode: "d1", DriverName: "Audio"}, work); len(got) != 0 {
-		t.Fatalf("non-NVIDIA fallback scanned recent temp roots: %#v", got)
-	}
-
-	nvidiaDir := filepath.Join(recentDir, "Display.Driver")
-	if err := os.MkdirAll(nvidiaDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	got := extractedTempDirs(&model.Driver{DriverCode: "d2", DriverName: "NVIDIA Graphics"}, work)
-	if len(got) != 1 || filepath.Clean(got[0]) != filepath.Clean(recentDir) {
-		t.Fatalf("NVIDIA fallback candidates = %#v, want %q", got, recentDir)
-	}
-}
 
 func TestRunProcessTimeoutKillsTree(t *testing.T) {
 	if runtime.GOOS != "windows" {
@@ -202,89 +81,64 @@ func writeStubPackage(t *testing.T, marker string) string {
 	return path
 }
 
-// TestSilentInstallerArgsUsesProvenFamilyNotVendorColumn pins the defect the
-// 82JQ drill exposed. DRV202102040007 declared "-QuietInstall" and the binary
-// contained no such literal but carries the Inno header "Inno Setup Setup
-// Data"; trusting the column sent the installer a flag it does not recognize,
-// so it showed a window, the operator clicked through, and the machine gained
-// nothing.
-func TestSilentInstallerArgsUsesProvenFamilyNotVendorColumn(t *testing.T) {
+// TestSilentPlanRefusesUnverifiedInno pins the 82JQ drill defect. The vendor
+// column declared "-QuietInstall" and the binary carried the Inno header but no
+// such literal; the real Inno switch "/VERYSILENT" has never been verified
+// end-to-end. Recognising the family is not verifying its switch, so the plan
+// must refuse and must not send any flag.
+func TestSilentPlanRefusesUnverifiedInno(t *testing.T) {
 	path := writeStubPackage(t, "Inno Setup Setup Data (6.4.3)")
-	args, ok := silentInstallerArgs(path, &model.Driver{
+	canRun, evidence := SilentPlanFor(path, &model.Driver{
 		DriverCode:       "DRV202102040007",
 		InstallParameter: "-QuietInstall",
-	}, `C:\tmp\d1.log`)
-	if !ok {
-		t.Fatal("an Inno-marked package is provable and must be installable unattended")
+	})
+	if canRun {
+		t.Fatal("an Inno-marked package is unverified and must not be driven unattended")
 	}
-	joined := strings.Join(args, " ")
-	if !strings.Contains(joined, "/VERYSILENT") {
-		t.Fatalf("the proven family's own switch is missing: %#v", args)
+	if !strings.Contains(evidence, "Inno Setup") {
+		t.Fatalf("refusal must name the recognised family: %q", evidence)
 	}
-	if strings.Contains(joined, "-QuietInstall") {
-		t.Fatalf("the falsified vendor column leaked back into the command line: %#v", args)
+	if !strings.Contains(evidence, "interactive") {
+		t.Fatalf("refusal must say the package goes interactive: %q", evidence)
 	}
-	if !strings.Contains(joined, "/LOG=") {
-		t.Fatalf("/LOG is Inno-only and justified by the marker: %#v", args)
-	}
-	if !strings.Contains(joined, "/NORESTART") {
-		t.Fatalf("Inno needs /NORESTART to stay unattended: %#v", args)
+	if strings.Contains(evidence, "-QuietInstall") {
+		t.Fatalf("the falsified vendor column must not enter the evidence: %q", evidence)
 	}
 }
 
-// TestSilentInstallerArgsCoversEveryProvenFamily checks the table is total: a
-// marker in the formula always yields that family's own documented flags, and a
-// family the table does not know never receives a guess.
-func TestSilentInstallerArgsCoversEveryProvenFamily(t *testing.T) {
-	for _, tc := range []struct {
-		marker string
-		want   string
-	}{
-		{"Inno Setup Setup Data (6.4.3)", "/VERYSILENT"},
-		{"\x00N\x00u\x00l\x00l\x00s\x00o\x00f\x00t\x00I\x00n\x00s\x00t\x00", "/S"},
-		{"!@Install@!UTF-8!", "-s"},
-		{".wixburn", "/quiet"},
+// TestSilentPlanRefusesEveryUnverifiedFamily checks the formula is total: every
+// recognised family is refused, an unrecognised package is refused, and a vendor
+// column alone never licenses an unattended run. No .exe silent switch has a
+// verified end-to-end run on 82JQ, so no .exe is ever driven unattended.
+func TestSilentPlanRefusesEveryUnverifiedFamily(t *testing.T) {
+	for _, marker := range []string{
+		"Inno Setup Setup Data (6.4.3)",
+		"NullsoftInst",
+		"!@Install@!UTF-8!",
+		"app.wixburn",
+		"InstallShield Setup",
+		"nothing recognizable here",
 	} {
-		path := writeStubPackage(t, tc.marker)
-		args, ok := silentInstallerArgs(path, &model.Driver{DriverCode: "d1"}, "")
-		if !ok {
-			t.Errorf("marker %q produced no silent plan", tc.marker)
-			continue
+		canRun, evidence := SilentPlanFor(writeStubPackage(t, marker), &model.Driver{DriverCode: "d1"})
+		if canRun {
+			t.Errorf("marker %q must be refused: no silent switch is verified", marker)
 		}
-		joined := strings.Join(args, " ")
-		if !strings.Contains(joined, tc.want) {
-			t.Errorf("marker %q produced %#v, want it to contain %q", tc.marker, args, tc.want)
+		if evidence == "" {
+			t.Errorf("marker %q: every refusal must record evidence", marker)
 		}
 	}
-	// InstallShield is recognised but unverified: its marker must not license
-	// an unattended run. A recognised-but-unverified family is exactly as
-	// dangerous as an unrecognised one, because a wrong switch reports success
-	// while changing nothing.
-	args, ok := silentInstallerArgs(writeStubPackage(t, "InstallShield Setup"),
-		&model.Driver{DriverCode: "d1"}, "")
-	if ok || len(args) != 0 {
-		t.Fatalf("InstallShield is unverified and must not be silenced: args=%#v ok=%v", args, ok)
-	}
-	// No evidence means no flags. A package the formula cannot place must go
-	// interactive rather than be launched with something invented.
-	args, ok = silentInstallerArgs(writeStubPackage(t, "nothing recognizable here"),
-		&model.Driver{DriverCode: "d1"}, "")
-	if ok || len(args) != 0 {
-		t.Fatalf("an unproven package must not be silenced: args=%#v ok=%v", args, ok)
-	}
-	// A vendor column alone proves nothing, in either direction.
-	if _, ok := silentInstallerArgs(writeStubPackage(t, "nothing recognizable here"),
-		&model.Driver{DriverCode: "d1", InstallParameter: "/VERYSILENT /NORESTART"}, ""); ok {
-		t.Fatal("the vendor column alone must not license a silent install")
+	// The vendor column alone proves nothing, in either direction.
+	if canRun, _ := SilentPlanFor(writeStubPackage(t, "nothing recognizable here"),
+		&model.Driver{DriverCode: "d1", InstallParameter: "/VERYSILENT /NORESTART"}); canRun {
+		t.Fatal("the vendor column alone must not license an unattended run")
 	}
 }
 
-// TestSilentPlanEvidenceNamesWhatAuthorisedIt pins the audit requirement. A run
-// that installs unattended has to be able to say afterwards which mechanism
-// authorised it, because a right family and a wrong one produce the same exit
-// code and the same silent outcome. Evidence that is computed and then dropped
-// is the same as no evidence at all.
-func TestSilentPlanEvidenceNamesWhatAuthorisedIt(t *testing.T) {
+// TestSilentPlanEvidenceNamesTheRefusedFamily pins the audit requirement. A
+// refusal must name which family was recognised so the audit can say "we saw
+// Inno and refused it", not just "refused"; a package with no marker must say
+// the marker was absent.
+func TestSilentPlanEvidenceNamesTheRefusedFamily(t *testing.T) {
 	for _, tc := range []struct {
 		name, marker, want string
 	}{
@@ -292,29 +146,17 @@ func TestSilentPlanEvidenceNamesWhatAuthorisedIt(t *testing.T) {
 		{"nsis", "NullsoftInst", "NSIS"},
 		{"7z sfx", "!@Install@!UTF-8!", "7-Zip"},
 		{"wix burn", "app.wixburn", "WiX Burn"},
+		{"installshield", "InstallShield Setup", "InstallShield"},
 	} {
-		path := writeStubPackage(t, tc.marker)
-		canRun, evidence := SilentPlanFor(path, &model.Driver{DriverCode: "d1"})
-		if !canRun {
-			t.Errorf("%s: SilentPlanFor refused a proven family", tc.name)
+		canRun, evidence := SilentPlanFor(writeStubPackage(t, tc.marker), &model.Driver{DriverCode: "d1"})
+		if canRun {
+			t.Errorf("%s: an unverified family must not run unattended", tc.name)
 		}
-		if !strings.Contains(evidence, tc.want) {
-			t.Errorf("%s: evidence = %q, want it to name %q", tc.name, evidence, tc.want)
+		if !strings.Contains(evidence, tc.want) || !strings.Contains(evidence, "interactive") {
+			t.Errorf("%s: evidence = %q, want it to name %q and say interactive", tc.name, evidence, tc.want)
 		}
 	}
-	// InstallShield must refuse, and its refusal must still name the family so
-	// the audit can say "we saw InstallShield and refused it", not just "refused".
-	ipath := writeStubPackage(t, "InstallShield Setup")
-	canRun, evidence := SilentPlanFor(ipath, &model.Driver{DriverCode: "d1"})
-	if canRun {
-		t.Error("InstallShield is unverified and must not be driven unattended")
-	}
-	if !strings.Contains(evidence, "InstallShield") || !strings.Contains(evidence, "unverified") {
-		t.Errorf("InstallShield refusal = %q, want it to name the family and say it is unverified", evidence)
-	}
-	// Refusing must also say why, otherwise the interactive fallback is opaque.
-	path := writeStubPackage(t, "no marker here at all")
-	canRun, evidence = SilentPlanFor(path, &model.Driver{DriverCode: "d1"})
+	canRun, evidence := SilentPlanFor(writeStubPackage(t, "no marker here at all"), &model.Driver{DriverCode: "d1"})
 	if canRun {
 		t.Error("a package with no marker must not be driven unattended")
 	}
@@ -323,9 +165,11 @@ func TestSilentPlanEvidenceNamesWhatAuthorisedIt(t *testing.T) {
 	}
 }
 
-// TestSilentPlanEvidenceAgreesWithTheDecision keeps the two return values
-// honest with each other: a refusal that reads like a success, or a success
-// with no stated mechanism, are both unusable in an audit.
+// TestSilentPlanEvidenceAgreesWithTheDecision keeps the evidence honest with
+// the decision: a refusal that reads like a success, or a success with no
+// stated mechanism, are both unusable in an audit. An INF payload declaration
+// in the vendor column does not make an EXE unattended either — the wrapper is
+// still an installer with a GUI, and its silent switch is still unverified.
 func TestSilentPlanEvidenceAgreesWithTheDecision(t *testing.T) {
 	path := writeStubPackage(t, "Inno Setup Setup Data (6.4.3)")
 	drv := &model.Driver{
@@ -334,101 +178,25 @@ func TestSilentPlanEvidenceAgreesWithTheDecision(t *testing.T) {
 	}
 	canRun, evidence := SilentPlanFor(path, drv)
 	if canRun || evidence == "" {
-		t.Fatalf("INF wrapper: canRun=%v evidence=%q, want a refusal with a reason", canRun, evidence)
+		t.Fatalf("INF-declared EXE wrapper: canRun=%v evidence=%q, want a refusal with a reason", canRun, evidence)
 	}
-	// Same package, same driver: the thin wrapper must agree with the source of
-	// truth, otherwise orchestration and audit tell different stories.
-	if HasSilentParameters(path, drv) != canRun {
-		t.Fatal("HasSilentParameters disagrees with SilentPlanFor on the same driver")
+	if !strings.Contains(evidence, "interactive") {
+		t.Fatalf("an INF-declared EXE is still an installer and must be refused to interactive: %q", evidence)
 	}
 }
 
-// TestSilentInstallerArgsSkipsFlagForINFWrapper pins the largest group on the
-// 82JQ lists: 41 of 47 rows declare an INF payload, which needs no silent
-// switch because handing the INF to the driver store is already unattended.
-func TestSilentInstallerArgsSkipsFlagForINFWrapper(t *testing.T) {
-	path := writeStubPackage(t, "Inno Setup Setup Data (6.4.3)")
-	plan := planSilentInstall(path, &model.Driver{
-		DriverCode:       "d1",
-		InstallParameter: "/add-driver *.inf /install /subdirs",
-	}, "")
-	if plan.ok || len(plan.args) != 0 {
-		t.Fatalf("an INF wrapper needs no silent switch: args=%#v ok=%v", plan.args, plan.ok)
-	}
-	if plan.evidence == "" {
-		t.Fatal("every formula decision must record the evidence it rested on")
-	}
-}
-
-func TestInstallEXESurfacesRebootRequired(t *testing.T) {
-	code, err := installEXE(
-		writeStubPackage(t, "Inno Setup Setup Data (6.4.3)"),
-		&model.Driver{DriverCode: "d1", InstallParameter: "/VERYSILENT"},
-		t.TempDir(),
-		func(filePath string, args []string, timeoutSeconds int, workingDirectory string) ProcessResult {
-			return ProcessResult{ExitCode: 3010}
-		},
-		func(driver *model.Driver, workingDir string) (int, bool) {
-			return 0, false
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if code != 3010 {
-		t.Fatalf("installEXE must preserve reboot-required code: got %d, want 3010", code)
-	}
-}
-
-// TestInstallEXEUnprovenFamilyIsTerminal pins the new terminal condition. A
-// package that proves nothing must not be launched: there is no flag to send it
-// and no way to know what it would open. The condition used to be "the driver
-// record carries no Parameter column", which is a statement about the API and
-// not about the machine.
-func TestInstallEXEUnprovenFamilyIsTerminal(t *testing.T) {
-	called := false
-	code, err := installEXE(
-		writeStubPackage(t, "nothing recognizable here"),
-		&model.Driver{DriverCode: "d1", FileName: "d1.exe"},
-		t.TempDir(),
-		func(filePath string, args []string, timeoutSeconds int, workingDirectory string) ProcessResult {
-			called = true
-			return ProcessResult{ExitCode: 0}
-		},
-		func(driver *model.Driver, workingDir string) (int, bool) {
-			return 0, false
-		},
-	)
-	if err == nil || !strings.Contains(err.Error(), "no official silent install parameters") {
-		t.Fatalf("an unproven package should be a terminal error: code=%d err=%v", code, err)
-	}
-	if called {
-		t.Fatal("installEXE must not launch an EXE whose family it cannot prove")
-	}
-}
-
-// TestInstallEXERunsProvenPackageWithoutVendorColumn is the counterpart: a
-// package that proves itself runs unattended even when the driver record is
-// silent about it, which is the case the 82JQ list is full of.
-func TestInstallEXERunsProvenPackageWithoutVendorColumn(t *testing.T) {
-	var gotArgs []string
-	code, err := installEXE(
+// TestInstallDriverFileEXEIsTerminal pins the unified formula at the entry
+// point: InstallDriverFile must never launch an EXE, because no EXE silent
+// switch is verified. The app routes EXEs to the interactive fallback before
+// this call; reaching it directly must fail closed rather than guess a switch.
+func TestInstallDriverFileEXEIsTerminal(t *testing.T) {
+	code, err := InstallDriverFile(
 		writeStubPackage(t, "Inno Setup Setup Data (6.4.3)"),
 		&model.Driver{DriverCode: "d1", FileName: "d1.exe"},
 		t.TempDir(),
-		func(filePath string, args []string, timeoutSeconds int, workingDirectory string) ProcessResult {
-			gotArgs = args
-			return ProcessResult{ExitCode: 0}
-		},
-		func(driver *model.Driver, workingDir string) (int, bool) {
-			return 0, false
-		},
 	)
-	if err != nil || code != 0 {
-		t.Fatalf("a proven package should install unattended: code=%d err=%v", code, err)
-	}
-	if !strings.Contains(strings.Join(gotArgs, " "), "/VERYSILENT") {
-		t.Fatalf("the proven family's switch was not used: %#v", gotArgs)
+	if err == nil || !strings.Contains(err.Error(), "interactive") {
+		t.Fatalf("an EXE reaching InstallDriverFile must be a terminal interactive error: code=%d err=%v", code, err)
 	}
 }
 
@@ -439,19 +207,6 @@ func TestTimeoutErrIncludesKillFailure(t *testing.T) {
 	}
 }
 
-func TestHasSilentParameters(t *testing.T) {
-	// The answer now comes from the package, not from the driver record, which
-	// is why this test needs a real file on disk.
-	if !HasSilentParameters(writeStubPackage(t, "Inno Setup Setup Data (6.4.3)"),
-		&model.Driver{DriverCode: "d1"}) {
-		t.Fatal("a package that proves itself is Inno must be installable unattended")
-	}
-	if HasSilentParameters(writeStubPackage(t, "nothing recognizable here"),
-		&model.Driver{DriverCode: "d1"}) {
-		t.Fatal("a package that proves nothing must fall back to interactive")
-	}
-}
-
 func TestInstallINFsEmptyArchiveIsTerminal(t *testing.T) {
 	code, err := installINFs(t.TempDir(), t.TempDir())
 	if err == nil || !strings.Contains(err.Error(), "no .inf") {
@@ -459,5 +214,66 @@ func TestInstallINFsEmptyArchiveIsTerminal(t *testing.T) {
 	}
 	if code != 2 {
 		t.Fatalf("empty archive code = %d, want 2", code)
+	}
+}
+
+func TestExtractZipExtractsFilesAndDirs(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "pkg.zip")
+	writeZip(t, src, map[string]string{
+		"top.inf":           "[Version]\n",
+		"sub/nested.inf":    "[Version]\n",
+		"sub/deep/more.cat": "catalog",
+	})
+	dest := t.TempDir()
+	if err := ExtractZip(src, dest); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"top.inf", filepath.Join("sub", "nested.inf"), filepath.Join("sub", "deep", "more.cat")} {
+		if _, err := os.Stat(filepath.Join(dest, name)); err != nil {
+			t.Fatalf("expected extracted file %s: %v", name, err)
+		}
+	}
+}
+
+func TestExtractZipRejectsUnsafePath(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "evil.zip")
+	writeZip(t, src, map[string]string{"../evil.inf": "[Version]\n"})
+	if err := ExtractZip(src, t.TempDir()); err == nil {
+		t.Fatal("ExtractZip must reject a zip entry that escapes the destination")
+	}
+}
+
+func TestProcessExitCode(t *testing.T) {
+	if got := processExitCode(nil); got != 0 {
+		t.Fatalf("processExitCode(nil) = %d, want 0", got)
+	}
+	if got := processExitCode(errors.New("boom")); got != -2 {
+		t.Fatalf("processExitCode(generic error) = %d, want -2", got)
+	}
+}
+
+// writeZip writes a zip archive whose entries map names to contents, so the
+// ExtractZip contract can be tested offline against an exact byte layout.
+func writeZip(t *testing.T, path string, entries map[string]string) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	for name, content := range entries {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
 	}
 }

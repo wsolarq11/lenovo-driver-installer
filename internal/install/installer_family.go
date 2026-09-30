@@ -9,23 +9,33 @@ import (
 
 // The silent-install formula, expressed once.
 //
-// Lenovo's own tool installs silently because it dispatches on the installer
-// family rather than on the driver's Parameter column. Measured on the 82JQ
-// lists: that column carries three non-empty values, and one of them is false.
-// AMD-2GY501AFHN99VBC0.exe declares "-QuietInstall" and the binary contains
-// no spelling of it, but does carry "Inno Setup Setup Data" — the Inno Setup
-// header — which proves the package is Inno no matter what the column says.
-// The other two are "-n -s" on the
-// NVIDIA package (whose outer wrapper's family is not established by its
-// bytes; setupapi.dev.log shows it extracting to the Inno-style temp dir
-// is-6UIF7.tmp, so the "-n -s" column is a hint, not proof) and
-// "/add-driver *.inf /install /subdirs" on 41 rows that are INF payload
-// wrappers needing no vendor switch at all.
+// Whether a package can be installed unattended is a decision about one fact:
+// does an unattended mechanism exist for it, and has that mechanism been
+// verified end-to-end?
 //
-// So the column is a hint and the binary is the evidence. This file owns the
-// table; nothing else may invent an installer family.
+// The .inf/.zip/.cab payloads need no decision here: the tool hands them to
+// pnputil / DiInstallDriverW directly, which is headless by construction (there
+// is no GUI to suppress, so there is no switch to get wrong). Those paths live
+// in InstallDriverFile.
+//
+// An .exe installer has a GUI, so driving it unattended needs a silent switch.
+// On 82JQ no .exe silent switch has ever been verified end-to-end: the vendor
+// Parameter column is falsified (AMD declares "-QuietInstall" and the binary
+// contains no such literal), and the real Inno switch "/VERYSILENT" has never
+// been run to a verified install. A wrong switch is a silent no-op — the
+// process exits 0 having changed nothing, which is exactly how an install gets
+// reported as done.
+//
+// So every .exe is interactive. The family is still recognised from the
+// package's own bytes and named in the audit evidence, because recognition is
+// not verification: knowing a package is Inno does not verify that /VERYSILENT
+// installs it. Those are two different facts, and only the second one can
+// authorise an unattended run. This file owns the recognition table; nothing
+// else may invent an installer family.
 
-// InstallerFamily is the payload kind proven by a marker inside the package.
+// InstallerFamily is the installer kind proven by a marker inside the package.
+// It is recognised for the audit trail; recognition alone never authorises an
+// unattended run.
 type InstallerFamily int
 
 const (
@@ -38,8 +48,8 @@ const (
 )
 
 // String names the family for the audit trail. The name is written into the
-// history record so a wrong verdict can be traced to the marker that caused it,
-// which is the difference between a diagnosis and a mystery.
+// history record so a refusal can be traced to the marker that caused it, which
+// is the difference between a diagnosis and a mystery.
 func (f InstallerFamily) String() string {
 	switch f {
 	case FamilyInnoPayload:
@@ -54,31 +64,6 @@ func (f InstallerFamily) String() string {
 		return "WiX Burn"
 	default:
 		return "unproven"
-	}
-}
-
-// silentArgs are the flags that family's own documentation defines. A family
-// that is not listed here is never sent a guess, because a flag the installer
-// does not recognize is a silent no-op: the process exits 0 having changed
-// nothing, which is exactly how an install gets reported as done.
-//
-// InstallShield is deliberately absent. Its switch ("/s /v\"/qn /norestart\"")
-// is documented, but no real package on the 82JQ lists has been observed to be
-// InstallShield, so sending it would be an unverified guess — the exact failure
-// the formula exists to prevent. It stays recognised (the marker is real) but
-// routes to interactive until a real InstallShield package is verified.
-func (f InstallerFamily) silentArgs() []string {
-	switch f {
-	case FamilyInnoPayload:
-		return []string{"/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"}
-	case FamilyNSIS:
-		return []string{"/S"}
-	case FamilySevenZipSFX:
-		return []string{"-s"}
-	case FamilyWiXBurn:
-		return []string{"/quiet", "/norestart"}
-	default:
-		return nil
 	}
 }
 
@@ -145,75 +130,34 @@ func utf16LEToString(data []byte) string {
 	return b.String()
 }
 
-// silentPlan is the formula's output: which mechanism to run, the flags that
-// mechanism needs, and the family the decision rests on.
+// silentPlan is the formula's output: which family was recognised, and the
+// evidence the decision rests on. There is no args/ok pair because no family's
+// switch is verified, so no .exe is ever launched with invented flags.
 type silentPlan struct {
 	family   InstallerFamily
-	args     []string
-	ok       bool
 	evidence string
 }
 
-// planSilentInstall applies the formula. The vendor column is consulted for one
-// thing only, because it is the one thing it is reliable for: it states what the
-// payload is. It never states which flag silences the installer, and after the
-// 82JQ drill it is not allowed to pretend to.
+// planSilentInstall applies the formula. Every .exe is interactive because no
+// .exe silent switch has a verified end-to-end run. The evidence names the
+// recognised family (or the absence of one) so the audit can say "we saw Inno
+// and refused it" rather than just "refused".
 func planSilentInstall(filePath string, driver *model.Driver, logPath string) silentPlan {
-	// An INF payload wrapper has nothing to silence. Running it with no flag
-	// makes it extract and hand the INF to the driver store, which is already
-	// unattended, so the formula exits before reading any bytes.
-	if raw := vendorParameter(driver); raw != "" && strings.HasPrefix(strings.ToLower(raw), "/add-driver") {
-		return silentPlan{evidence: "vendor payload is an INF package; no silent switch needed"}
-	}
 	family := detectInstallerFamily(filePath)
-	args := family.silentArgs()
-	if len(args) == 0 {
-		if family != FamilyUnproven {
-			// The package named a family the formula recognises but whose
-			// silent switch has never been verified on a real package. Sending
-			// it would be a guess, and a wrong one is a silent no-op that
-			// reports success while changing nothing.
-			return silentPlan{family: family, evidence: family.String() + " marker, but its silent switch is unverified; interactive"}
-		}
-		return silentPlan{family: family, evidence: "no installer marker in the package"}
+	if family == FamilyUnproven {
+		return silentPlan{family: family, evidence: "no installer marker in the package; interactive"}
 	}
-	// /LOG is Inno-only and is justified by the marker that just selected this
-	// family, never by the vendor column.
-	if family == FamilyInnoPayload && logPath != "" {
-		args = append(args, "/LOG="+logPath)
-	}
-	return silentPlan{family: family, args: args, ok: true, evidence: family.String() + " marker"}
+	return silentPlan{family: family, evidence: family.String() + " marker, but its silent switch has no verified end-to-end run; interactive"}
 }
 
-// vendorParameter is the single reader of the vendor column, kept here so the
-// only remaining use of that column is visible in one place.
-func vendorParameter(driver *model.Driver) string {
-	if driver == nil {
-		return ""
-	}
-	if driver.InstallParameter != "" {
-		return driver.InstallParameter
-	}
-	return driver.InstallCode
-}
-
-// SilentPlanFor reports whether the formula can drive this package unattended,
-// and names the mechanism the decision rests on.
+// SilentPlanFor reports whether the formula can drive this package unattended
+// (it cannot, until a switch is verified) and the evidence for the audit trail.
 //
-// The second value exists for the audit trail. A run that installs a package
-// with nobody present has to be able to answer, afterwards, why the tool
-// believed it could: a wrong family and a right one produce the same exit code
-// and the same silent outcome, so the exit code cannot carry this. Without the
-// evidence the ledger says "exit=0" and the reason is gone.
+// The bool stays because the answer is about to change: the moment one family's
+// switch is verified end-to-end, this function starts returning true for it and
+// callers need not change. The evidence exists so a refused install still says
+// which mechanism it was refused for.
 func SilentPlanFor(filePath string, driver *model.Driver) (bool, string) {
 	plan := planSilentInstall(filePath, driver, "")
-	return plan.ok, plan.evidence
-}
-
-// HasSilentParameters reports only the decision. Callers that write an audit row
-// want SilentPlanFor instead, so the evidence is never computed and then
-// dropped on the floor.
-func HasSilentParameters(filePath string, driver *model.Driver) bool {
-	canRun, _ := SilentPlanFor(filePath, driver)
-	return canRun
+	return false, plan.evidence
 }
