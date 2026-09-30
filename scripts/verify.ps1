@@ -342,6 +342,44 @@ Assert-Step 'automatic install set excludes downgrade and no-op statuses' {
         throw 'WPF install-all button still says "安装全部可安装"; the set no longer contains every applicable driver'
     }
 
+Assert-Step 'the automatic install set is backed by measurements only' {
+    # Two decisions, two files: which statuses may be installed unattended, and
+    # how strongly each status is evidenced. If they drift apart, the tool
+    # changes machine state on something it did not measure. The pairing is
+    # asserted in Go; this gate keeps the test from being deleted to unblock a
+    # change, and keeps the doc comment claiming the invariant.
+    $model = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\model\model.go') -Raw
+    $inv = Join-Path $repoRoot 'internal\model\evidence_basis_test.go'
+    if (-not (Test-Path -LiteralPath $inv)) {
+        throw 'evidence_basis_test.go is gone; the fact/inference pairing is unguarded'
+    }
+    $text = Get-Content -LiteralPath $inv -Raw
+    if ($text -notmatch 'func\s+TestAutomaticSetStatusesAreMeasured') {
+        throw 'TestAutomaticSetStatusesAreMeasured is gone; the automatic set can drift onto unmeasured statuses'
+    }
+    if ($text -notmatch 'func\s+TestNonFactStatusesStayOutOfTheAutomaticSet') {
+        throw 'TestNonFactStatusesStayOutOfTheAutomaticSet is gone; widening the set no longer has to be argued'
+    }
+    # StatusEvidenceBasis must route every automatic-set member through fact.
+    $m = [regex]::Match($model, '(?s)func\s+StatusEvidenceBasis\(status\s+CompareStatus\)\s*string\s*\{(.*?)\n\}')
+    if (-not $m.Success) {
+        throw 'could not locate StatusEvidenceBasis in model.go'
+    }
+    $body = $m.Groups[1].Value
+    $factCase = [regex]::Match($body, 'case\s+([^\r\n:]+):\s*\r?\n\s*return\s+"fact"')
+    if (-not $factCase.Success) {
+        throw 'StatusEvidenceBasis no longer returns fact from an explicit case list'
+    }
+    foreach ($status in @('StatusUpdate', 'StatusUpToDate', 'StatusNotInstalled')) {
+        if ($factCase.Groups[1].Value -notmatch [regex]::Escape($status)) {
+            throw "automatic-set member $status is not routed to fact by StatusEvidenceBasis"
+        }
+    }
+    if ($body -match '"inference"') {
+        throw 'StatusEvidenceBasis still emits inference; every status it can name is either measured or undecided'
+    }
+}
+
 Assert-Step 'software-versioned compare falls back to the measured device version' {
     # Not installed is the only status the automatic set acts on, so what
     # produces it has to rest on measurement. A software-versioned driver whose
