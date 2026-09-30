@@ -108,10 +108,16 @@
   - **`-QuietInstall` 未实现静默（真机实测）**：`silentInstallerArgs`（`install/install.go:251`）对 `Parameter="-QuietInstall"` 返回 `(args, true)`，工具据此走静默路径；实测安装器仍弹出 GUI，需人工逐步点击完成。官方列表的 `Parameter` 声明**不等于**实际静默能力，`HasSilentParameters` 的返回值在 AMD Power 这一族上不成立。
   - 账本与审计日志完整保留，未做任何清理。
 
-### 仍未闭合
+- **报假成功（2026-09-30，已修）**：承接演练。成功判定**只来自退出码**，`verifyInstalled` 的复核结论仅写日志、不参与结果——演练中 `Recheck: unchanged` 与 `Finished: success=1` 并存，而机器毫无变化。
+  - 根因两层：(1) 复核结论不反馈到结果；(2) 对 software-versioned 驱动（版本在 InstalledApps、不在任何 PnP 设备上）`Provisioned → Provisioned` **恒成立**，`unchanged` 对「装成功」与「装失败」零区分力。
+  - 修复：`installBindingLabel` 增 `versionComparable` 参数（software-versioned 恒为 `false` → `undetected`）；拆出 `unchanged-same`（本机本来就是该包版本 = 确认的 no-op）与 `unchanged`（版本未动 = 无证据）；新增单一门禁 `installBindingConfirmsEffect`，只有 `bound`/`staged`/`unchanged-same` 计入 `success`；`verifyInstalled` 返回 `(verified, unverified)`，主循环据此重算 `success`，`Finished` 增列 `unverified=N`，未确认者以 ERROR 级别逐条列出驱动码。
+  - 绑定判定拆到 `internal/app/install_binding.go`（纯函数，与 IO 密集的 `install.go` 分责，`install.go` 回到 497 行）。
+  - 门禁 30 → 31 步：`a run reports only what the recheck confirmed`。红灯双杀验证：把 `unchanged` 加入确认集 → Go 测试与门禁同时 FAIL（`binding unchanged carries no evidence of effect but is counted as a confirmed install`）；删掉 `versionComparable` 分支 → Go 测试 FAIL。
+  - **门禁自身缺陷一并修**：初版门禁把函数位置硬编码在 `install.go`，代码拆分后误报（`installBindingConfirmsEffect is gone`）。且初版正则要求 `case "bound":` 单独成行，而代码是 `case "bound", "staged", "unchanged-same":`，三个 label 全部漏检。改为定位函数体后在体内匹配 label，并新增反向检查（`unchanged`/`undetected` 不得返回 true）。
 
-- **software-versioned 驱动的装后复核无区分力**：需要改为设备侧无版本时回查软件快照（与 `ResolveLocalDriverVersion` 的回退对称），并在复核结论与结果判定之间接上反馈。当前 5 类驱动（`Lenovo Fn|Energy Management|X-Rite|AMD Power|Intel.*Connectivity`）装完都只会得到 `unchanged`，`success` 与 `failed` 不可区分。
-- **`-QuietInstall` 等官方声明参数的真实性未经验证**：工具把它们当事实使用，AMD Power 已实证为假。
-- 固件路径（`-IncludeBios`）在 82JQ 的两个 edition 列表中均无包，永久无法由本机夹具覆盖，只由构造行测试覆盖。：新采 OSID 248（Windows 11）真实响应夹具，23 条、token 全脱敏。合并 42+248 共 47 条 → `filterDriverRows` 去 2 条 readme → 46 条 → `SelectLatestDrivers` 选 23 组。**这条链让上一轮判定为「无区分力」的 `SelectLatestDrivers` 第一次有了牙齿**：21 组在两个 edition 版本不同（组内比较决定存活者），2 组仅存在于 248（`hasCurrent` 必须丢弃：`DRV202109090051` Monitor、`DRV202109090060` RealtekRTL8852AE），19 组最终选中的是**归属另一 edition 的新版**（如 Lenovo Energy Management 选 248 的 `15.11.29.65` 而非 42 的 `15.11.29.13`）。
+- **software-versioned 驱动仍无「装成没装成」的判据（部分修复）**：上一条已消除「谎报成功」——这类驱动现在诚实得到 `undetected` 与 `unverified=N`，不再冒充 `success`。但**复核本身仍无区分力**：真正的判据应回查软件快照（装前装后 `InstalledApps` 对比），与 `ResolveLocalDriverVersion` 的回退对称。这 5 类驱动（`Lenovo Fn|Energy Management|X-Rite|AMD Power|Intel.*Connectivity`）当前只能得出「无法确认」。
+- **`-QuietInstall` 等官方声明参数的真实性未经验证**：工具把它们当事实使用（`HasSilentParameters` 决定走静默还是交互），AMD Power 已实测为假——声明了 `-QuietInstall` 仍弹 GUI 需人工点击。
+- **固件路径（`-IncludeBios`）在 82JQ 永久无法由本机夹具覆盖**：两个 edition 列表均无固件包，见下一条。只由构造行测试覆盖。
+- **跨 edition 合并接缝闭合（2026-09-30）**：新采 OSID 248（Windows 11）真实响应夹具，23 条、token 全脱敏。合并 42+248 共 47 条 → `filterDriverRows` 去 2 条 readme → 46 条 → `SelectLatestDrivers` 选 23 组。**这条链让上一轮判定为「无区分力」的 `SelectLatestDrivers` 第一次有了牙齿**：21 组在两个 edition 版本不同（组内比较决定存活者），2 组仅存在于 248（`hasCurrent` 必须丢弃：`DRV202109090051` Monitor、`DRV202109090060` RealtekRTL8852AE），19 组最终选中的是**归属另一 edition 的新版**（如 Lenovo Energy Management 选 248 的 `15.11.29.65` 而非 42 的 `15.11.29.13`）。
 - **`-IncludeBios` 固件路径（2026-09-30）**：用 `reFirmware` 原正则实测，82JQ 的 **OSID 42 与 OSID 248 列表都不含任何固件包**——联想不为该机型在此接口发布 BIOS/UEFI/TPM/EC 包。故 `includeBios=true/false` 在真机夹具上均选出 23 行，是 no-op，**固件分支无法由本机夹具覆盖**。已用构造行覆盖该分支（6 类名称各自验证默认丢弃、显式请求时保留），并在链测试中断言两个真实列表下 includeBios 是 no-op——把"覆盖不到"从隐含变成显式事实。
 - **审计日志归档（2026-09-29）**：污染日志 `%LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_install.log`（190 行 / 16400 字节）已归档为 `lenovo_driver_install.log.polluted-20260930-005804.bak`，SHA256 `803DB4BCEA89362C2ED4CBC9FE49B0DF23788FAE16FCAC8DF913CA2706D78B17`，首行即最早的测试污染（`[d1]`），末行为最后一次真实 GUI 导出。构成：夹具噪声 46 行、真实操作 144 行——**归档而非删除**，两类证据都保留。归档后重跑真实 dry-run，新日志 24 行，夹具噪声 0 行，`Applicable candidates: 1`（修复后值）。
