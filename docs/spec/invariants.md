@@ -29,6 +29,12 @@
 - 约束：计划、控制台、交互提示、GUI 导出统一输出 fact / inference / undetermined。
 - 强制点：四级（实测 fact / 推断 inference / 待定 undetermined）贯穿所有输出通道，任何通道不得把推断或待定渲染成事实。
 
+### 3.1 自动安装集必须由实测证据支撑
+
+- 规则：**凡可进入自动安装集的状态，其 `StatusEvidenceBasis` 必须是 `fact`。** 自动安装集是唯一无人值守地改变机器状态的路径；集内出现 inference 或 undetermined，等于让工具依据没测到的东西动手。
+- 含义：`Not installed` 必须是「硬件 ID 命中的设备没有绑定驱动版本」这一**实测**，而不是「在软件列表里没查到」这一证据缺失。软件侧查不到时必须回退到设备实测版本。
+- 强制点：`TestAutomaticSetStatusesAreMeasured`（正）+ `TestNonFactStatusesStayOutOfTheAutomaticSet`（反）；门禁 `the automatic install set is backed by measurements only` 防止测试被删除以放行改动。
+
 ## 5. 审计先于状态变更
 
 - 约束：历史账本追加写入，写入失败不提交成功结果。

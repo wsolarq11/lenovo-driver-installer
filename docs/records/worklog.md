@@ -610,3 +610,27 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed** — 文档写回，待 commit。
+
+---
+
+## Session: 证据等级与决策配对
+
+**Branch**: `main`
+
+### Main Changes
+
+- `StatusEvidenceBasis` 把 `NotInstalled`/`LocalNewer` 归入 `fact`，不再返回 `inference`。旧注释写的依据“the absence of a local match”描述的是**回退修复前**的路径。
+- 新增配对不变量（`internal/model/evidence_basis_test.go`）：自动集每个成员必须是 fact；`Unknown`/`NotApplicable` 必须是 undetermined 且不进自动集。两个决策分处 `InAutomaticInstallSet` 与 `StatusEvidenceBasis`，不配对会各自漂移。
+- 规范：`docs/spec/invariants.md` 新增 §3.1，把该配对写成不变量。
+- 门禁 28 → 29 步：`the automatic install set is backed by measurements only`。
+
+### Testing
+
+- [实测] 真机 `Applicable candidates: 0` 不变；GUI 导出 `Local newer,fact 10 / Not applicable,undetermined 12 / Up to date,fact 1`；**计划文件 `inference` 行与 `attention` 行均降为 0**（修复前 10 条 `Local newer` 被误报为需关注）。
+- [实测] 红灯双杀：把 `StatusNotInstalled` 降回 inference 后，Go 测试与新门禁同时 FAIL，报 `automatic-set member StatusNotInstalled is not routed to fact`；还原后 29/29 VERIFY_OK。
+- [实测] 一次探测无效：`LocalNewer` 不在自动集内，把它降级不会被不变量捕获——这是正确的，不变量只约束自动集成员；据此确认探测范围而非修改不变量。
+- [实测] 操作失误一次：对**未提交**的 `internal/model/model.go` 执行了 `git checkout --`，把自己的修复撤销；已用可审查的 `edit` 重新应用并复验。
+
+### Status
+
+[OK] **Completed** — 文档写回，待 commit。
