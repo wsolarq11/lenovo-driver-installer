@@ -634,3 +634,30 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed** — 文档写回，待 commit。
+
+---
+
+## Session: 补齐未闭合路径
+
+**Branch**: `main`
+
+### Main Changes
+
+- **选择顺序非确定性（真机可见，最严重）**：`SelectLatestDrivers` 用 `sort.SliceStable` 仅按 `PartID` 排序，而 PartID 非全序键（82JQ：23 组只对应 15 个唯一 PartID，PartID 249 覆盖 5 个 WLAN 厂商）。同 PartID 的组落在 map 随机迭代序 → 真机连跑 3 次 `-DryRun` 导出行序不同。修复：排序键扩为 `PartID → DriverName → DriverCode`。
+- **应用列表 83 条重复**：`regAppPathUser` 与 `regAppPath64` 路径文本相同，`nativeOpenKey` 硬编码 `hklm` 使 HKCU 分支重读整机列表。修复：root 改为显式参数，7 个调用点逐一声明。
+- 采 OSID 248 夹具（23 条，token 脱敏），跨 edition 合并接缝闭合。
+- 夹具跳过 `SWD\` 软件枚举设备（25 台，多数带每机唯一 GUID），并用测试证明排除前提成立。
+- 门禁 29 → 30 步：`driver selection order is a total order`。
+
+### Testing
+
+- [实测] 真机 dry-run 修复后连跑 **5 次导出顺序完全一致**；红灯验证（改回 `SliceStable` + 仅 PartID）测试 FAIL 报 `OSID 42: run 0 produced a different order`。
+- [实测] 真机等价性 smoke（`-tags legacyps`）PASS 11.75s：`apps native=188 ps=188 nativeOnly=0 versionMismatch=0`（修复前 `native=265`）、`devices native=169 ps=169`。
+- [实测] hive 红灯：`GetInstalledApps returned 265 rows, want 188`。
+- [实测] 两次探测自身有缺陷并已修正：(1) 固件探测用我自己敲的 PowerShell 正则得出「无固件包」，改用 `reFirmware` 原样才可信；(2) 首个 hive 测试直接调 `readUninstallEntries`，只证明 helper 能区分 hive、不证明 `GetInstalledApps` 传对了 hive，改成断言总行数后才真正抓到。
+- [实测] 一次过度过滤：排除 `SWD\` 时丢 25 台而非预期的 1 台，据实改为「排除 + 测试证明排除前提成立 + 导出日志打印跳过数」。
+- [OK] `scripts/verify.ps1` 30/30 VERIFY_OK。
+
+### Status
+
+[OK] **Completed** — 文档写回，待 commit。
