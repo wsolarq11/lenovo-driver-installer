@@ -379,9 +379,31 @@ Assert-Step 'a run reports only what the recheck confirmed' {
             throw "binding $label carries no evidence of effect but is counted as a confirmed install"
         }
     }
-    if ($binding -notmatch 'versionComparable\s+bool') {
-        throw 'installBindingLabel no longer takes version comparability; software-versioned drivers ' +
-              'will compare device versions that carry no version and be declared unchanged again'
+    # Comparability must come from the value, not the driver family, and the
+    # decision must live in the binding owner rather than at the call site.
+    # Re-keying it on TestSoftwareVersionedDriver silently reports every correctly
+    # installed software-versioned driver as unverified.
+    if ($binding -notmatch 'model\.IsMeasuredLocalVersion\(after\)') {
+        throw 'installBindingLabel no longer decides comparability from the value it read'
+    }
+    if ($install -match 'installBindingLabel\([^)]*TestSoftwareVersionedDriver') {
+        throw 'installBindingLabel is keyed on the driver family again; a real version read back from the ' +
+              'installed-app list (Energy Management 15.11.29.65) is measurable and must carry a verdict'
+    }
+    $cm2 = [regex]::Match($binding, '(?s)func\s+installBindingLabel\([^)]*\)')
+    if ($cm2.Success -and $cm2.Value -match 'bool\s*[,)]') {
+        throw 'installBindingLabel takes a comparability flag again; the call site must not decide the verdict'
+    }
+    $model = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\model\model.go') -Raw
+    if ($model -notmatch 'const\s+LocalVersionProvisioned\s+=') {
+        throw 'model.LocalVersionProvisioned is gone; the provisioning placeholder lost its single owner'
+    }
+    if ($model -notmatch 'func\s+IsMeasuredLocalVersion') {
+        throw 'model.IsMeasuredLocalVersion is gone; callers must not each decide what counts as a version'
+    }
+    $stale = Select-String -LiteralPath (Join-Path $repoRoot 'internal\compare\matching.go') -Pattern '"Provisioned"' -SimpleMatch
+    if ($stale) {
+        throw "matching.go still spells the provisioning placeholder itself at line(s): $($stale.LineNumber -join ',')"
     }
     if ($install -notmatch 'unverified=\%d') {
         throw 'the Finished summary no longer reports an unverified count'
