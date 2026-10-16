@@ -952,6 +952,22 @@ Assert-Step 'recorded fixtures carry no live credentials or device serials' {
     Write-Host ("     {0} fixtures scanned for tokens, serials and instance ids" -f $fixtures.Count)
 }
 
+Assert-Step 'every text type the repo carries has an explicit line ending' {
+    # An unpinned type gets whatever ending the editing tool wrote, and
+    # core.autocrlf decides whether that reaches the index. A Windows GUI editor
+    # saving CRLF into a file the gate parses is a whole-file diff and a parse
+    # hazard that no other step would notice, so each type is pinned here rather
+    # than left to the machine's git config.
+    $attrs = Read-GateText (Join-Path $repoRoot '.gitattributes')
+    foreach ($rule in @('*.md text eol=lf', '*.yml text eol=lf', '*.yaml text eol=lf',
+            '*.json text eol=lf', '*.bat text eol=crlf', '*.ps1 text eol=lf',
+            '*.go text eol=lf', '*.xaml text eol=lf')) {
+        if ($attrs -notmatch ('(?m)^' + [regex]::Escape($rule) + '$')) {
+            throw ".gitattributes no longer pins '$rule'"
+        }
+    }
+}
+
 Assert-Step 'git diff check' {
     $diff = git diff --check
     if ($LASTEXITCODE -ne 0) { throw "git diff --check failed`n$diff" }

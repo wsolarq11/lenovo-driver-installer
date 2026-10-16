@@ -807,3 +807,25 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed**
+
+---
+
+## Session: 全仓净熵 P5b `.gitattributes` 行尾卫生
+
+**Branch**: `chore/repo-entropy-sweep`
+
+### Main Changes
+
+- `.gitattributes` 补 `*.xaml text eol=lf`。这是唯一一类没被钉行尾的文本类型，而它恰好最可能被 Windows GUI 编辑器（XAML 设计器）以 CRLF 写回。
+- **实测与审计断言不符，据实修正**：审计称 `wpf/window.xaml` 处于「index=LF、worktree=CRLF」。实测 `git ls-files --eol` 为 `i/lf w/lf attr/(none)`，两侧都是 LF，字节 3712、无 BOM。因此这次改动**不产生归一化 diff**——它是声明性的：把行尾从「取决于本机 git 配置与编辑器」变成显式约束。
+- 新增第 42 步 `every text type the repo carries has an explicit line ending`：逐一断言 `*.md/*.yml/*.yaml/*.json/*.bat/*.ps1/*.go/*.xaml` 的规则行仍以 `text eol=` 存在（`*.bat` 故意是 `crlf`）。不加这步的话，本次改动就是一条没有护栏的规则——正是本轮要清的那类熵。
+
+### Testing
+
+- [实测] 属性生效验证（非文字断言）：把 `window.xaml` 工作区文件故意改写成 CRLF → `git ls-files --eol` 变 `i/lf w/crlf`，`git add` 后索引仍是 LF、`git diff --cached --stat` 只有 `.gitattributes` 一行——即 CRLF 写入被规范化吸收，不产生整文件 diff。随后按 LF 写回原状（3712 字节、无 BOM），`i/lf w/lf`，工作区零内容差异（porcelain/index/HEAD 三处 hash 同为 `ed4dfbbd`）。
+- [实测] 红灯：删掉 `*.xaml text eol=lf` → `FAIL every text type the repo carries has an explicit line ending: .gitattributes no longer pins '*.xaml text eol=lf'`；复原后绿。
+- [实测] 双宿主全量门禁 42/42 VERIFY_OK（`powershell.exe` 5.1 与 `pwsh` 7）。
+
+### Status
+
+[OK] **Completed**
