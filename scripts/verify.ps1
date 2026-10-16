@@ -883,13 +883,38 @@ Assert-Step 'evidence chain runs on real fixtures' {
             throw "evidence chain no longer exercises $step; a link was dropped from the chain"
         }
     }
-    foreach ($fixture in @('quickfix_real_82jq.json', 'local_devices_82jq.json', 'local_software_82jq.json')) {
-        $p = Join-Path $repoRoot "internal\app\testdata\$fixture"
-        if (-not (Test-Path -LiteralPath $p)) {
-            throw "evidence fixture missing: $fixture"
+    # The required fixtures are read off the test sources rather than listed
+    # here. A hardcoded list stops covering the next fixture someone adds -- the
+    # OS-248 cross-edition fixture already sat outside the old three names --
+    # while a path in a test is exactly the dependency worth checking. Both
+    # spellings a test can use are matched: 'testdata/x.json' and
+    # filepath.Join("testdata", "x.json"); covering one and not the other would
+    # reintroduce the same blind spot in a new shape.
+    $fixturePattern = 'testdata[/\\]([A-Za-z0-9_.\-]+)|"testdata"\s*,\s*"([A-Za-z0-9_.\-]+)"'
+    $fixtures = @()
+    foreach ($src in Get-ChildItem -Path (Join-Path $repoRoot 'internal') -Recurse -File -Filter '*_test.go') {
+        foreach ($m in [regex]::Matches((Read-GateText $src.FullName), $fixturePattern)) {
+            $name = if ($m.Groups[1].Success) { $m.Groups[1].Value } else { $m.Groups[2].Value }
+            if ($name -and ($fixtures -notcontains $name)) { $fixtures += $name }
         }
-        if ((Get-Item -LiteralPath $p).Length -lt 2048) {
-            throw "evidence fixture $fixture is too small to be real recorded data"
+    }
+    if ($fixtures.Count -lt 3) {
+        throw "the tests reference only $($fixtures.Count) testdata fixtures; the evidence chain was dismantled or this scan lost its targets"
+    }
+    if (-not ($fixtures | Where-Object { $_ -like '*_82jq*' })) {
+        throw 'no 82JQ fixture is referenced by any test; the recorded-data size floor below would guard nothing'
+    }
+    foreach ($fixture in $fixtures) {
+        $p = Get-ChildItem -Path (Join-Path $repoRoot 'internal') -Recurse -File -Filter $fixture | Select-Object -First 1
+        if (-not $p) {
+            throw "a test reads testdata/$fixture but no such fixture exists"
+        }
+        # A recorded machine fixture is bulk data, so an emptied or truncated one
+        # would keep the tests green while proving nothing. Small hand-written
+        # goldens are told apart by the same marker that names the machine the
+        # evidence came off.
+        if ($fixture -like '*_82jq*' -and $p.Length -lt 2048) {
+            throw "recorded fixture $fixture is too small to be real recorded data"
         }
     }
 }
@@ -899,21 +924,32 @@ Assert-Step 'recorded fixtures carry no live credentials or device serials' {
     # one is a leak that no test would catch. The token is refreshed per fetch
     # anyway, and the instance tail is boot-specific, so redacting costs the
     # chain nothing.
-    foreach ($fixture in @('quickfix_real_82jq.json', 'local_devices_82jq.json', 'local_software_82jq.json')) {
-        $p = Join-Path $repoRoot "internal\app\testdata\$fixture"
-        $text = Read-GateText $p
+    #
+    # The set is every file under a testdata directory, not a list of names: a
+    # named list only guards the fixtures that existed when it was written, and
+    # the OS-248 fixture proved that by sitting outside it.
+    $fixtures = Get-ChildItem -Path (Join-Path $repoRoot 'internal') -Recurse -File |
+        Where-Object { $_.Directory.Name -eq 'testdata' }
+    if ($fixtures.Count -lt 3) {
+        throw "found only $($fixtures.Count) testdata fixtures; this scan lost its targets and would pass everything"
+    }
+    foreach ($fixture in $fixtures) {
+        $text = Read-GateText $fixture.FullName
         if ($text -match '\?token=[A-Za-z0-9_\-]{20,}') {
-            throw "$fixture contains an unredacted download token; refresh via the redaction step before committing"
+            throw "$($fixture.Name) contains an unredacted download token; refresh via the redaction step before committing"
         }
         if ($text -match 'PF2SBWJA') {
-            throw "$fixture contains the machine serial; fixtures must carry hardware ids only"
+            throw "$($fixture.Name) contains the machine serial; fixtures must carry hardware ids only"
         }
         # PnpDeviceID is the ledger join key, so the instance tail has to stay
         # recognisable, but it must be the placeholder rather than a real one.
-        if ($fixture -eq 'local_devices_82jq.json' -and $text -match '\\\d+&\w+&\d+&\d+\\?"') {
-            throw 'local_devices_82jq.json carries a real device instance id'
+        # Checked in every fixture, not just the device one: a real instance id
+        # is a leak wherever it lands, including in a fixture added tomorrow.
+        if ($text -match '\\\d+&\w+&\d+&\d+\\?"') {
+            throw "$($fixture.Name) carries a real device instance id"
         }
     }
+    Write-Host ("     {0} fixtures scanned for tokens, serials and instance ids" -f $fixtures.Count)
 }
 
 Assert-Step 'git diff check' {

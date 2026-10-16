@@ -783,3 +783,27 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed**
+
+---
+
+## Session: 全仓净熵 P5a 覆盖面缺口（夹具不再写死名字）
+
+**Branch**: `chore/repo-entropy-sweep`
+
+### Main Changes
+
+- **被漏掉的第 4 个夹具**：门禁的凭据/序列号清洗步与 `evidence chain runs on real fixtures` 都写死了 3 个夹具名，而 `internal/app/testdata/quickfix_real_82jq_os248.json`（38 KB，被 `evidence_cross_edition_test.go` 读取）就在名单外——它是提交进仓库的真实 API 记录，内容当前干净，但没有任何护栏。这正是「写死名字」这种做法的固有缺陷：它守的是写名单那一刻存在的文件。
+- **清洗步改为按目录枚举全量**：`internal/**/testdata/*` 全部文件（当前 7 个）逐个查下载 token、机器序列号、真实设备实例 id，并打印扫描数量。设备实例 id 的检查由原来只作用于 `local_devices_82jq.json` 改为**无条件**——实测 7 个夹具对该模式命中数均为 0，故无假阳性，而真实实例 id 落在哪个夹具里都是泄漏。新增「找到的夹具少于 3 个即失败」，防止枚举失效导致整步空转假绿。
+- **所需夹具改为从测试源码推导**：不再列名字，而是扫 `internal/**/*_test.go` 里对 `testdata` 的引用，要求每个被引用的夹具都存在。两种写法都匹配——`"testdata/x.json"` 与 `filepath.Join("testdata", "x.json")`——只覆盖一种等于换个形状重犯同一个盲区。大小下限（≥2048 字节）只施加于名字带 `_82jq` 的记录型夹具（即录制这批证据的那台机器）：手写 golden 天然很小（993/1012/1210 字节），用机器标记把它们与记录数据区分开，规则可推导而非再写一张名单。另加一道守卫：若没有任何 `_82jq` 夹具被引用，说明标记约定变了、下限已作用于空集，直接失败。
+- 实测推导结果：7 个夹具全部被覆盖（含此前逃逸的 `_os248`），大小下限恰好作用于 4 个记录型夹具。
+
+### Testing
+
+- [实测] 红灯（真实逃逸场景）：向第 4 个夹具 `quickfix_real_82jq_os248.json` 的 `Memo` 字段注入 `?token=…` → `FAIL recorded fixtures carry no live credentials or device serials: quickfix_real_82jq_os248.json contains an unredacted download token`；`go test` 不受影响（注入字段无语义），失败确实来自清洗步而非测试。复原后夹具字节零漂移。
+- [实测] 分支可达性：把大小下限临时改为作用于全部夹具 → `FAIL evidence chain runs on real fixtures: recorded fixture quickfix_contract_golden.json is too small to be real recorded data`，证明该分支不是死码且消息正确；复原。
+- [实测] 双宿主全量门禁 41/41 VERIFY_OK，清洗步打印 `7 fixtures scanned for tokens, serials and instance ids`。
+- [实测] 过程中踩到一次自身误差：临时改门禁脚本时用无 BOM 写回，丢了 `verify.ps1` 的 BOM——该文件含非 ASCII，BOM 步会因此假红。改为保留 BOM 写回并只做这一次分支测试。这是「改动工具本身时要先把工具自身的不变量当约束」的一例。
+
+### Status
+
+[OK] **Completed**
