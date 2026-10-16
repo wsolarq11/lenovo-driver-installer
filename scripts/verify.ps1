@@ -263,6 +263,68 @@ Assert-Step 'CLI artifact paths match docs contract' {
         $detail = ($diff | ForEach-Object { "$($_.SideIndicator)$($_.InputObject)" }) -join ','
         throw "artifact-path drift (help vs contract): $detail"
     }
+    # The offer file's name has a machine source of its own: the Go constant the
+    # writer uses. help.go, contracts.md and the WPF layer are copies of it.
+    $rollback = Read-GateText (Join-Path $repoRoot 'internal\app\rollback.go')
+    $offerConst = [regex]::Match($rollback, 'rollbackOfferFileName\s*=\s*"([^"]+)"')
+    if (-not $offerConst.Success) {
+        throw 'rollbackOfferFileName is gone; the offer artifact lost its machine name'
+    }
+    $offerName = $offerConst.Groups[1].Value
+    if ($help -notmatch [regex]::Escape($offerName)) {
+        throw "help.go's Artifacts block does not declare $offerName although the GUI opens it"
+    }
+    # The WPF layer re-derives the plan and offer paths instead of asking the
+    # engine, so it spells artifact names a second and third time. Those copies
+    # are not exempt from the lock: every name the PowerShell layer writes must
+    # be one the engine declares, or a renamed artifact leaves the GUI opening
+    # a path nothing writes.
+    $declaredNames = @([regex]::Matches($help, 'lenovo_driver_[A-Za-z0-9_]+\.(?:log|csv|txt|json)') |
+        ForEach-Object { $_.Value } | Sort-Object -Unique)
+    $psNames = @()
+    foreach ($f in (Get-ProjectPs1Files -RepoRoot $repoRoot)) {
+        $psNames += @([regex]::Matches((Read-GateText $f.FullName), 'lenovo_driver_[A-Za-z0-9_]+\.(?:log|csv|txt|json)') |
+            ForEach-Object { $_.Value })
+    }
+    $stray = @($psNames | Sort-Object -Unique | Where-Object { $declaredNames -notcontains $_ })
+    if ($stray.Count -gt 0) {
+        throw "PowerShell spells artifact names the engine does not declare: $($stray -join ', ')"
+    }
+}
+
+Assert-Step 'the documented JSON contracts match the engine' {
+    # contracts.md carries the human copy of both JSON surfaces the WPF parses:
+    # the driver view export (§2) and the rollback offer (§4). Their machine
+    # sources are the struct tags in export.go, model.OSListEntry and
+    # rollback.go. export_test.go's golden locks the encoder, not the human
+    # copy, so the two could drift with every test still green. Compare the
+    # field sets directly.
+    $contract = Read-GateText (Join-Path $repoRoot 'docs\spec\contracts.md')
+    $blocks = @([regex]::Matches($contract, '(?s)```json\r?\n(.*?)```') | ForEach-Object { $_.Groups[1].Value })
+    if ($blocks.Count -ne 2) {
+        throw "contracts.md must carry exactly two JSON contract blocks (driver view, rollback offer), found $($blocks.Count)"
+    }
+    $documented = @($blocks | ForEach-Object {
+            [regex]::Matches($_, '"([A-Za-z0-9_]+)"\s*:') | ForEach-Object { $_.Groups[1].Value }
+        })
+
+    $engine = @()
+    $export = Read-GateText (Join-Path $repoRoot 'internal\app\export.go')
+    $engine += @([regex]::Matches($export, 'json:"([A-Za-z0-9_]+)') | ForEach-Object { $_.Groups[1].Value })
+    $osEntry = [regex]::Match((Read-GateText (Join-Path $repoRoot 'internal\model\model.go')), '(?s)type OSListEntry struct \{(.*?)\n\}')
+    if (-not $osEntry.Success) { throw 'model.OSListEntry is gone; the export OsList field lost its shape' }
+    $engine += @([regex]::Matches($osEntry.Groups[1].Value, 'json:"([A-Za-z0-9_]+)') | ForEach-Object { $_.Groups[1].Value })
+    $offer = Read-GateText (Join-Path $repoRoot 'internal\app\rollback.go')
+    $engine += @([regex]::Matches($offer, 'json:"([A-Za-z0-9_]+)') | ForEach-Object { $_.Groups[1].Value })
+
+    if ($engine.Count -lt 20) {
+        throw "the engine scan found only $($engine.Count) JSON fields; the tag scan is broken"
+    }
+    $diff = Compare-Object -ReferenceObject (@($engine | Sort-Object -Unique)) -DifferenceObject (@($documented | Sort-Object -Unique))
+    if ($diff) {
+        $detail = ($diff | ForEach-Object { "$($_.SideIndicator)$($_.InputObject)" }) -join ','
+        throw "JSON contract drift (engine vs contracts.md): $detail"
+    }
 }
 
 $invalidCombinations = @(

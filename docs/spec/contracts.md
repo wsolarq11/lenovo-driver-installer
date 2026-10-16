@@ -78,7 +78,9 @@ Go CLI 写出的 JSON：
 }
 ```
 
-字段机器源是 `internal/app/export.go` 的 `guiExportPayload` / `guiDriverRow` 结构体 tag，由 `export_test.go` 的 golden 锁死；上面的示例是示意，字段增删必须同步两处，否则测试失败。`SourceAudit` 是规范字符串形式 `Category: Summary`。WPF 直接渲染此 JSON，并用 `-GuiInstallCodes` 回传选择。`NonMatchReason` 压缩为 `hardware ids X, Y, ... (N ids)`。
+字段机器源是 `internal/app/export.go` 的 `guiExportPayload` / `guiDriverRow` 结构体 tag（`OsList` 元素取自 `model.OSListEntry`），由 `export_test.go` 的 golden 锁死；上面的示例是示意，字段增删必须同步两处，否则测试失败。`SourceAudit` 是规范字符串形式 `Category: Summary`。WPF 直接渲染此 JSON，并用 `-GuiInstallCodes` 回传选择。`NonMatchReason` 压缩为 `hardware ids X, Y, ... (N ids)`。
+
+本节的块与 §4 的回退 offer 块是人读副本，`scripts/verify.ps1` 的 `the documented JSON contracts match the engine` 把这两块的字段名集合与引擎 tag 集合逐个比对：只改引擎或只改文档都会让门禁失败。
 
 ## 3. 退出码
 
@@ -106,9 +108,46 @@ Go CLI 写出的 JSON：
 
 来源审计证据源：`C:\Windows\INF\setupapi.offline.log`、`setupapi.dev.log`、`setupapi.setup.log`。
 
+`lenovo_driver_rollback.json` 是 GUI 与 VM 演练脚本消费的回退 offer（展示缓存；账本是权威）。字段机器源是 `internal/app/rollback.go` 的 `rollbackOffersFile` / `rollbackOffer` / `rollbackOfferDevice` tag：
+
+```json
+{
+  "Offers": [
+    {
+      "DriverCode": "...",
+      "DriverName": "...",
+      "Version": "...",
+      "OSID": "...",
+      "OSName": "...",
+      "FileName": "...",
+      "MD5": "...",
+      "Source": "...",
+      "BeforeVersion": "...",
+      "AfterVersion": "...",
+      "BeforeInf": "...",
+      "BeforeInfPath": "...",
+      "Devices": [
+        {
+          "PnpDeviceID": "...",
+          "HardwareID": "...",
+          "Problem": "...",
+          "AfterInf": "...",
+          "State": "..."
+        }
+      ],
+      "State": "pending",
+      "Message": "...",
+      "GeneratedAt": "..."
+    }
+  ]
+}
+```
+
+`State`（offer 级）取 `pending` / `rolled_back` / `partial` / `failed`，只有 `pending` 的 offer 会被 GUI 呈现、被 `-Rollback` 采纳；`Devices[].State` 是逐设备结果，故部分回退（部分设备恢复、部分仍故障）可见而不被折叠成 offer 级失败。
+
 `-Audit <snapshotPath>` 的设备差分把每条变化归因到账本中针对该设备记录过的驱动动作（`[ledger: DRV1,DRV2]`，见 §5 的 `devices` 列）；无匹配账本行的设备保持可见的未归因（无标注）。
 
-前三个审计产物（log / plan / history）的机器源是 `internal/app/help.go` 的 `Artifacts` 块，由 `scripts/verify.ps1` 比对锁死；改路径必须同步 `help.go` 与本文件，否则门禁失败。
+前三个审计产物（log / plan / history）的机器源是 `internal/app/help.go` 的 `Artifacts` 块，由 `scripts/verify.ps1` 比对锁死；改路径必须同步 `help.go` 与本文件，否则门禁失败。回退 offer 的文件名另有 Go 常量源（`rollback.go` 的 `rollbackOfferFileName`），`help.go` 的 `Artifacts` 块、本文件与 WPF 层（`wpf/actions.ps1`、`scripts/rollback_behavior_test.ps1` 各自拼路径）都必须与它一致；WPF 层拼出的产物名同样受门禁比对——只能出现引擎声明过的名字。
 
 ## 5. 账本（WORM 历史）
 

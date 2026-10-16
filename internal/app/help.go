@@ -64,4 +64,5 @@ Artifacts:
   %LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_install.log
   %LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_history.csv
   %LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_plan.txt (per-run plan view)
+  %LOCALAPPDATA%\Lenovo\DriverInstaller\lenovo_driver_rollback.json (rollback offer; GUI display cache)
 `
