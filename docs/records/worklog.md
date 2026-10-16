@@ -661,3 +661,27 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed** — 文档写回，待 commit。
+
+---
+
+## Session: 门禁宿主无关化（UTF-8 解码收口）
+
+**Branch**: `fix/gate-utf8-decoding`
+
+### Main Changes
+
+- **门禁结论按宿主翻转（已复现，最严重）**：`verify.ps1` 约 36 处 `Get-Content -Raw` 未声明编码。Windows PowerShell 5.1 用 ANSI 代码页（本机 GB2312）解码无 BOM 的 UTF-8，pwsh 7 默认 UTF-8——同一文件两个宿主读出不同文本。实测翻转：5.1 报 `37 steps, 1 failed`（`the invariants spec carries every rule the code enforces` 匹配不到中文标题），pwsh 报 37/37 VERIFY_OK。CI（`shell: pwsh`）永远看不到 5.1 侧的失败。
+- **静默失败不对称（注入实验证明）**：向 `window.xaml` 注入被禁文案「安装全部可安装」后，5.1 的负向断言（`-notmatch` 中文）读作“不存在”→ 门禁**静默放过**；pwsh 正常抓 FAIL。正向断言错解码下会响亮失败，负向断言不会——所以必须加审计读取方的自检步，只修翻转的那一步不够。
+- **修复**：(1) `verify.ps1` 新增 `Read-GateText`（显式 UTF-8，BOM/无 BOM 通吃），全部读取点收归它；(2) 新增第 38 步 `every project file read names its encoding (host-independent)`，扫仓库内每个 `.ps1` 的非注释 `Get-Content`，缺 `-Encoding` 即红——门禁审计自己，也审计运行时脚本；(3) 修嵌套缺陷：第 305 步未闭合导致 350–768 行整体被吞进它的 scriptblock（这解释了汇总计数 1 失败但看不到 FAIL 行），305 步补 `}`、删除尾端孤立 `}`；(4) 删死变量 `$body`（自匹配正则截断且无人使用）；(5) 不变量配对步补双向引用检查：spec 点名的门禁步必须在本文件真实存在；(6) 运行时读取修复：`wpf/ui.ps1` 的 window.xaml（BOM 在 67bf150 丢失后 5.1 下 XAML 标签乱码）、`scripts/rollback_behavior_test.ps1` 的 offer JSON 与账本共 3 处补 `-Encoding UTF8`。
+- 调查确认 `Select-String` 双宿主结果一致，不在收口范围。
+
+### Testing
+
+- [实测] 红测一：注入被禁文案 → 5.1 下 `FAIL automatic install set excludes downgrade and no-op statuses`，恢复后工作区干净。
+- [实测] 红测二：向 `wpf/ui.ps1` 注入裸 `Get-Content -Raw` → 5.1 下自检步 FAIL 并点名 `ui.ps1: $xaml = Get-Content -LiteralPath $xamlPath -Raw`，恢复后干净。
+- [实测] 双宿主全量门禁：`powershell.exe` 5.1 与 `pwsh` 7 均 `38 steps, 0 failed VERIFY_OK`。修复前两宿主结论相反。
+- [实测] 三个改动文件在两个宿主下 Parser 均零错误。
+
+### Status
+
+[OK] **Completed** — 文档写回，待 commit。
