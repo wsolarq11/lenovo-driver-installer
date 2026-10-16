@@ -26,6 +26,7 @@
 - 生产 Go 文件 ≤ 500 行。
 - 覆盖率下限（`inventory` 8 / `app` 22 / `install` 45 / `compare` 50 / `audit` 50 / `download` 35 / `plan` 65 / `api` 55）。
 - 含非 ASCII 的 `.ps1` 必须 UTF-8 BOM（Windows PowerShell 5.1 要求）；`verify.ps1` 检测即失败（CI 阻断）、`-FixBom` 显式修复，语法解析覆盖全部 `.ps1`。
+- 宿主无关读取：仓库内每个 `.ps1` 的 `Get-Content` 必须显式 `-Encoding`（门禁自身统一走 `Read-GateText`）。5.1 用 ANSI 代码页解码无 BOM 的 UTF-8，负向断言会在错宿主下**静默放过**——该步审计的是读取方而不是文件，注入一个裸 `Get-Content -Raw` 即红。
 - WPF 参数引用共享 golden（`internal/app/testdata/windows_argument_quoting.json`）。
 - 旧 PowerShell 引擎文件已删除。
 - CLI 互斥参数组合退出码 `2` 且错误不进 stdout。
@@ -57,12 +58,13 @@ $env:LENOVO_TRUST_SMOKE=1; go test ./internal/trust/ -run TestVerifyLenovoPackag
 
 ## CI
 
-`.github/workflows/verify.yml` 在 `windows-latest`（Go 1.27.x，`GOTOOLCHAIN=local` 锁定与 `go.mod` 一致）对每次 push/PR 跑 `scripts/verify.ps1`。CI 只跑离线门禁——依赖硬件的 native/WPF smoke 按设计本地驱动。
+`.github/workflows/verify.yml` 在 `windows-latest`（Go 1.27.x，`GOTOOLCHAIN=local` 锁定与 `go.mod` 一致）对每次 push/PR 跑 `scripts/verify.ps1`。CI 只跑离线门禁——依赖硬件的 native/WPF smoke 按设计本地驱动。门禁结论与宿主无关：CI 的 `shell: pwsh`（PS 7）与本地 `powershell.exe`（5.1）跑同一脚本必须给出同一判定，任何一侧能翻转的结论都由上节的宿主无关读取步阻断。
 
 ## 约定
 
 - 两个脚本都离线、无副作用：绝不调联想 API、下载驱动或安装。
 - 稳定哨兵 `DEV_OK` / `VERIFY_OK` + 数字失败数，供自动化断言。
 - 含非 ASCII 的 `.ps1` 必须 UTF-8 带 BOM；`verify.ps1` 检测即失败（CI 阻断）、`verify.ps1 -FixBom` 或 `scripts/fix-bom.ps1` 显式修复，`.editorconfig` 让 IDE 保存自动带 BOM（纯 ASCII 脚本也会因此带 BOM，无害但会产生 diff）。
+- 脚本读取带非 ASCII 内容的数据文件（JSON/CSV 账本/XAML 等）必须显式 `-Encoding UTF8`（或门禁内的 `Read-GateText`）：BOM 规则只保脚本**源码**宿主无关，不保脚本**读到的数据**；门禁有专步强制这条。
 - 文档只在本文件维护开发命令，README “开发”节只是指针，避免命令漂移。
 - 六条不变量是硬门禁，违反即阻断合并；语义见 `docs/spec/invariants.md`。

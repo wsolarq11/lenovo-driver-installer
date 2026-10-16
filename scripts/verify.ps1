@@ -20,6 +20,15 @@ Set-Location -LiteralPath $repoRoot
 $failed = @()
 $total = 0
 
+# Read-GateText unifies every gate input read to explicit UTF-8 decoding.
+# Windows PowerShell 5.1 reads BOM-less UTF-8 with the ANSI code page; a
+# match against non-ASCII literals would fail silently. Every file the gate
+# reads goes through this helper so the verdict stays the same on both hosts.
+function Read-GateText {
+    param([string]$LiteralPath)
+    return [System.IO.File]::ReadAllText($LiteralPath, [System.Text.Encoding]::UTF8)
+}
+
 function Assert-Step {
     param(
         [string]$Name,
@@ -118,7 +127,7 @@ Assert-Step 'Go source file size (prod <= 500)' {
         Get-ChildItem -LiteralPath (Join-Path $repoRoot $dir) -Recurse -Filter '*.go' -File |
             Where-Object { $_.Name -notlike '*_test.go' } |
             ForEach-Object {
-                $count = @(Get-Content -LiteralPath $_.FullName).Count
+                $count = @(((Read-GateText $_.FullName) -replace '\r?\n$', '') -split "\r?\n").Count
                 if ($count -gt 500) { $over += ("{0} = {1} lines" -f $_.FullName, $count) }
             }
     }
@@ -132,6 +141,30 @@ Assert-Step 'PowerShell UTF-8 BOM (non-ASCII ps1 must carry BOM)' {
     }
     if ($missing.Count -gt 0) {
         throw "BOM-less non-ASCII ps1 (Windows PowerShell 5.1 will mis-decode): $($missing -join ', '). Fix with: .\scripts\fix-bom.ps1 or .\scripts\verify.ps1 -FixBom"
+    }
+}
+
+Assert-Step 'every project file read names its encoding (host-independent)' {
+    # Windows PowerShell 5.1 decodes BOM-less UTF-8 with the ANSI code page
+    # while pwsh 7 defaults to UTF-8: the same file can match on one host and
+    # not on the other, and a negative assertion then fails SILENTLY (proven by
+    # injecting forbidden text into window.xaml — 5.1 read it as absent). So
+    # this audits the readers, not the files: every non-comment Get-Content in
+    # the repository must state -Encoding, and the gate's own reads go through
+    # Read-GateText. The literal is split so this step does not match itself.
+    $gc = 'Get-' + 'Content'
+    $bare = @()
+    foreach ($f in (Get-ProjectPs1Files -RepoRoot $repoRoot)) {
+        $src = Read-GateText $f.FullName
+        foreach ($line in ($src -split "\r?\n")) {
+            if ($line -match '^\s*#') { continue }
+            if ($line -match $gc -and $line -notmatch '-Encoding') {
+                $bare += ("{0}: {1}" -f $f.Name, $line.Trim())
+            }
+        }
+    }
+    if ($bare.Count -gt 0) {
+        throw "reads without an explicit encoding (the verdict would flip per host): $($bare -join ' | ')"
     }
 }
 
@@ -154,7 +187,7 @@ Assert-Step 'PowerShell parse' {
 Assert-Step 'WPF argument quoting (shared golden)' {
     . (Join-Path $repoRoot 'wpf\worker.ps1')
     $casesPath = Join-Path $repoRoot 'internal\app\testdata\windows_argument_quoting.json'
-    $cases = @((Get-Content -LiteralPath $casesPath -Raw | ConvertFrom-Json).cases)
+    $cases = @((Read-GateText $casesPath | ConvertFrom-Json).cases)
     if ($cases.Count -lt 10) { throw "shared quoting golden too small: $($cases.Count) cases" }
     foreach ($case in $cases) {
         $got = ConvertTo-CommandLineArgument -Argument ([string]$case.input)
@@ -195,13 +228,13 @@ Assert-Step 'CLI help' {
 Assert-Step 'CLI exit codes match docs contract' {
     # Single source of truth: internal/app/help.go HelpText. docs/spec/contracts.md
     # must carry the same numeric codes; drift fails the gate.
-    $help = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\help.go') -Raw
+    $help = Read-GateText (Join-Path $repoRoot 'internal\app\help.go')
     if ($help -notmatch '(?ms)Exit codes:\r?\n(.*?)(\r?\n\r?\n)') {
         throw "help.go exit-code block not found"
     }
     $helpCodes = @([regex]::Matches($Matches[1], '(?m)^\s*(\d)\s+') | ForEach-Object { $_.Groups[1].Value })
 
-    $contract = Get-Content -LiteralPath (Join-Path $repoRoot 'docs\spec\contracts.md') -Raw
+    $contract = Read-GateText (Join-Path $repoRoot 'docs\spec\contracts.md')
     $contractCodes = @([regex]::Matches($contract, '(?m)^\|\s*`(\d)`\s*\|') | ForEach-Object { $_.Groups[1].Value })
 
     if ($helpCodes.Count -eq 0) { throw "help.go parsed zero exit codes" }
@@ -217,10 +250,10 @@ Assert-Step 'CLI artifact paths match docs contract' {
     # Single source of truth: internal/app/help.go Artifacts block. The three
     # audit artifacts (log/history/plan) must carry the same stable path in
     # docs/spec/contracts.md; a drifted copy fails the gate.
-    $help = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\help.go') -Raw
+    $help = Read-GateText (Join-Path $repoRoot 'internal\app\help.go')
     $helpPaths = @([regex]::Matches($help, '(?m)^\s+(%LOCALAPPDATA%\\Lenovo\\DriverInstaller\\lenovo_driver_\S+\.(?:log|csv|txt))') | ForEach-Object { $_.Groups[1].Value })
 
-    $contract = Get-Content -LiteralPath (Join-Path $repoRoot 'docs\spec\contracts.md') -Raw
+    $contract = Read-GateText (Join-Path $repoRoot 'docs\spec\contracts.md')
     $contractPaths = @([regex]::Matches($contract, '(?m)^(%LOCALAPPDATA%\\Lenovo\\DriverInstaller\\lenovo_driver_\S+\.(?:log|csv|txt))') | ForEach-Object { $_.Groups[1].Value })
 
     if ($helpPaths.Count -lt 3) { throw "help.go parsed fewer than 3 audit artifact paths" }
@@ -248,7 +281,10 @@ for ($i = 0; $i -lt $invalidCombinations.Count; $i++) {
             -RedirectStandardOutput $stdoutPath `
             -RedirectStandardError $stderrPath
         if ($process.ExitCode -ne 2) { throw "expected exit 2, got $($process.ExitCode)" }
-        $stdout = Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction SilentlyContinue
+        # The CLI must put refusal text on stderr, never stdout. Read with the
+        # gate's own UTF-8 helper so the check does not depend on the host's
+        # default code page.
+        $stdout = if (Test-Path -LiteralPath $stdoutPath) { Read-GateText $stdoutPath } else { '' }
         if ($stdout -match 'Error:') { throw "CLI error text leaked to stdout: $stdout" }
     }
 }
@@ -272,7 +308,7 @@ Assert-Step 'ledger hash column located by header name' {
     # header. A positional lookup (len(historyColumns)) silently verifies the
     # wrong cells once a column is added, so tampering stops being detectable
     # without any error surfacing.
-    $src = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\history.go') -Raw
+    $src = Read-GateText (Join-Path $repoRoot 'internal\app\history.go')
     if ($src -notmatch 'func\s+resolveHashIndex') {
         throw 'history.go must expose resolveHashIndex (header-name lookup)'
     }
@@ -294,7 +330,7 @@ Assert-Step 'tests never write to the real audit directory' {
         $files = ($hits | ForEach-Object { "$($_.Path):$($_.LineNumber)" }) -join ', '
         throw "tests must construct via newTestApp(t) so audit artifacts stay in t.TempDir(): $files"
     }
-    $helper = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\testapp_test.go') -Raw
+    $helper = Read-GateText (Join-Path $repoRoot 'internal\app\testapp_test.go')
     foreach ($artifact in @('LogPath', 'PlanPath', 'HistoryPath', 'driverListCacheDir')) {
         if ($helper -notmatch "\.$artifact\s*=") {
             throw "newTestApp must redirect $artifact into t.TempDir()"
@@ -308,7 +344,7 @@ Assert-Step 'automatic install set excludes downgrade and no-op statuses' {
     # device (82JQ: 9 of 11 candidates, AMD VGA 30.0.14052.9003 -> 27.20.15026.8004)
     # and Up to date, which is a no-op. Membership is owned by one model
     # predicate so the rule cannot drift back into the view layer.
-    $model = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\model\model.go') -Raw
+    $model = Read-GateText (Join-Path $repoRoot 'internal\model\model.go')
     if ($model -notmatch '(?s)func\s+InAutomaticInstallSet\(status\s+CompareStatus\)\s*bool\s*\{(.*?)\n\}') {
         throw 'model.go must own InAutomaticInstallSet as the single membership authority'
     }
@@ -321,13 +357,13 @@ Assert-Step 'automatic install set excludes downgrade and no-op statuses' {
             throw "InAutomaticInstallSet must admit $required explicitly"
         }
     }
-    $view = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\view.go') -Raw
+    $view = Read-GateText (Join-Path $repoRoot 'internal\app\view.go')
     if ($view -match 'CompareStatus\s*!=\s*model\.StatusNotApplicable\s*\{\s*\n\s*applicable\s*=') {
         throw 'view.go partitions the automatic install set with a loose comparison; use model.InAutomaticInstallSet'
     }
     # The interactive prompt must describe the set it actually installs, and the
     # manual selection path must stay reachable for excluded statuses.
-    $interactive = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\interactive.go') -Raw
+    $interactive = Read-GateText (Join-Path $repoRoot 'internal\app\interactive.go')
     if ($interactive -match 'all-applicable|all applicable') {
         throw 'interactive prompt still advertises the old "all applicable" set whose membership changed'
     }
@@ -335,17 +371,18 @@ Assert-Step 'automatic install set excludes downgrade and no-op statuses' {
     # button filters on IsApplicable and passes the codes via -GuiInstallCodes,
     # which bypasses partitionViewDrivers entirely. It must project the same
     # predicate or the GUI keeps downgrading what the CLI now refuses.
-    $export = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\export.go') -Raw
+    $export = Read-GateText (Join-Path $repoRoot 'internal\app\export.go')
     if ($export -match 'IsApplicable:\s*ad\.CompareStatus\s*!=\s*model\.StatusNotApplicable') {
         throw 'export.go redefines IsApplicable loosely; it must project model.InAutomaticInstallSet'
     }
     if ($export -notmatch 'IsApplicable:\s*model\.InAutomaticInstallSet') {
         throw 'export.go must project model.InAutomaticInstallSet onto IsApplicable'
     }
-    $xaml = Get-Content -LiteralPath (Join-Path $repoRoot 'wpf\window.xaml') -Raw
+    $xaml = Read-GateText (Join-Path $repoRoot 'wpf\window.xaml')
     if ($xaml -match '安装全部可安装') {
         throw 'WPF install-all button still says "安装全部可安装"; the set no longer contains every applicable driver'
     }
+}
 
 Assert-Step 'a run reports only what the recheck confirmed' {
     # An installer can exit 0 without changing the machine. On 82JQ a drill for
@@ -353,14 +390,14 @@ Assert-Step 'a run reports only what the recheck confirmed' {
     # machine gained nothing, because the verdict came from the exit code alone.
     # The recheck's binding must gate the summary, and the labels that carry no
     # evidence must not be counted as successes.
-    $install = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\install.go') -Raw
+    $install = Read-GateText (Join-Path $repoRoot 'internal\app\install.go')
     # The pure binding verdicts live beside install.go, not inside it, so the
     # gate follows them rather than pinning a file that a later split would move.
     $bindingPath = Join-Path $repoRoot 'internal\app\install_binding.go'
     if (-not (Test-Path -LiteralPath $bindingPath)) {
         throw 'install_binding.go is gone; the binding verdicts lost their single owner'
     }
-    $binding = Get-Content -LiteralPath $bindingPath -Raw
+    $binding = Read-GateText $bindingPath
     if ($binding -notmatch 'func\s+installBindingConfirmsEffect') {
         throw 'installBindingConfirmsEffect is gone; the run summary is no longer gated on the recheck'
     }
@@ -399,7 +436,7 @@ Assert-Step 'a run reports only what the recheck confirmed' {
     if ($cm2.Success -and $cm2.Value -match 'bool\s*[,)]') {
         throw 'installBindingLabel takes a comparability flag again; the call site must not decide the verdict'
     }
-    $model = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\model\model.go') -Raw
+    $model = Read-GateText (Join-Path $repoRoot 'internal\model\model.go')
     if ($model -notmatch 'const\s+LocalVersionProvisioned\s+=') {
         throw 'model.LocalVersionProvisioned is gone; the provisioning placeholder lost its single owner'
     }
@@ -417,7 +454,7 @@ Assert-Step 'a run reports only what the recheck confirmed' {
         throw 'verifyInstalled no longer filters drivers through the confirmation gate'
     }
     $t = Join-Path $repoRoot 'internal\app\app_test.go'
-    $text = Get-Content -LiteralPath $t -Raw
+    $text = Read-GateText $t
     foreach ($fn in @('TestInstallBindingLabelHasNoVerdictWithoutComparableVersions',
                       'TestOnlyConfirmedBindingsCountAsSuccess')) {
         if ($text -notmatch ('func\s+' + [regex]::Escape($fn))) {
@@ -430,9 +467,12 @@ Assert-Step 'the invariants spec carries every rule the code enforces' {
     # docs/spec/invariants.md is the semantic single source. A rule that lives
     # only in a gate is a rule nobody reads; a rule that lives only in the spec is
     # a rule nothing checks. Each sub-section must name the gate that forces it.
-    $inv = Get-Content -LiteralPath (Join-Path $repoRoot 'docs\spec\invariants.md') -Raw
-    $self = [regex]::Match((Get-Content -LiteralPath $PSCommandPath -Raw), '(?s)Assert-Step\s+''the invariants spec carries every rule the code enforces''\s*\{(.*?)\n\}')
-    $body = $self.Groups[1].Value
+    $inv = Read-GateText (Join-Path $repoRoot 'docs\spec\invariants.md')
+    # The gate's own text is the enforcement side of the pairing: invariants.md
+    # cites gate step names, and a citation is only proof if the named step
+    # actually exists in this file. Read it through the gate's own UTF-8 helper
+    # so the check does not depend on the host's default code page.
+    $selfText = Read-GateText $PSCommandPath
     $required = @(
         '### 3.1 自动安装集必须由实测证据支撑',
         '### 2.1 静默安装：开关派发只由端到端验证决定',
@@ -450,6 +490,15 @@ Assert-Step 'the invariants spec carries every rule the code enforces' {
     }
     if ($inv -notmatch 'one comparison primitive decides every version question') {
         throw 'invariants.md no longer names the comparison-primitive gate'
+    }
+    # The citations above name gate steps by title; a citation to a step that no
+    # longer exists is the silent drift this whole gate family exists to catch.
+    # Verify both directions: the spec names the step, and the step is declared.
+    foreach ($gateName in @('silent install dispatches on the package, not on the vendor column',
+                            'one comparison primitive decides every version question')) {
+        if ($selfText -notmatch [regex]::Escape("Assert-Step '$gateName'")) {
+            throw "invariants.md cites the gate step '$gateName' but this file no longer declares it"
+        }
     }
     # A sub-section may be added, but the six top-level invariants are what the
     # frozen decision record cites. Renumbering them would invalidate that record.
@@ -475,7 +524,7 @@ Assert-Step 'the CI trigger is public' {
         return
     }
     foreach ($wf in Get-ChildItem -LiteralPath $workflows -Filter '*.yml') {
-        $text = Get-Content -LiteralPath $wf.FullName -Raw
+        $text = Read-GateText $wf.FullName
         # Repository and organization visibility are the two settings that make
         # a workflow file unusable; a self-hosted runner or a manual dispatch is
         # unrelated and must not trip this.
@@ -498,7 +547,7 @@ Assert-Step 'one comparison primitive decides every version question' {
     # together is how an unmeasurable value becomes a fact — nil reads as older
     # than everything, so an unparseable version would be reported as behind the
     # list and handed to the automatic set.
-    $version = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\compare\version.go') -Raw
+    $version = Read-GateText (Join-Path $repoRoot 'internal\compare\version.go')
     if ($version -notmatch 'type\s+VersionOrder\s+int') {
         throw 'VersionOrder is gone; the undecided outcome is lost again'
     }
@@ -518,7 +567,7 @@ Assert-Step 'one comparison primitive decides every version question' {
         throw 'ResolveComparableVersion is gone; callers will compare raw strings again'
     }
     # The recheck and the compare pass must speak through that one primitive.
-    $binding = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\install_binding.go') -Raw
+    $binding = Read-GateText (Join-Path $repoRoot 'internal\app\install_binding.go')
     if ($binding -match '==\s*packageVersion|==\s*after\b|==\s*before\b') {
         throw 'the post-install recheck is comparing raw version strings again; the WLAN rows carry ' +
               '"Intel_22.10.0.7/Realtek8852AE_6001.0.10.336/Mediatek_3.0.1.1314" in Version, which no ' +
@@ -527,7 +576,7 @@ Assert-Step 'one comparison primitive decides every version question' {
     if ($binding -notmatch 'compare\.Order\(') {
         throw 'the post-install recheck no longer uses the one comparator'
     }
-    $matching = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\compare\matching.go') -Raw
+    $matching = Read-GateText (Join-Path $repoRoot 'internal\compare\matching.go')
     if ($matching -match 'localVersion\.Compare\(') {
         throw 'CompareDriverStatus calls Version.Compare directly again; the undecided outcome would be ' +
               'folded into a direction'
@@ -545,7 +594,7 @@ Assert-Step 'silent install dispatches on the package, not on the vendor column'
     # therefore recognises the family from the package's own bytes, and drives
     # every .exe to interactive because no .exe silent switch has a verified
     # end-to-end run on 82JQ. Recognising a family is not verifying its switch.
-    $family = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\install\installer_family.go') -Raw
+    $family = Read-GateText (Join-Path $repoRoot 'internal\install\installer_family.go')
     if ($family -notmatch 'func\s+planSilentInstall') {
         throw 'planSilentInstall is gone; the silent dispatch has no single owner'
     }
@@ -561,7 +610,7 @@ Assert-Step 'silent install dispatches on the package, not on the vendor column'
     if ($family -notmatch 'familyMarkers') {
         throw 'familyMarkers is gone; the refusal evidence can no longer name the recognised family'
     }
-    $t = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\install\install_test.go') -Raw
+    $t = Read-GateText (Join-Path $repoRoot 'internal\install\install_test.go')
     foreach ($fn in @('TestSilentPlanRefusesUnverifiedInno',
                       'TestSilentPlanRefusesEveryUnverifiedFamily',
                       'TestSilentPlanEvidenceNamesTheRefusedFamily',
@@ -580,9 +629,9 @@ Assert-Step 'the silent mechanism reaches the ledger as prose, never as a versio
     # it would silently convert "Inno Setup marker" into a version claim. The
     # evidence therefore lives inside Message, which nothing parses
     # (TestAuditAttributionIgnoresMessageText).
-    $app = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\install.go') -Raw
-    $silent = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\install_silent.go') -Raw
-    $fam = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\install\installer_family.go') -Raw
+    $app = Read-GateText (Join-Path $repoRoot 'internal\app\install.go')
+    $silent = Read-GateText (Join-Path $repoRoot 'internal\app\install_silent.go')
+    $fam = Read-GateText (Join-Path $repoRoot 'internal\install\installer_family.go')
     if ($fam -notmatch 'func\s+SilentPlanFor\(') {
         throw 'SilentPlanFor is gone; the evidence has no single source'
     }
@@ -605,7 +654,7 @@ Assert-Step 'the provisioning placeholder never reaches a decision' {
     # It reached a decision twice: as a local version in the recheck, and as
     # StatusUpToDate in CompareDriverStatus, which is fact-grade and therefore
     # treated as measured. A placeholder must be undetermined everywhere.
-    $matching = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\compare\matching.go') -Raw
+    $matching = Read-GateText (Join-Path $repoRoot 'internal\compare\matching.go')
     $cm = [regex]::Match($matching, '(?s)if\s+local\s*==\s*model\.LocalVersionProvisioned\s*\{(.*?)\n\t\}')
     if (-not $cm.Success) {
         throw 'CompareDriverStatus no longer handles the provisioning placeholder'
@@ -614,7 +663,7 @@ Assert-Step 'the provisioning placeholder never reaches a decision' {
         throw 'the provisioning placeholder is judged again; it proves neither presence nor absence, ' +
               'so only an undetermined status is honest'
     }
-    $t = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\app\evidence_chain_test.go') -Raw
+    $t = Read-GateText (Join-Path $repoRoot 'internal\app\evidence_chain_test.go')
     if ($t -notmatch 'func\s+TestProvisionedIsNotAVersion') {
         throw 'TestProvisionedIsNotAVersion is gone; the placeholder-to-status rule is unguarded'
     }
@@ -626,7 +675,7 @@ Assert-Step 'driver selection order is a total order' {
     # therefore left the surviving rows in map-iteration order, and consecutive
     # -DryRun exports of identical input disagreed on row order. The tie-breaks
     # below must match the grouping key so no two rows can tie.
-    $sel = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\compare\selection.go') -Raw
+    $sel = Read-GateText (Join-Path $repoRoot 'internal\compare\selection.go')
     $m = [regex]::Match($sel, '(?s)sort\.Slice\(selected, func\(i, j int\) bool \{(.*?)\n\t\}\)')
     if (-not $m.Success) {
         throw 'could not locate the SelectLatestDrivers sort; ordering is unguarded'
@@ -644,7 +693,7 @@ Assert-Step 'driver selection order is a total order' {
     if (-not (Test-Path -LiteralPath $t)) {
         throw 'evidence_firmware_determinism_test.go is gone; determinism is unguarded'
     }
-    $text = Get-Content -LiteralPath $t -Raw
+    $text = Read-GateText $t
     if ($text -notmatch 'func\s+TestSelectionOrderIsDeterministic') {
         throw 'TestSelectionOrderIsDeterministic is gone'
     }
@@ -659,12 +708,12 @@ Assert-Step 'the automatic install set is backed by measurements only' {
     # changes machine state on something it did not measure. The pairing is
     # asserted in Go; this gate keeps the test from being deleted to unblock a
     # change, and keeps the doc comment claiming the invariant.
-    $model = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\model\model.go') -Raw
+    $model = Read-GateText (Join-Path $repoRoot 'internal\model\model.go')
     $inv = Join-Path $repoRoot 'internal\model\evidence_basis_test.go'
     if (-not (Test-Path -LiteralPath $inv)) {
         throw 'evidence_basis_test.go is gone; the fact/inference pairing is unguarded'
     }
-    $text = Get-Content -LiteralPath $inv -Raw
+    $text = Read-GateText $inv
     if ($text -notmatch 'func\s+TestAutomaticSetStatusesAreMeasured') {
         throw 'TestAutomaticSetStatusesAreMeasured is gone; the automatic set can drift onto unmeasured statuses'
     }
@@ -699,7 +748,7 @@ Assert-Step 'software-versioned compare falls back to the measured device versio
     # in fact running a vendor package. On 82JQ that put a redundant reinstall
     # of ACPI\VPC2004 in front of the user. The measured device version must win
     # whenever the software lookup finds nothing.
-    $matching = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\compare\matching.go') -Raw
+    $matching = Read-GateText (Join-Path $repoRoot 'internal\compare\matching.go')
     if ($matching -notmatch 'func\s+deviceVersionFrom') {
         throw 'deviceVersionFrom is gone; the device-measured version has no single extraction point'
     }
@@ -726,7 +775,7 @@ Assert-Step 'evidence chain runs on real fixtures' {
     if (-not (Test-Path -LiteralPath $chainFile)) {
         throw 'internal/app/evidence_chain_test.go is gone; the end-to-end evidence chain no longer exists'
     }
-    $chain = Get-Content -LiteralPath $chainFile -Raw
+    $chain = Read-GateText $chainFile
     foreach ($step in @('ParseQuickFix', 'filterDriverRows', 'SelectLatestDrivers',
             'TestDriverApplicable', 'ResolveLocalDriverVersion', 'CompareDriverStatus',
             'partitionViewDrivers', 'WriteHistoryRecord', 'diffDeviceSnapshots')) {
@@ -752,7 +801,7 @@ Assert-Step 'recorded fixtures carry no live credentials or device serials' {
     # chain nothing.
     foreach ($fixture in @('quickfix_real_82jq.json', 'local_devices_82jq.json', 'local_software_82jq.json')) {
         $p = Join-Path $repoRoot "internal\app\testdata\$fixture"
-        $text = Get-Content -LiteralPath $p -Raw
+        $text = Read-GateText $p
         if ($text -match '\?token=[A-Za-z0-9_\-]{20,}') {
             throw "$fixture contains an unredacted download token; refresh via the redaction step before committing"
         }
@@ -765,7 +814,6 @@ Assert-Step 'recorded fixtures carry no live credentials or device serials' {
             throw 'local_devices_82jq.json carries a real device instance id'
         }
     }
-}
 }
 
 Assert-Step 'git diff check' {

@@ -89,7 +89,7 @@ try {
         return
     }
 
-    $offers = @((Get-Content -LiteralPath $offerPath -Raw | ConvertFrom-Json).Offers)
+    $offers = @((Get-Content -LiteralPath $offerPath -Raw -Encoding UTF8 | ConvertFrom-Json).Offers)
     $pending = @($offers | Where-Object { $_.State -eq 'pending' -and $_.DriverCode -eq $DriverCode })
     if ($pending.Count -eq 0) {
         Fail "offer file exists but no pending offer for $DriverCode"
@@ -105,11 +105,13 @@ try {
     & $Engine -Elevated -Rollback $DriverCode 2>&1 | Write-Host
     $rollbackExit = $LASTEXITCODE
 
-    $offerAfter = @((Get-Content -LiteralPath $offerPath -Raw | ConvertFrom-Json).Offers | Where-Object { $_.DriverCode -eq $DriverCode })
+    $offerAfter = @((Get-Content -LiteralPath $offerPath -Raw -Encoding UTF8 | ConvertFrom-Json).Offers | Where-Object { $_.DriverCode -eq $DriverCode })
     if ($offerAfter.Count -eq 0) { Fail 'offer missing after rollback' }
     Write-Host ("    offer state: {0}" -f $offerAfter[0].State)
 
-    $ledger = Get-Content -LiteralPath $historyPath -Raw
+    # The ledger is audit prose written by the Go engine as UTF-8; on Windows
+    # PowerShell 5.1 the default code page would mis-decode non-ASCII evidence.
+    $ledger = Get-Content -LiteralPath $historyPath -Raw -Encoding UTF8
     if ($ledger -notmatch 'RollbackOffered') { Fail 'no RollbackOffered ledger row' }
     if ($ledger -notmatch 'Rollback') { Fail 'no Rollback intent ledger row' }
     if ($ledger -notmatch 'RolledBack' -and $ledger -notmatch 'RollbackFailed') {

@@ -149,7 +149,10 @@ function Set-OsComboFromExport {
 
 function New-LenovoDriverWindow {
     $xamlPath = Join-Path $PSScriptRoot 'window.xaml'
-    $xaml = Get-Content -LiteralPath $xamlPath -Raw
+    # window.xaml is BOM-less UTF-8 with CJK labels. Windows PowerShell 5.1
+    # (the launcher this app runs under) would decode it with the ANSI code
+    # page and the XAML would load with mojibake labels; name the encoding.
+    $xaml = Get-Content -LiteralPath $xamlPath -Raw -Encoding UTF8
     $reader = New-Object System.IO.StringReader($xaml)
     $xmlReader = [System.Xml.XmlReader]::Create($reader)
     $window = [System.Windows.Markup.XamlReader]::Load($xmlReader)
