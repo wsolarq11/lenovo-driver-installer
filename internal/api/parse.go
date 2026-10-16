@@ -26,8 +26,8 @@ type quickFixPart struct {
 	PartName string `json:"PartName"`
 }
 
-// WebResponse is the official webpage API response shape.
-type WebResponse struct {
+// webResponse is the official webpage API response shape.
+type webResponse struct {
 	StatusCode string `json:"statusCode"`
 	Message    string `json:"message"`
 	Data       struct {
@@ -90,8 +90,8 @@ func ParseQuickFix(resp *QuickFixResponse, osID string) []*model.Driver {
 	return drivers
 }
 
-// ParseWeb normalizes a webpage API response into driver rows.
-func ParseWeb(resp *WebResponse, osID string) []*model.Driver {
+// parseWeb normalizes a webpage API response into driver rows.
+func parseWeb(resp *webResponse, osID string) []*model.Driver {
 	if resp == nil || resp.Data.PartList == nil {
 		return nil
 	}

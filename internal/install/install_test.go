@@ -225,7 +225,7 @@ func TestExtractZipExtractsFilesAndDirs(t *testing.T) {
 		"sub/deep/more.cat": "catalog",
 	})
 	dest := t.TempDir()
-	if err := ExtractZip(src, dest); err != nil {
+	if err := extractZip(src, dest); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"top.inf", filepath.Join("sub", "nested.inf"), filepath.Join("sub", "deep", "more.cat")} {
@@ -238,8 +238,8 @@ func TestExtractZipExtractsFilesAndDirs(t *testing.T) {
 func TestExtractZipRejectsUnsafePath(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "evil.zip")
 	writeZip(t, src, map[string]string{"../evil.inf": "[Version]\n"})
-	if err := ExtractZip(src, t.TempDir()); err == nil {
-		t.Fatal("ExtractZip must reject a zip entry that escapes the destination")
+	if err := extractZip(src, t.TempDir()); err == nil {
+		t.Fatal("extractZip must reject a zip entry that escapes the destination")
 	}
 }
 
@@ -253,7 +253,7 @@ func TestProcessExitCode(t *testing.T) {
 }
 
 // writeZip writes a zip archive whose entries map names to contents, so the
-// ExtractZip contract can be tested offline against an exact byte layout.
+// extractZip contract can be tested offline against an exact byte layout.
 func writeZip(t *testing.T, path string, entries map[string]string) {
 	t.Helper()
 	f, err := os.Create(path)

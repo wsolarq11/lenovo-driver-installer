@@ -195,7 +195,7 @@ func (c *Client) fetchWeb(ctx context.Context, categoryID, osID string) ([]*mode
 	if err != nil {
 		return nil, err
 	}
-	var resp WebResponse
+	var resp webResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, &InterfaceGateError{Source: "Web", Reason: "response is not the expected JSON"}
 	}
@@ -209,7 +209,7 @@ func (c *Client) fetchWeb(ctx context.Context, categoryID, osID string) ([]*mode
 	if resp.StatusCode == "" && rawCount == 0 && len(resp.Data.OSList) == 0 {
 		return nil, &InterfaceGateError{Source: "Web", Reason: "response missing expected fields (statusCode/data)"}
 	}
-	drivers := ParseWeb(&resp, osID)
+	drivers := parseWeb(&resp, osID)
 	if len(drivers) == 0 {
 		if rawCount > 0 {
 			return nil, &ContractDriftError{Source: "Web", RowCount: rawCount}
@@ -266,7 +266,7 @@ type OSResolution struct {
 func (c *Client) ResolveOSEntry(ctx context.Context, categoryID, osName, osKind string) (*OSResolution, error) {
 	webData, err := c.invokeLenovo(ctx, "/drive/drive_listnew?searchKey="+url.QueryEscape(categoryID))
 	if err == nil {
-		var resp WebResponse
+		var resp webResponse
 		if jsonErr := json.Unmarshal(webData, &resp); jsonErr == nil && len(resp.Data.OSList) > 0 {
 			if entry, ok := findOSEntry(resp.Data.OSList, osName, osKind); ok {
 				return &OSResolution{OSEntry: entry, OSList: resp.Data.OSList, Source: "Web"}, nil

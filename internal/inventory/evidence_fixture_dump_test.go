@@ -40,7 +40,7 @@ func TestDumpDeviceFixture(t *testing.T) {
 	// step is version-driven, so the fixture is worthless without it.
 	// GetDeviceEvidence drops rows it cannot resolve, so read the full PnP
 	// property set instead and merge on PnpDeviceID.
-	evidence, err := GetNativeDeviceEvidence()
+	evidence, err := getNativeDeviceEvidence()
 	if err != nil {
 		t.Fatalf("native device evidence: %v", err)
 	}

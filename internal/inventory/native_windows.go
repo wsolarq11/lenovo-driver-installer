@@ -261,9 +261,9 @@ func formatFileTime(ft [8]byte) string {
 	return time.Unix(secs, 0).UTC().Format(time.RFC3339)
 }
 
-// GetNativeDeviceEvidence returns PnP device driver properties read through
+// getNativeDeviceEvidence returns PnP device driver properties read through
 // SetupAPI + the class registry keys, for every device with a driver version.
-func GetNativeDeviceEvidence() ([]model.Device, error) {
+func getNativeDeviceEvidence() ([]model.Device, error) {
 	rows, err := enumerateDevices()
 	if err != nil {
 		return nil, err

@@ -125,8 +125,8 @@ var driverMatchRules = []driverMatchRule{
 	{priority: 12, key: "Lenovo software", driver: regexp.MustCompile(`(?i)Lenovo Energy|Lenovo Fn|X-Rite`), always: true, name: regexp.MustCompile(`(?i)Lenovo Fn|LHK2019|Lenovo Energy|Lenovo Utility|X-Rite`)},
 }
 
-// TestHardwareMatch mirrors Test-HardwareMatch.
-func TestHardwareMatch(remoteIDs, localPnpID, localDeviceID string) bool {
+// hardwareMatches mirrors Test-HardwareMatch.
+func hardwareMatches(remoteIDs, localPnpID, localDeviceID string) bool {
 	if remoteIDs == "" {
 		return false
 	}
@@ -180,7 +180,7 @@ func TestDriverApplicable(driver *model.Driver, localDevices []model.Device) boo
 	}
 	if driver.HardwareID != "" {
 		for _, dev := range localDevices {
-			if TestHardwareMatch(driver.HardwareID, dev.PnpDeviceID, dev.DeviceID) {
+			if hardwareMatches(driver.HardwareID, dev.PnpDeviceID, dev.DeviceID) {
 				return true
 			}
 		}
@@ -239,8 +239,8 @@ func hardwareIDNonMatchReason(raw string) string {
 	}
 }
 
-// GetDeviceVendor mirrors Get-DeviceVendor.
-func GetDeviceVendor(names []string) string {
+// deviceVendorFor mirrors Get-DeviceVendor.
+func deviceVendorFor(names []string) string {
 	for _, name := range names {
 		if vendor := matchVendor(name); vendor != "" {
 			return vendor
@@ -256,7 +256,7 @@ func GetMatchingRemoteComponent(remote, vendor string) *Version {
 	}
 	for _, part := range reComponentSplit.Split(remote, -1) {
 		if matchVendor(part) == vendor {
-			if v := ParseVersionString(part); v != nil {
+			if v := parseVersionString(part); v != nil {
 				return v
 			}
 		}
@@ -286,7 +286,7 @@ func CompareDriverStatus(remote, local, vendor string) model.CompareStatus {
 	}
 	remoteVersion := ResolveComparableVersion(remote, vendor)
 	if remoteVersion == nil {
-		remoteVersion = ParseVersionString(remote)
+		remoteVersion = parseVersionString(remote)
 	}
 	localVersion := ResolveComparableVersion(local, vendor)
 	switch Order(localVersion, remoteVersion) {
@@ -314,8 +314,8 @@ var softwareRules = []softwareRule{
 	{regexp.MustCompile(`(?i)Intel.*连接性|Intel.*Connectivity|Connectivity Performance`), regexp.MustCompile(`(?i)Intel.*连接性|Intel.*Connectivity|Connectivity Performance|ICPS`)},
 }
 
-// ResolveInstalledSoftwareVersion mirrors Resolve-InstalledSoftwareVersion.
-func ResolveInstalledSoftwareVersion(driverName string, snapshot *model.SoftwareSnapshot) string {
+// resolveInstalledSoftwareVersion mirrors Resolve-InstalledSoftwareVersion.
+func resolveInstalledSoftwareVersion(driverName string, snapshot *model.SoftwareSnapshot) string {
 	if snapshot == nil {
 		return ""
 	}
@@ -342,7 +342,7 @@ func GetMatchingLocalDevices(driver *model.Driver, localDevices []model.Device) 
 	var matched []model.Device
 	if driver != nil && driver.HardwareID != "" {
 		for _, dev := range localDevices {
-			if TestHardwareMatch(driver.HardwareID, dev.PnpDeviceID, dev.DeviceID) {
+			if hardwareMatches(driver.HardwareID, dev.PnpDeviceID, dev.DeviceID) {
 				matched = append(matched, dev)
 			}
 		}
@@ -377,8 +377,8 @@ func defaultNamePattern(driverName string) string {
 	return strings.ToLower(head)
 }
 
-// TestSoftwareVersionedDriver mirrors Test-SoftwareVersionedDriver.
-func TestSoftwareVersionedDriver(driverName string) bool {
+// isSoftwareVersionedDriver mirrors Test-SoftwareVersionedDriver.
+func isSoftwareVersionedDriver(driverName string) bool {
 	return reSoftwareVersioned.MatchString(driverName)
 }
 
@@ -412,9 +412,9 @@ func deviceVersionFrom(matchedDevices []model.Device, driverVersions []string) s
 
 // ResolveLocalDriverVersion mirrors Resolve-LocalDriverVersion.
 func ResolveLocalDriverVersion(driver *model.Driver, matchedDevices []model.Device, driverVersions []string, snapshot *model.SoftwareSnapshot) (localVersion, localVendor string) {
-	softwareVersion := ResolveInstalledSoftwareVersion(driver.DriverName, snapshot)
-	if TestSoftwareVersionedDriver(driver.DriverName) {
-		localVendor = GetDeviceVendor(deviceNames(matchedDevices))
+	softwareVersion := resolveInstalledSoftwareVersion(driver.DriverName, snapshot)
+	if isSoftwareVersionedDriver(driver.DriverName) {
+		localVendor = deviceVendorFor(deviceNames(matchedDevices))
 		localVersion = softwareVersion
 		// Software-versioned drivers normally resolve through InstalledApps,
 		// but "not present in InstalledApps" is absence of evidence, not evidence
@@ -431,7 +431,7 @@ func ResolveLocalDriverVersion(driver *model.Driver, matchedDevices []model.Devi
 		return localVersion, localVendor
 	}
 	if len(matchedDevices) > 0 {
-		localVendor = GetDeviceVendor(deviceNames(matchedDevices))
+		localVendor = deviceVendorFor(deviceNames(matchedDevices))
 		localVersion = deviceVersionFrom(matchedDevices, driverVersions)
 	}
 	if localVersion == "" {

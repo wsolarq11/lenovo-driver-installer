@@ -16,7 +16,7 @@ func TestNativeSmokePrint(t *testing.T) {
 		t.Skip("set LENOVO_NATIVE_SMOKE=1 to run native real-machine smoke")
 	}
 	ctx := context.Background()
-	devs, err := GetNativeDeviceEvidence()
+	devs, err := getNativeDeviceEvidence()
 	if err != nil {
 		t.Fatalf("native inventory failed: %v", err)
 	}

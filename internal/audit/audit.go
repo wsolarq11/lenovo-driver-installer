@@ -40,8 +40,8 @@ func SourceMapKeys(driverName, driverCode, version string) []string {
 	return keys
 }
 
-// GetSourceMapMatch mirrors Get-SourceMapMatch.
-func GetSourceMapMatch(driver *model.Driver, sourceMap map[string]model.SourceMapEntry, localVersion string) *model.SourceMapEntry {
+// sourceMapMatch mirrors Get-SourceMapMatch.
+func sourceMapMatch(driver *model.Driver, sourceMap map[string]model.SourceMapEntry, localVersion string) *model.SourceMapEntry {
 	if len(sourceMap) == 0 || localVersion == "" {
 		return nil
 	}
@@ -54,10 +54,10 @@ func GetSourceMapMatch(driver *model.Driver, sourceMap map[string]model.SourceMa
 	return nil
 }
 
-// ResolveExternalDriverSourceLabel mirrors Resolve-ExternalDriverSourceLabel.
+// resolveExternalDriverSourceLabel mirrors Resolve-ExternalDriverSourceLabel.
 // localVersion is the driver's assessment local version, not on *model.Driver.
-func ResolveExternalDriverSourceLabel(driver *model.Driver, alternateSourceMap map[string]model.SourceMapEntry, localVersion string) string {
-	if match := GetSourceMapMatch(driver, alternateSourceMap, localVersion); match != nil {
+func resolveExternalDriverSourceLabel(driver *model.Driver, alternateSourceMap map[string]model.SourceMapEntry, localVersion string) string {
+	if match := sourceMapMatch(driver, alternateSourceMap, localVersion); match != nil {
 		if match.OSName != "" {
 			return "Local newer (version matches " + match.OSName + " list)"
 		}
@@ -261,7 +261,7 @@ func sourceEvidenceRules(
 		rules = append(rules, rule)
 	}
 
-	if GetSourceMapMatch(driver.Driver, currentOSMap, localVersion) != nil {
+	if sourceMapMatch(driver.Driver, currentOSMap, localVersion) != nil {
 		rules = append(rules, sourceCategoryRule{
 			name:     "current-os",
 			category: model.AuditCategoryCurrentOfficialOS,
@@ -270,7 +270,7 @@ func sourceEvidenceRules(
 		})
 	}
 
-	if GetSourceMapMatch(driver.Driver, alternateSourceMap, localVersion) != nil {
+	if sourceMapMatch(driver.Driver, alternateSourceMap, localVersion) != nil {
 		rules = append(rules, sourceCategoryRule{
 			name:     "alternate-os",
 			category: model.AuditCategoryAlternateOfficialOS,
@@ -319,11 +319,11 @@ func ResolveDriverSourceEvidence(driver *model.AssessedDriver, deviceEvidence []
 		}
 		audit := model.SourceAudit{Category: rule.category, Summary: rule.summary, EvidenceLines: evidence}
 		if rule.category == model.AuditCategoryCurrentOfficialOS {
-			if match := GetSourceMapMatch(driver.Driver, currentOSMap, localVersion); match != nil {
+			if match := sourceMapMatch(driver.Driver, currentOSMap, localVersion); match != nil {
 				audit.EvidenceLines = append(audit.EvidenceLines, "Official current OS: "+match.OSName+" (OSID "+match.OSID+"); version="+localVersion)
 			}
 		} else if rule.category == model.AuditCategoryAlternateOfficialOS {
-			if match := GetSourceMapMatch(driver.Driver, alternateSourceMap, localVersion); match != nil {
+			if match := sourceMapMatch(driver.Driver, alternateSourceMap, localVersion); match != nil {
 				audit.EvidenceLines = append(audit.EvidenceLines, "Official alternate OS: "+match.OSName+" (OSID "+match.OSID+"); version="+localVersion)
 			}
 		}
@@ -354,7 +354,7 @@ func ResolveDriverSourceLabel(driver *model.AssessedDriver, history []model.Hist
 	if sourceAudit != nil && sourceAudit.Category == model.AuditCategoryCurrentOfficialOS {
 		return "Local newer (version matches current OS official list)"
 	}
-	return ResolveExternalDriverSourceLabel(driver.Driver, alternateSourceMap, driver.LocalVersion)
+	return resolveExternalDriverSourceLabel(driver.Driver, alternateSourceMap, driver.LocalVersion)
 }
 
 func latestSourceHistory(history []model.HistoryRecord, driver *model.AssessedDriver, localVersion string) *model.HistoryRecord {

@@ -15,26 +15,26 @@ func TestParseVersionString(t *testing.T) {
 		{" 2.0.0.5 ", "2.0.0.5"},
 	}
 	for _, tc := range cases {
-		got := ParseVersionString(tc.input)
+		got := parseVersionString(tc.input)
 		if got == nil || got.String() != tc.want {
-			t.Fatalf("ParseVersionString(%q) = %v, want %q", tc.input, got, tc.want)
+			t.Fatalf("parseVersionString(%q) = %v, want %q", tc.input, got, tc.want)
 		}
 	}
-	if got := ParseVersionString("Intel/Realtek mixed"); got != nil {
+	if got := parseVersionString("Intel/Realtek mixed"); got != nil {
 		t.Fatalf("multi-vendor input should return nil, got %v", got)
 	}
 }
 
 func TestVersionCompare(t *testing.T) {
-	a := ParseVersionString("1.0.0.1")
-	b := ParseVersionString("2.0.0.5")
+	a := parseVersionString("1.0.0.1")
+	b := parseVersionString("2.0.0.5")
 	if a.Compare(b) >= 0 {
 		t.Fatal("1.0.0.1 should be older than 2.0.0.5")
 	}
 	if b.Compare(a) <= 0 {
 		t.Fatal("2.0.0.5 should be newer than 1.0.0.1")
 	}
-	if a.Compare(ParseVersionString("1.0.0.1")) != 0 {
+	if a.Compare(parseVersionString("1.0.0.1")) != 0 {
 		t.Fatal("same version should compare equal")
 	}
 }
@@ -59,10 +59,10 @@ func TestCompareDriverStatus(t *testing.T) {
 
 func TestHardwareMatchFunction(t *testing.T) {
 	pnp := "PCI\\VEN_1002&DEV_1638&SUBSYS_380317AA&REV_C5"
-	if !TestHardwareMatch("1002_1638", pnp, pnp) {
+	if !hardwareMatches("1002_1638", pnp, pnp) {
 		t.Fatal("AMD hardware id should match")
 	}
-	if TestHardwareMatch("10EC_0257", pnp, pnp) {
+	if hardwareMatches("10EC_0257", pnp, pnp) {
 		t.Fatal("Realtek hardware id should not match")
 	}
 }
@@ -136,8 +136,8 @@ func TestGetVersionMatchKeys(t *testing.T) {
 }
 
 func TestVendorLookupIsShared(t *testing.T) {
-	if got := GetDeviceVendor([]string{"Intel Wireless", "Realtek Ethernet"}); got != "Intel" {
-		t.Fatalf("GetDeviceVendor = %q", got)
+	if got := deviceVendorFor([]string{"Intel Wireless", "Realtek Ethernet"}); got != "Intel" {
+		t.Fatalf("deviceVendorFor = %q", got)
 	}
 	if got := matchVendor("MediaTek Wi-Fi 6E"); got != "MediaTek" {
 		t.Fatalf("matchVendor = %q", got)
@@ -167,7 +167,7 @@ func TestConvertToBytesFractionalUsesExactScaling(t *testing.T) {
 }
 
 func TestSizeToleranceUsesIntegerPercent(t *testing.T) {
-	if got := GetSizeTolerance(100 * 1024 * 1024); got != 2097152 {
+	if got := sizeTolerance(100 * 1024 * 1024); got != 2097152 {
 		t.Fatalf("100 MB tolerance = %d, want 2097152", got)
 	}
 }

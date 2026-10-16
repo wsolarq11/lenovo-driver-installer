@@ -17,9 +17,9 @@ func TestNativeInstallSmoke(t *testing.T) {
 		t.Skip("set LENOVO_NATIVE_INSTALL_SMOKE=1 to run native install API smoke")
 	}
 	missing := filepath.Join(t.TempDir(), "does-not-exist.inf")
-	_, err := InstallNativeINF(missing)
+	_, err := installNativeINF(missing)
 	if err == nil {
-		t.Fatal("InstallNativeINF should fail for a missing INF")
+		t.Fatal("installNativeINF should fail for a missing INF")
 	}
 	if !strings.Contains(err.Error(), "DiInstallDriver failed") {
 		t.Fatalf("expected DiInstallDriver failure, got: %v", err)

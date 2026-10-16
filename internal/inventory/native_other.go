@@ -9,8 +9,8 @@ import (
 	"lenovo-driver/internal/model"
 )
 
-// GetNativeDeviceEvidence is unsupported off Windows.
-func GetNativeDeviceEvidence() ([]model.Device, error) {
+// getNativeDeviceEvidence is unsupported off Windows.
+func getNativeDeviceEvidence() ([]model.Device, error) {
 	return nil, fmt.Errorf("native device inventory requires Windows")
 }
 

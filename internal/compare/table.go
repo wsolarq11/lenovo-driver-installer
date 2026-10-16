@@ -2,8 +2,8 @@ package compare
 
 import "strings"
 
-// GetDisplayWidth mirrors Get-DisplayWidth with wide rune ranges.
-func GetDisplayWidth(text string) int {
+// displayWidth mirrors Get-DisplayWidth with wide rune ranges.
+func displayWidth(text string) int {
 	width := 0
 	for _, r := range text {
 		if isWideRune(r) {
@@ -31,13 +31,13 @@ func isWideRune(code rune) bool {
 
 // GetTruncatedText mirrors Get-TruncatedText.
 func GetTruncatedText(text string, maxWidth int) string {
-	if text == "" || GetDisplayWidth(text) <= maxWidth {
+	if text == "" || displayWidth(text) <= maxWidth {
 		return text
 	}
 	var b strings.Builder
 	used := 0
 	for _, r := range text {
-		charWidth := GetDisplayWidth(string(r))
+		charWidth := displayWidth(string(r))
 		if used+charWidth+3 > maxWidth {
 			return b.String() + "..."
 		}
@@ -49,7 +49,7 @@ func GetTruncatedText(text string, maxWidth int) string {
 
 // FormatCell mirrors Format-Cell.
 func FormatCell(text string, width int, right bool) string {
-	pad := width - GetDisplayWidth(text)
+	pad := width - displayWidth(text)
 	if pad < 0 {
 		pad = 0
 	}

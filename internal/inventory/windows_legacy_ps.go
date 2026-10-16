@@ -39,8 +39,8 @@ func runLegacyJSON(ctx context.Context, script string, target any) error {
 	return json.Unmarshal(out, target)
 }
 
-// GetMachineInfoPS is the legacy WMI/CIM oracle.
-func GetMachineInfoPS(ctx context.Context) (MachineInfo, error) {
+// getMachineInfoPS is the legacy WMI/CIM oracle.
+func getMachineInfoPS(ctx context.Context) (MachineInfo, error) {
 	var info MachineInfo
 	script := `$cs = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue; if (-not $cs) { $cs = Get-WmiObject Win32_ComputerSystem }; $bios = Get-CimInstance Win32_BIOS -ErrorAction SilentlyContinue; if (-not $bios) { $bios = Get-WmiObject Win32_BIOS }; [pscustomobject]@{ Model = [string]$cs.Model; Serial = [string]$bios.SerialNumber } | ConvertTo-Json -Compress`
 	if err := runLegacyJSON(ctx, script, &info); err != nil {
@@ -49,8 +49,8 @@ func GetMachineInfoPS(ctx context.Context) (MachineInfo, error) {
 	return info, nil
 }
 
-// GetOSInfoPS is the legacy WMI/CIM oracle.
-func GetOSInfoPS(ctx context.Context) (OSInfo, error) {
+// getOSInfoPS is the legacy WMI/CIM oracle.
+func getOSInfoPS(ctx context.Context) (OSInfo, error) {
 	var raw osInfoRow
 	script := `$os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue; if (-not $os) { $os = Get-WmiObject Win32_OperatingSystem }; $os | Select-Object Caption,OSArchitecture | ConvertTo-Json -Compress`
 	if err := runLegacyJSON(ctx, script, &raw); err != nil {
@@ -59,8 +59,8 @@ func GetOSInfoPS(ctx context.Context) (OSInfo, error) {
 	return normalizeOSInfo(raw), nil
 }
 
-// GetLocalDeviceSnapshotPS is the legacy WMI/PnP oracle.
-func GetLocalDeviceSnapshotPS(ctx context.Context) ([]model.Device, error) {
+// getLocalDeviceSnapshotPS is the legacy WMI/PnP oracle.
+func getLocalDeviceSnapshotPS(ctx context.Context) ([]model.Device, error) {
 	var rows []struct {
 		Name        string `json:"Name"`
 		PNPClass    string `json:"PNPClass"`
@@ -83,8 +83,8 @@ func GetLocalDeviceSnapshotPS(ctx context.Context) ([]model.Device, error) {
 	return devices, nil
 }
 
-// GetInstalledAppsPS is the legacy registry oracle.
-func GetInstalledAppsPS(ctx context.Context) ([]model.InstalledApp, error) {
+// getInstalledAppsPS is the legacy registry oracle.
+func getInstalledAppsPS(ctx context.Context) ([]model.InstalledApp, error) {
 	var rows []struct {
 		DisplayName    string `json:"DisplayName"`
 		DisplayVersion string `json:"DisplayVersion"`
@@ -100,8 +100,8 @@ func GetInstalledAppsPS(ctx context.Context) ([]model.InstalledApp, error) {
 	return apps, nil
 }
 
-// GetSoftwareSnapshotPS is the legacy provisioning/service oracle.
-func GetSoftwareSnapshotPS(ctx context.Context, installedApps []model.InstalledApp) (model.SoftwareSnapshot, error) {
+// getSoftwareSnapshotPS is the legacy provisioning/service oracle.
+func getSoftwareSnapshotPS(ctx context.Context, installedApps []model.InstalledApp) (model.SoftwareSnapshot, error) {
 	snapshot := model.SoftwareSnapshot{InstalledApps: installedApps}
 	var raw struct {
 		ProvisionedAmdPower string `json:"ProvisionedAmdPower"`

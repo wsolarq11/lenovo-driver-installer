@@ -4,8 +4,8 @@ package install
 
 import "fmt"
 
-// InstallNativeINF is unsupported off Windows.
-func InstallNativeINF(infPath string) (bool, error) {
+// installNativeINF is unsupported off Windows.
+func installNativeINF(infPath string) (bool, error) {
 	return false, fmt.Errorf("native driver install requires Windows")
 }
 

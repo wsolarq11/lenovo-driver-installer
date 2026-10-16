@@ -49,9 +49,9 @@ func TestRollbackDeviceIDs(t *testing.T) {
 		{PnpDeviceID: "", ProblemNumber: 43},
 		{PnpDeviceID: "D", ProblemNumber: 28},
 	}
-	got := RollbackDeviceIDs(devices)
+	got := rollbackDeviceIDs(devices)
 	want := []string{"B", "D"}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("RollbackDeviceIDs = %#v, want %#v", got, want)
+		t.Fatalf("rollbackDeviceIDs = %#v, want %#v", got, want)
 	}
 }

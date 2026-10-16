@@ -84,7 +84,7 @@ func SelectLatestDrivers(drivers []*model.Driver, currentOsID string) []*model.D
 }
 
 func driverNewer(a, b *model.Driver) bool {
-	c := GetDriverSortVersion(a).Compare(GetDriverSortVersion(b))
+	c := driverSortVersion(a).Compare(driverSortVersion(b))
 	if c != 0 {
 		return c > 0
 	}
@@ -121,8 +121,8 @@ func ConvertToBytes(sizeText string) (int64, error) {
 	return new(big.Int).Quo(value.Num(), value.Denom()).Int64(), nil
 }
 
-// GetSizeTolerance mirrors Get-SizeTolerance.
-func GetSizeTolerance(expectedBytes int64) int64 {
+// sizeTolerance mirrors Get-SizeTolerance.
+func sizeTolerance(expectedBytes int64) int64 {
 	tolerance := expectedBytes / 50
 	if tolerance < 1024 {
 		return 1024
@@ -139,7 +139,7 @@ func TestFileSizeMatch(expectedBytes, actualBytes int64) bool {
 	if diff < 0 {
 		diff = -diff
 	}
-	return diff <= GetSizeTolerance(expectedBytes)
+	return diff <= sizeTolerance(expectedBytes)
 }
 
 // TestRebootExitCode mirrors Test-RebootExitCode.

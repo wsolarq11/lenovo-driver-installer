@@ -11,8 +11,8 @@ import (
 	"lenovo-driver/internal/plan"
 )
 
-// SelectionAnswer is the parsed interactive answer.
-type SelectionAnswer struct {
+// selectionAnswer is the parsed interactive answer.
+type selectionAnswer struct {
 	Drivers []*model.AssessedDriver
 	Toggle  bool
 	Cancel  bool
@@ -59,7 +59,7 @@ func (a *App) SelectInteractive(
 	}
 }
 
-func (a *App) promptSelection(view *DriverView, allowToggle bool, nextOSLabel string) SelectionAnswer {
+func (a *App) promptSelection(view *DriverView, allowToggle bool, nextOSLabel string) selectionAnswer {
 	if len(view.Updates) > 0 {
 		fmt.Fprintf(a.Stdout, "Ready: %d update-only drivers, %d in the install set.\n", len(view.Updates), len(view.Applicable))
 		showActionPreview(a.Stdout, 'y', "update-only", view.Updates)
@@ -72,7 +72,7 @@ func (a *App) promptSelection(view *DriverView, allowToggle bool, nextOSLabel st
 	return a.promptChoice(view, allowToggle, nextOSLabel, false)
 }
 
-func (a *App) promptChoice(view *DriverView, allowToggle bool, nextOSLabel string, hasUpdates bool) SelectionAnswer {
+func (a *App) promptChoice(view *DriverView, allowToggle bool, nextOSLabel string, hasUpdates bool) selectionAnswer {
 	toggleText := ""
 	if allowToggle {
 		toggleText = ", t to switch to " + nextOSLabel
@@ -84,27 +84,27 @@ func (a *App) promptChoice(view *DriverView, allowToggle bool, nextOSLabel strin
 	fmt.Fprintf(a.Stdout, "%s, s to select%s, n to cancel: ", prompt, toggleText)
 	line, err := readLine(a.Stdin)
 	if err != nil {
-		return SelectionAnswer{Cancel: true}
+		return selectionAnswer{Cancel: true}
 	}
 	choice := strings.ToLower(strings.TrimSpace(line))
 	if choice == "t" && allowToggle {
-		return SelectionAnswer{Toggle: true}
+		return selectionAnswer{Toggle: true}
 	}
 	if choice == "y" && hasUpdates {
-		return SelectionAnswer{Drivers: view.Updates}
+		return selectionAnswer{Drivers: view.Updates}
 	}
 	if choice == "a" {
-		return SelectionAnswer{Drivers: view.Applicable}
+		return selectionAnswer{Drivers: view.Applicable}
 	}
 	if choice == "s" {
 		manual := readDriverSelection(a.Stdin, a.Stdout, view)
 		if len(manual) == 0 {
 			a.Log(context.Background(), "No drivers selected.", "INFO")
-			return SelectionAnswer{Cancel: true}
+			return selectionAnswer{Cancel: true}
 		}
-		return SelectionAnswer{Drivers: manual}
+		return selectionAnswer{Drivers: manual}
 	}
-	return SelectionAnswer{Cancel: true}
+	return selectionAnswer{Cancel: true}
 }
 
 func showActionPreview(w io.Writer, key rune, label string, drivers []*model.AssessedDriver) {

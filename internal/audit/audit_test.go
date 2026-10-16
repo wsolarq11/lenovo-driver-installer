@@ -12,7 +12,7 @@ func TestGetSourceMapMatch(t *testing.T) {
 	sourceMap := map[string]model.SourceMapEntry{
 		"Audio|2.0.0.1": {OSID: "248", OSName: "Windows 11 64-bit"},
 	}
-	match := GetSourceMapMatch(driver, sourceMap, "2.0.0.1")
+	match := sourceMapMatch(driver, sourceMap, "2.0.0.1")
 	if match == nil || match.OSID != "248" {
 		t.Fatalf("source map match failed: %v", match)
 	}
@@ -21,7 +21,7 @@ func TestGetSourceMapMatch(t *testing.T) {
 func TestResolveExternalDriverSourceLabel(t *testing.T) {
 	driver := &model.Driver{DriverName: "Audio", DriverCode: "d1"}
 	alternate := map[string]model.SourceMapEntry{"Audio|2.0.0.1": {OSID: "248", OSName: "Windows 11 64-bit"}}
-	got := ResolveExternalDriverSourceLabel(driver, alternate, "2.0.0.1")
+	got := resolveExternalDriverSourceLabel(driver, alternate, "2.0.0.1")
 	if got != "Local newer (version matches Windows 11 64-bit list)" {
 		t.Fatalf("unexpected label: %q", got)
 	}

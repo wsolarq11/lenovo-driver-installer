@@ -86,7 +86,7 @@ func TestFetchQuickFixReportsContractDrift(t *testing.T) {
 func TestFetchWebReportsContractDrift(t *testing.T) {
 	client := NewClient()
 	client.HTTP = &http.Client{Transport: roundTripFunc(func(req *http.Request) *http.Response {
-		resp := WebResponse{StatusCode: "200"}
+		resp := webResponse{StatusCode: "200"}
 		resp.Data.PartList = []webPart{{Drivelist: []driverRow{{DriverCode: "d1", Version: "1.0"}}}}
 		body, _ := json.Marshal(resp)
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))}
@@ -127,7 +127,7 @@ func TestGetDriverObjectsReportsDriftOnFallback(t *testing.T) {
 			body, _ := json.Marshal(resp)
 			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))}
 		}
-		resp := WebResponse{StatusCode: "200"}
+		resp := webResponse{StatusCode: "200"}
 		resp.Data.PartList = []webPart{{Drivelist: []driverRow{{DriverCode: "d2", FileName: "d2.exe", FilePath: "https://download.lenovo.com/d2.exe"}}}}
 		body, _ := json.Marshal(resp)
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))}
@@ -205,7 +205,7 @@ func TestGetDriverObjectsReportsGateOnFallback(t *testing.T) {
 		if req.URL.Path == "/home/driver/SearchForXbb" {
 			return &http.Response{StatusCode: http.StatusUnauthorized, Body: io.NopCloser(bytes.NewReader([]byte(`{}`)))}
 		}
-		resp := WebResponse{StatusCode: "200"}
+		resp := webResponse{StatusCode: "200"}
 		resp.Data.PartList = []webPart{{Drivelist: []driverRow{{DriverCode: "d2", FileName: "d2.exe", FilePath: "https://newdriverdl.lenovo.com.cn/d2.exe"}}}}
 		body, _ := json.Marshal(resp)
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))}

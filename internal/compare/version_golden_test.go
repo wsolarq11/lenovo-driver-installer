@@ -18,9 +18,9 @@ func TestParseVersionString82JQGolden(t *testing.T) {
 		"31.0.15.4630",    // NVIDIA VGA
 	}
 	for _, version := range versions {
-		parsed := ParseVersionString(version)
+		parsed := parseVersionString(version)
 		if parsed == nil || parsed.String() != version {
-			t.Fatalf("ParseVersionString(%q) = %v, want %q", version, parsed, version)
+			t.Fatalf("parseVersionString(%q) = %v, want %q", version, parsed, version)
 		}
 	}
 }

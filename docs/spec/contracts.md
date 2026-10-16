@@ -8,7 +8,7 @@ API、GUI JSON 协议、退出码、产物与账本列的**单一权威**。改�
 
 | 契约项 | 机器源（代码） | 门禁 | 本文件的角色 |
 | --- | --- | --- | --- |
-| CLI 参数、退出码、产物路径 | `internal/app/help.go` 的 `HelpText` | `scripts/verify.ps1` 比对退出码，漂移即失败 | 人读语义 |
+| CLI 参数、退出码、产物路径 | `internal/app/help.go` 的 `helpText` | `scripts/verify.ps1` 比对退出码，漂移即失败 | 人读语义 |
 | 账本列序 | `internal/app/history.go` 的 `historyColumns` | `history_test.go` golden 锁列序 | 人读语义 |
 | GUI JSON 协议 | `internal/app/export.go` | WPF 层解析（参数引用共享 golden） | 人读协议 |
 | API 端点与字段 | `internal/api/` | API 层单测 | 人读契约 |

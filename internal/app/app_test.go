@@ -519,7 +519,7 @@ func TestFilterDriverRowsFirmwareWhitelist(t *testing.T) {
 }
 
 func TestParseOptionsSignatureFlag(t *testing.T) {
-	opts, err := ParseOptions([]string{"-SkipSignatureCheck"})
+	opts, err := parseOptions([]string{"-SkipSignatureCheck"})
 	if err != nil || !opts.SkipSignatureCheck {
 		t.Fatalf("SkipSignatureCheck should parse: opts=%#v err=%v", opts, err)
 	}

@@ -54,9 +54,9 @@ func NewDownloader() *Downloader {
 // rollback, expiry).
 var allowedHostSuffixes = []string{"lenovo.com", "lenovo.com.cn"}
 
-// TrustedHost reports whether host is a Lenovo-owned domain. The comparison is
+// trustedHost reports whether host is a Lenovo-owned domain. The comparison is
 // case-insensitive and ignores a trailing dot.
-func TrustedHost(host string) bool {
+func trustedHost(host string) bool {
 	host = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
 	for _, suffix := range allowedHostSuffixes {
 		if host == suffix || strings.HasSuffix(host, "."+suffix) {
@@ -94,7 +94,7 @@ func (d *Downloader) downloadOnce(ctx context.Context, urlText, outFile string) 
 	if err != nil {
 		return fmt.Errorf("invalid download URL %q: %w", urlText, err)
 	}
-	if !TrustedHost(parsed.Hostname()) {
+	if !trustedHost(parsed.Hostname()) {
 		return fmt.Errorf("refusing to download from untrusted host %q", parsed.Hostname())
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlText, nil)

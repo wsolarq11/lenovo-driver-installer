@@ -84,11 +84,11 @@ func TestParseWeb(t *testing.T) {
     }]}]
   }
 }`)
-	var resp WebResponse
+	var resp webResponse
 	if err := decodeJSON(payload, &resp); err != nil {
 		t.Fatal(err)
 	}
-	drivers := ParseWeb(&resp, "42")
+	drivers := parseWeb(&resp, "42")
 	if len(drivers) != 1 {
 		t.Fatalf("expected 1 driver, got %d", len(drivers))
 	}
@@ -148,11 +148,11 @@ func TestParseWebContractGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var resp WebResponse
+	var resp webResponse
 	if err := decodeJSON(data, &resp); err != nil {
 		t.Fatal(err)
 	}
-	drivers := ParseWeb(&resp, "248")
+	drivers := parseWeb(&resp, "248")
 	if len(drivers) != 1 {
 		t.Fatalf("expected 1 driver, got %d", len(drivers))
 	}

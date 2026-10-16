@@ -74,8 +74,8 @@ func TestTrustedHost(t *testing.T) {
 		{"", false},
 	}
 	for _, tc := range cases {
-		if got := TrustedHost(tc.host); got != tc.want {
-			t.Fatalf("TrustedHost(%q) = %v, want %v", tc.host, got, tc.want)
+		if got := trustedHost(tc.host); got != tc.want {
+			t.Fatalf("trustedHost(%q) = %v, want %v", tc.host, got, tc.want)
 		}
 	}
 }

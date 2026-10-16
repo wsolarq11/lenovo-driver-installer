@@ -125,11 +125,11 @@ func ResolveComparableVersion(raw, vendor string) *Version {
 	if v := GetMatchingRemoteComponent(raw, vendor); v != nil {
 		return v
 	}
-	return ParseVersionString(raw)
+	return parseVersionString(raw)
 }
 
-// ParseVersionString mirrors Parse-VersionString.
-func ParseVersionString(value string) *Version {
+// parseVersionString mirrors Parse-VersionString.
+func parseVersionString(value string) *Version {
 	value = strings.TrimSpace(value)
 	if value == "" || strings.ContainsAny(value, "/,") {
 		return nil
@@ -153,10 +153,10 @@ func ParseVersionString(value string) *Version {
 	return &Version{Parts: parts}
 }
 
-// GetDriverSortVersion mirrors the sort version used by latest selection.
-func GetDriverSortVersion(driver *model.Driver) *Version {
+// driverSortVersion mirrors the sort version used by latest selection.
+func driverSortVersion(driver *model.Driver) *Version {
 	if driver != nil {
-		if v := ParseVersionString(driver.Version); v != nil {
+		if v := parseVersionString(driver.Version); v != nil {
 			return v
 		}
 	}
@@ -172,12 +172,12 @@ func GetVersionMatchKeys(text string) []string {
 	var keys []string
 	if strings.ContainsAny(text, "/,") {
 		for _, part := range reComponentSplit.Split(text, -1) {
-			if v := ParseVersionString(part); v != nil {
+			if v := parseVersionString(part); v != nil {
 				keys = append(keys, v.String())
 			}
 		}
 	} else {
-		if v := ParseVersionString(text); v != nil {
+		if v := parseVersionString(text); v != nil {
 			keys = append(keys, v.String())
 		}
 	}

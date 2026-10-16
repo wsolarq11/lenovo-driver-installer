@@ -26,7 +26,7 @@ func TestSoftwareVersionedDriverFallsBackToMeasuredDeviceVersion(t *testing.T) {
 		DriverName: "Lenovo Energy Management 联想电源管理驱动",
 		Version:    "15.11.29.13 MS signed",
 	}
-	if !TestSoftwareVersionedDriver(driver.DriverName) {
+	if !isSoftwareVersionedDriver(driver.DriverName) {
 		t.Fatal("fixture is not a software-versioned driver; this test would prove nothing")
 	}
 
@@ -38,7 +38,7 @@ func TestSoftwareVersionedDriverFallsBackToMeasuredDeviceVersion(t *testing.T) {
 	if local != "15.11.29.65" {
 		t.Fatalf("local version = %q, want the measured device version 15.11.29.65", local)
 	}
-	// GetDeviceVendor does not recognise this device's name, so vendor comes
+	// deviceVendorFor does not recognise this device's name, so vendor comes
 	// back empty and the compare falls back to parsing the whole remote string.
 	// That is a property of the fixture, not of the fallback under test.
 	t.Logf("vendor resolved from %q: %q", device.Name, vendor)

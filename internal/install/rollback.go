@@ -47,11 +47,11 @@ func (e *RollbackError) NoBackup() bool {
 	return e.Code == rollbackErrNoMoreItems
 }
 
-// RollbackDeviceIDs returns the PnP instance IDs of the devices that report a
+// rollbackDeviceIDs returns the PnP instance IDs of the devices that report a
 // problem code and are therefore device-level rollback candidates. Empty IDs
 // are skipped because they cannot be opened for rollback. Kept pure so the
 // candidate selection is testable offline.
-func RollbackDeviceIDs(devices []model.Device) []string {
+func rollbackDeviceIDs(devices []model.Device) []string {
 	var ids []string
 	for _, device := range devices {
 		if device.ProblemNumber != 0 && device.PnpDeviceID != "" {

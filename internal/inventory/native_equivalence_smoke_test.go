@@ -28,7 +28,7 @@ func TestNativePSEquivalenceSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("native device snapshot failed: %v", err)
 	}
-	psDevices, err := GetLocalDeviceSnapshotPS(ctx)
+	psDevices, err := getLocalDeviceSnapshotPS(ctx)
 	if err != nil {
 		t.Fatalf("PowerShell device snapshot failed: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestNativePSEquivalenceSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("native machine failed: %v", err)
 	}
-	psMachine, err := GetMachineInfoPS(ctx)
+	psMachine, err := getMachineInfoPS(ctx)
 	if err != nil {
 		t.Fatalf("PowerShell machine failed: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestNativePSEquivalenceSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("native OS failed: %v", err)
 	}
-	psOS, err := GetOSInfoPS(ctx)
+	psOS, err := getOSInfoPS(ctx)
 	if err != nil {
 		t.Fatalf("PowerShell OS failed: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestNativePSEquivalenceSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("native apps failed: %v", err)
 	}
-	psApps, err := GetInstalledAppsPS(ctx)
+	psApps, err := getInstalledAppsPS(ctx)
 	if err != nil {
 		t.Fatalf("PowerShell apps failed: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestNativePSEquivalenceSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("native software snapshot failed: %v", err)
 	}
-	psSW, err := GetSoftwareSnapshotPS(ctx, psApps)
+	psSW, err := getSoftwareSnapshotPS(ctx, psApps)
 	if err != nil {
 		t.Fatalf("PowerShell software snapshot failed: %v", err)
 	}

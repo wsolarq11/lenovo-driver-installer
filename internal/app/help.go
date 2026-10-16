@@ -1,7 +1,7 @@
 package app
 
-// HelpText mirrors the PS1 help output and public CLI contract.
-const HelpText = `Lenovo driver installer (Go migration)
+// helpText mirrors the PS1 help output and public CLI contract.
+const helpText = `Lenovo driver installer (Go migration)
 
 Usage:
   lenovo-driver [-DryRun] [-CurrentOSOnly] [-LatestAcrossOS] [-TargetOS <OSID|OSName>]

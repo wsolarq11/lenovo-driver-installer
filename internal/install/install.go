@@ -99,8 +99,8 @@ func runProcess(ctx context.Context, filePath string, args []string, timeout tim
 	}
 }
 
-// RunPnPUtilWithTimeout mirrors Invoke-PnPUtilWithTimeout.
-func RunPnPUtilWithTimeout(infPath, workingDir string) ProcessResult {
+// runPnPUtilWithTimeout mirrors Invoke-PnPUtilWithTimeout.
+func runPnPUtilWithTimeout(infPath, workingDir string) ProcessResult {
 	result := runProcess(context.Background(), "pnputil.exe", []string{"/add-driver", infPath, "/install"}, 900*time.Second, workingDir)
 	if result.StartErr != nil {
 		// A non-start is already a terminal failure; do not mask it as exit 1.
@@ -164,7 +164,7 @@ func InstallDriverFile(filePath string, driver *model.Driver, workingDir string)
 		return installNativeOrPnPUtil(filePath, workingDir)
 	case ".zip":
 		extract := filepath.Join(workingDir, strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath)))
-		if err := ExtractZip(filePath, extract); err != nil {
+		if err := extractZip(filePath, extract); err != nil {
 			return -2, err
 		}
 		return installINFs(extract, workingDir)
@@ -224,14 +224,14 @@ func installINFPaths(paths []string, workingDir string) (int, error) {
 // back to pnputil when the native call fails. Both paths normalize a
 // reboot-required result to errorSuccessRebootRequired (3010).
 func installNativeOrPnPUtil(infPath, workingDir string) (int, error) {
-	reboot, err := InstallNativeINF(infPath)
+	reboot, err := installNativeINF(infPath)
 	if err == nil {
 		if reboot {
 			return errorSuccessRebootRequired, nil
 		}
 		return 0, nil
 	}
-	result := RunPnPUtilWithTimeout(infPath, workingDir)
+	result := runPnPUtilWithTimeout(infPath, workingDir)
 	if result.StartErr != nil {
 		return result.ExitCode, result.StartErr
 	}
@@ -263,8 +263,8 @@ func installINFs(root, workingDir string) (int, error) {
 	return installINFPaths(infs, workingDir)
 }
 
-// ExtractZip extracts a zip archive.
-func ExtractZip(zipPath, destination string) error {
+// extractZip extracts a zip archive.
+func extractZip(zipPath, destination string) error {
 	r, err := zip.OpenReader(zipPath)
 	if err != nil {
 		return err

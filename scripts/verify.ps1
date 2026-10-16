@@ -242,7 +242,7 @@ Assert-Step 'CLI help' {
 }
 
 Assert-Step 'CLI exit codes match docs contract' {
-    # Single source of truth: internal/app/help.go HelpText. docs/spec/contracts.md
+    # Single source of truth: internal/app/help.go helpText. docs/spec/contracts.md
     # must carry the same numeric codes; drift fails the gate.
     $help = Read-GateText (Join-Path $repoRoot 'internal\app\help.go')
     if ($help -notmatch '(?ms)Exit codes:\r?\n(.*?)(\r?\n\r?\n)') {
@@ -501,12 +501,13 @@ Assert-Step 'a run reports only what the recheck confirmed' {
     }
     # Comparability must come from the value, not the driver family, and the
     # decision must live in the binding owner rather than at the call site.
-    # Re-keying it on TestSoftwareVersionedDriver silently reports every correctly
-    # installed software-versioned driver as unverified.
+    # Re-keying it on the driver-family predicate silently reports every
+    # correctly installed software-versioned driver as unverified - which is why
+    # the next assertion names that predicate and is re-checked when it moves.
     if ($binding -notmatch 'model\.IsMeasuredLocalVersion\(after\)') {
         throw 'installBindingLabel no longer decides comparability from the value it read'
     }
-    if ($install -match 'installBindingLabel\([^)]*TestSoftwareVersionedDriver') {
+    if ($install -match 'installBindingLabel\([^)]*isSoftwareVersionedDriver') {
         throw 'installBindingLabel is keyed on the driver family again; a real version read back from the ' +
               'installed-app list (Energy Management 15.11.29.65) is measurable and must carry a verdict'
     }
@@ -852,9 +853,9 @@ Assert-Step 'software-versioned compare falls back to the measured device versio
     if ($matching -notmatch 'func\s+deviceVersionFrom') {
         throw 'deviceVersionFrom is gone; the device-measured version has no single extraction point'
     }
-    $m = [regex]::Match($matching, '(?s)if\s+TestSoftwareVersionedDriver\(driver\.DriverName\)\s*\{(.*?)\n\t\}')
+    $m = [regex]::Match($matching, '(?s)if\s+isSoftwareVersionedDriver\(driver\.DriverName\)\s*\{(.*?)\n\t\}')
     if (-not $m.Success) {
-        throw 'could not locate the TestSoftwareVersionedDriver branch in matching.go'
+        throw 'could not locate the software-versioned branch in matching.go'
     }
     $branch = $m.Groups[1].Value
     if ($branch -notmatch 'deviceVersionFrom') {
@@ -965,6 +966,94 @@ Assert-Step 'every text type the repo carries has an explicit line ending' {
         if ($attrs -notmatch ('(?m)^' + [regex]::Escape($rule) + '$')) {
             throw ".gitattributes no longer pins '$rule'"
         }
+    }
+}
+
+Assert-Step 'no package exports what nothing outside it names' {
+    # An exported name nothing outside its package spells is a false API
+    # promise: it invites a consumer the package never meant to serve, and it
+    # rots into a second surface nobody maintains. Each package's export set
+    # must equal what its consumers use, so this step fails on any name that
+    # only its own package mentions and asks for it to be unexported.
+    #
+    # Deliberately out of scope: methods are never spelled pkg.Name, so this
+    # scan cannot tell whether a *method* has a consumer - judging one here
+    # would fail on every method of an exported type. But an exported method is
+    # still a declaration callers use, so its signature does count when asking
+    # whether some other declaration needs a type's name (see Get-ExportedDecls
+    # below, which includes methods for exactly that reason).
+    # Types another exported declaration mentions must stay exported too, or
+    # that declaration returns something callers cannot name.
+    # Consumers include tests: an in-package test uses bare names, so only a
+    # test in another package counts, and that is a real consumer.
+    $goFiles = Get-ChildItem -Path $repoRoot -Recurse -File -Filter '*.go' |
+        Where-Object { $_.FullName -notmatch '\\\.' }
+    $texts = @{}
+    foreach ($f in $goFiles) { $texts[$f.FullName] = Read-GateText $f.FullName }
+
+    # Exported declarations of one source file, with the struct body attached
+    # when the declaration is a struct, because an exported struct's fields are
+    # where a type gets named by another exported declaration.
+    #
+    # Returned as a list of name/body pairs rather than a map keyed by name: two
+    # types in one package can each have an Error method, and keying by name
+    # would keep only the last one, silently reporting the other type as unused.
+    function Get-ExportedDecls {
+        param([string]$Source)
+        $decls = @()
+        $lines = $Source -split "`n"
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            $name = $null
+            if ($lines[$i] -cmatch '^func\s+([A-Z][A-Za-z0-9_]*)\s*[\(\[]') { $name = $Matches[1] }
+            elseif ($lines[$i] -cmatch '^func\s+\([^)]*\)\s+([A-Z][A-Za-z0-9_]*)\s*[\(\[]') { $name = $Matches[1] }
+            elseif ($lines[$i] -cmatch '^type\s+([A-Z][A-Za-z0-9_]*)\s') { $name = $Matches[1] }
+            if (-not $name) { continue }
+            $body = $lines[$i]
+            if ($lines[$i] -cmatch '^type\s+[A-Z][A-Za-z0-9_]*\s+struct\s*\{') {
+                for ($j = $i + 1; $j -lt $lines.Count -and $lines[$j] -notmatch '^\}'; $j++) { $body += "`n" + $lines[$j] }
+            }
+            $decls += , @($name, $body)
+        }
+        return $decls
+    }
+
+    $offenders = @()
+    foreach ($dir in (Get-ChildItem -Path (Join-Path $repoRoot 'internal') -Recurse -Directory)) {
+        $prod = @(Get-ChildItem -Path $dir.FullName -File -Filter '*.go' -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notlike '*_test.go' })
+        if ($prod.Count -eq 0) { continue }
+        $kind = @{}
+        $decls = @()
+        foreach ($f in $prod) {
+            foreach ($line in ($texts[$f.FullName] -split "`n")) {
+                if ($line -cmatch '^func\s+([A-Z][A-Za-z0-9_]*)\s*[\(\[]') { $kind[$Matches[1]] = 'func' }
+                elseif ($line -cmatch '^type\s+([A-Z][A-Za-z0-9_]*)\s') { $kind[$Matches[1]] = 'type' }
+                elseif ($line -cmatch '^(var|const)\s+([A-Z][A-Za-z0-9_]*)\s') { $kind[$Matches[2]] = 'var' }
+            }
+            $decls += Get-ExportedDecls -Source $texts[$f.FullName]
+        }
+        foreach ($name in ($kind.Keys | Sort-Object)) {
+            $qualified = [regex]::Escape("$($dir.Name).$name")
+            $consumed = $false
+            foreach ($f in $goFiles) {
+                if ($f.Directory.FullName -eq $dir.FullName) { continue }
+                if ($texts[$f.FullName] -cmatch "(?m)(^|[^A-Za-z0-9_.])$qualified([^A-Za-z0-9_]|$)") { $consumed = $true; break }
+            }
+            if ($consumed) { continue }
+            if ($kind[$name] -eq 'type') {
+                $named = $false
+                foreach ($pair in $decls) {
+                    if ($pair[0] -eq $name) { continue }
+                    if ($pair[1] -cmatch "(^|[^A-Za-z0-9_])$([regex]::Escape($name))([^A-Za-z0-9_]|$)") { $named = $true; break }
+                }
+                if ($named) { continue }
+            }
+            $offenders += "internal/$($dir.Name): $name ($($kind[$name]))"
+        }
+    }
+    if ($offenders.Count -gt 0) {
+        throw ("nothing outside its package names these exported identifiers, so they are an API that is not an API - unexport them:`n  " +
+            ($offenders -join "`n  "))
     }
 }
 

@@ -122,8 +122,8 @@ func New(stdout, stderr io.Writer, stdin io.Reader) *App {
 	}
 }
 
-// ParseOptions parses the Go CLI with the PS1 parameter names.
-func ParseOptions(args []string) (*Options, error) {
+// parseOptions parses the Go CLI with the PS1 parameter names.
+func parseOptions(args []string) (*Options, error) {
 	opts := &Options{}
 	fs := flag.NewFlagSet("lenovo-driver", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -178,13 +178,13 @@ func (opts *Options) Validate() error {
 
 // Run executes the CLI and returns the process exit code.
 func (a *App) Run(args []string) int {
-	opts, err := ParseOptions(args)
+	opts, err := parseOptions(args)
 	if err != nil {
 		fmt.Fprintln(a.Stderr, "Error: "+err.Error())
 		return 2
 	}
 	if opts.Help {
-		_, _ = io.WriteString(a.Stdout, HelpText)
+		_, _ = io.WriteString(a.Stdout, helpText)
 		return 0
 	}
 	if err := opts.Validate(); err != nil {

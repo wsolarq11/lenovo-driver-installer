@@ -26,9 +26,9 @@ var updateDriverForPnP = syscall.NewLazyDLL("newdev.dll").NewProc("UpdateDriverF
 // newer one without first deleting the newer package.
 const installFlagForce = 0x1
 
-// InstallNativeINF installs an INF driver package through DiInstallDriverW.
+// installNativeINF installs an INF driver package through DiInstallDriverW.
 // rebootRequired is true when Windows asks for a restart.
-func InstallNativeINF(infPath string) (rebootRequired bool, err error) {
+func installNativeINF(infPath string) (rebootRequired bool, err error) {
 	p, err := syscall.UTF16PtrFromString(infPath)
 	if err != nil {
 		return false, err
@@ -44,7 +44,7 @@ func InstallNativeINF(infPath string) (rebootRequired bool, err error) {
 
 // ForceReinstallINF reinstalls the given INF for the devices matching hardwareID
 // through UpdateDriverForPlugAndPlayDevicesW with INSTALLFLAG_FORCE. Unlike
-// InstallNativeINF it downgrades the device to this driver even when a newer
+// installNativeINF it downgrades the device to this driver even when a newer
 // driver is currently bound, which is what a rollback needs. The caller must
 // re-verify device health afterward because the call returns success even when
 // the device did not actually change (see reinstallPreviousInf's verification).

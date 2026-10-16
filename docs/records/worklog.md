@@ -829,3 +829,38 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed**
+
+---
+
+## Session: 全仓净熵 P6 导出面收敛
+
+**Branch**: `chore/repo-entropy-sweep`
+
+### Main Changes
+
+- **纳入标准的来历（先量后改）**：判定「可收为未导出」的规则是「包外没有任何文件以 `pkg.Name` 形式拼出该标识符」。但**方法不能用这条规则判**——方法经由接收者变量调用，永远不会写成 `pkg.Name`，用名字扫描去判它必然误判且是静默的。故本阶段只处理包级标识符（函数/类型/变量/常量），方法一律不动，并把这条限制写进门禁步的注释。
+- **类型要额外一条**：若某个**导出**声明（含导出方法、导出结构体字段）提到该类型，则必须保持导出——否则那个导出声明会返回调用方无法命名的类型。按此规则 27 个标识符收为未导出：`internal/app` 3（`helpText`/`parseOptions`/`selectionAnswer`）、`compare` 8、`download` 1（`trustedHost`）、`install` 4、`inventory` 6（PS 变体与原生投影）、`api` 2（`parseWeb`、`webResponse`）、`audit` 2。
+- **两个名字顺手改对**：`internal/compare/matching.go` 里 `TestHardwareMatch` / `TestSoftwareVersionedDriver` 是**生产文件里的判断谓词**，不是测试（无 `*testing.T`），却带着 `Test` 前缀——下一个人一定会当成测试。改为 `hardwareMatches` / `isSoftwareVersionedDriver`。后者改名后，`internal/app` **再也无法**按驱动族决定可比性（谓词已不可导出），这条规则从文字约束变成了编译器约束。
+- **新增第 43 步 `no package exports what nothing outside it names`**：把 P6 的规则本身变成门禁——遍历 `internal/` 每个包，凡是包外无人拼写、又不是被其它导出声明提到的导出标识符，一律失败并点名。规则是推导出来的，没有名单（对照 P5 的教训）。消费者包含测试：同包测试用裸名，只有**另一个包**的测试才算消费者。实测该步在收敛后归零。
+- 同步更新两处因改名而失真的引用：`docs/spec/contracts.md` 的机器源格（`HelpText` → `helpText`）、`scripts/verify.ps1` 里 `installBindingLabel` 那条负向断言与定位 `matching.go` 分支的正则。
+  - 据实说明：那条负向断言（不得把驱动族谓词传进 `installBindingLabel`）在谓词收为未导出后，**只能**在有人重新导出该谓词时才会触发；而第 43 步恰好禁止重新导出。两条合起来仍然守得住这条规则，但单看那条断言的强度已经变了，不该再当成主守卫。
+- 未改写 `docs/records/` 里的历史提及（如 `GetNativeDeviceEvidence`、`TestSoftwareVersionedDriver` 在 review/worklog 记录中的出现）：那是 append-only 历史证据，描述的是当时的代码，改名不会让它变假。
+
+### Testing
+
+- [实测] 编译器与测试：`go build ./...`、`go build -tags legacyps ./...`、`go vet ./...`、`go test ./...`、`go test -tags legacyps ./...` 全绿（31 个文件、27 个标识符跨包零引用，由编译器确认）。
+- [实测] 改名后重跑测量脚本：`app/compare/download/install/inventory/api/model/audit/plan/trust/pathutil` 全部 0 候选——导出面恰好等于消费者实际使用面。
+- [实测] 新步红灯：向 `internal/pathutil` 加一个包外无人使用的导出函数 → `FAIL no package exports what nothing outside it names: internal/pathutil: ExportedNothingUsesThis (func)`；复原后绿。
+- [实测] 新步的允许项：加一个包外无人命名、但被同包导出方法提到的类型 → PASS（证明「导出声明提到即保留」这条豁免真的生效，不是靠运气）。
+- [实测] 修掉新步自身一个静默缺陷：导出声明原先以**声明名**为键收集，而 `api` 里 `ContractDriftError` 与 `InterfaceGateError` 各有一个名为 `Error` 的方法——后者覆盖前者，导致前一个类型被误判为「无人提到」而要求收掉它。改为按声明逐条保存（name/body 对）后归零。这类「键冲突导致漏判」正是本步要防的错误形式，出现在本步自身，已修并复测。
+- [实测] 双宿主全量门禁 43/43 VERIFY_OK。
+
+### 过程里修掉的三处测量误差（都是我自己引入的）
+
+- PowerShell `-match` 默认大小写不敏感，`[A-Z]` 把未导出的名字也收了进来；必须用 `-cmatch`。
+- 本环境的 `grep`（ugrep）静默忽略 `--include=*_test.go`，据此得出的「仓库没有外部测试包」是错的；改用 PowerShell 复核。
+- `internal/app/testapp_test.go` 里有个名为 `app` 的**局部变量**（`app := New(...)`），于是 `app.WriteHistoryRecord(...)` 这类写法会被名字扫描误认为跨包引用。这只影响方法（方法本就不在本阶段范围），但它是「按文本推断跨包使用」的固有盲区，已记在此备用。
+
+### Status
+
+[OK] **Completed**
