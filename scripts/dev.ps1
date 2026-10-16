@@ -99,7 +99,7 @@ if (-not $SkipBin) {
 Write-Host "Dev loop summary: $total steps, $($failed.Count) failed"
 Write-Host "Run .\scripts\verify.ps1 (or re-run with -Verify) for the full offline acceptance gate."
 if ($failed.Count -gt 0) {
-    Write-Output ("Failed: {0}" -f ($failed -join ', '))
+    Write-Host ("Failed: {0}" -f ($failed -join ', '))
     exit 1
 }
 Write-Host 'DEV_OK'

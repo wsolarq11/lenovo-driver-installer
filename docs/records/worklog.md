@@ -685,3 +685,101 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed** — 文档写回，待 commit。
+
+---
+
+## Session: 全仓净熵 P1 死码与死配置
+
+**Branch**: `chore/repo-entropy-sweep`
+
+### Main Changes
+
+- **删 `RemoveDriverPackage` + `deleteDriverArgs`**（`internal/install/rollback.go`）：全仓零引用，且它正是被不变量 6 禁止当作回退动作的 `pnputil /delete-driver` 原语。删后该文件 import 收窄为 `fmt` + `model`，并留注释说明「包清理不属于回退」的语义、指明由门禁钉住其缺席。
+- 删 `TestDeleteDriverArgs`（唯一引用 `deleteDriverArgs` 的测试）——把禁用原语固化成期望行为的测试，是该原语回流的最短路径。
+- 删 `ImportRecord.HeaderKind`（只写不读）与 `sectionStartRule.kind`（4 处赋值 + 1 处写入，唯一读者是刚删掉的字段）。
+- `.gitignore`：删 `install-state.json` / `install-state.json.*` / `*.sha256`（全仓零生产者，被删的 PS CLI 时代残留）；补 `/.zcode/`，与既有 `/.trellis/`、`/.agents/`、`/.dsh/` 同列。
+- 未跟踪产物白名单收敛为 `^(\.github/|scripts/)`；删掉白名单里指向不存在目录的 `.trellis/tasks/08-26-go-migration/`。
+- 新增第 39 步 `package cleanup is never presented as rollback`：扫 `internal/**/*.go`（含测试）断言不出现 `/delete-driver`，并断言 `rollback_native_windows.go` 仍在调 `DiRollbackDriver`——否则这条防线守的是一个已空掉的入口。
+
+### Testing
+
+- [实测] 红灯：把 `/delete-driver` 注回 `rollback_test.go` → `FAIL package cleanup is never presented as rollback: … rollback_test.go:60`；复原后绿。
+- [实测] 双宿主全量门禁 39/39 VERIFY_OK。
+- [实测] `go build ./...`、`go build -tags legacyps ./...`、`go vet ./...`、`go test ./...` 全过。
+
+### Status
+
+[OK] **Completed**
+
+---
+
+## Session: 全仓净熵 P2 重复真相上锁
+
+**Branch**: `chore/repo-entropy-sweep`
+
+### Main Changes
+
+- **产物路径（真实性最高的一处漂移）**：产物路径的机器源在 Go（`internal/app/app.go`、`internal/app/rollback.go`），PowerShell 侧另有 4 份字面量副本（`wpf/ui.ps1`、`wpf/actions.ps1`、`scripts/rollback_behavior_test.ps1`）。原先只有 `help.go ↔ contracts.md` 被钉，PS 副本在门禁之外——Go 改路径后「打开计划」按钮与回退 offer 查找会静默指向旧路径。做法：扩展现有步 `CLI artifact paths match docs contract`，读 `help.go` 声明的全部产物名，再扫仓库内每个 `.ps1` 里出现的 `lenovo_driver_*.{log,csv,txt,json}` 字面量，任何未被声明的名字即失败。**副本保留、被锁住**（沿用 `help.go ↔ contracts.md` 的既有写法），理由见计划「不做」第 3 条。
+- `internal/app/help.go` 的 Artifacts 块补 `lenovo_driver_rollback.json`（GUI 打开它但从未被声明）。
+- **新增步 `the documented JSON contracts match the engine`**：要求 `contracts.md` 恰有 2 个 ```json 块，抽取文档字段名与引擎 json tag（`export.go` + `model.OSListEntry` + `rollback.go`）后集合相等比对，并断言引擎侧字段数 ≥20（防止抽取出空集而「空集等于空集」假绿）。
+- `docs/spec/contracts.md` §4 补完整 rollback offer JSON 契约块与 State 机说明（此前 offer schema 被两个 PS 消费者各读一遍，字段名无任何东西钉住）；§2 说明字段集合现由门禁比对。
+
+### Testing
+
+- [实测] 红灯一：改 PS 里的路径字面量 → `FAIL … PowerShell spells artifact names the engine does not declare: lenovo_driver_plan2.txt`。
+- [实测] 红灯二：改文档字段名 → `FAIL … JSON contract drift (engine vs contracts.md): =>DriverCodeX`。
+- [实测] 红灯三：改 offer 文件名常量 → `FAIL … help.go's Artifacts block does not declare lenovo_driver_offer.json although the GUI opens it`。
+- [实测] 三次复原后双宿主 40/40 VERIFY_OK。
+
+### Status
+
+[OK] **Completed**
+
+---
+
+## Session: 全仓净熵 P3 脆弱耦合显式化
+
+**Branch**: `chore/repo-entropy-sweep`
+
+### Main Changes
+
+- **动态作用域消除**：`wpf/worker.ps1` 的 `Start-LenovoDriverJob` 原先直接读入口脚本作用域里的 `$Model` / `$DownloadDir`。门禁会单独 dot-source 该文件（参数引用 golden），那时这两个变量不存在——函数会静默地不带它们启动引擎。改为显式参数 `[string]$Model` / `[string]$DownloadDir`，更新 5 个调用点（`lenovo_driver_wpf.ps1:75,111`、`wpf/ui.ps1:170`、`wpf/actions.ps1:30,65`）。
+- **模式兜底 throw**：模式选择原为 `$Export → Export`、`$Rollback → Rollback`、`else → Install`，即「忘记传模式」会落到唯一改变机器状态的那条动作上。改为显式三分支，无模式即 `throw`。已核实 5 个调用点全部显式传模式，故行为不变。
+- **工具链解析成为命名步骤**：`Resolve-GoExe` 的 `throw` 原先发生在 dot-source 期（先于首个 `Assert-Step`），工具链缺失时门禁以裸错误终止、不计入失败数、无步名。改为首个命名步骤 `Go toolchain is discoverable`，并在其后显式打印汇总与退出码。
+
+### Testing
+
+- [实测] 双宿主 Parser 零错误（含改动后的 5 个文件）。
+- [实测] 无模式调用在两宿主下抛出 `Start-LenovoDriverJob needs a mode: -Export, -Install or -Rollback`。
+- [实测] `-GoExe C:\nonexistent\go.exe` → `FAIL Go toolchain is discoverable: Go executable not found: …` + `Verify summary: 1 steps, 1 failed`，退出码 1。
+- [实测] 两个 WPF smoke 在 `powershell.exe`（5.1，即 `install_lenovo_drivers_wpf.bat` 的真实启动宿主）与 `pwsh` 7 下均通过：`WORKER_SMOKE_OK rows=23 list=Windows 11 64-bit (248)`。
+- [实测] 双宿主全量门禁 41/41 VERIFY_OK。
+
+### Status
+
+[OK] **Completed**
+
+---
+
+## Session: 全仓净熵 P4 规格与文档漂移
+
+**Branch**: `chore/repo-entropy-sweep`
+
+### Main Changes
+
+- **C1 互斥的检查项**：`quality-guidelines.md` 的评审项要求「CLI 参数与帮助文本匹配 `README.md`」，与单源规则直接冲突（机器源是 `internal/app/help.go`，README 只是指针）。改写为指向机器源，并说明人读副本由门禁锁死、不做手工同步。
+- **C2 命令清单与源映射表各只剩一份**：`quality-guidelines.md` 的 Verification 一节原先把门禁的检查内容与两个 WPF smoke 命令复述了一遍（`docs/howto/develop.md` 才是权威），改为指针。源映射表原先在 `.trellis/spec/backend/single-source.md` 与 `docs/spec/index.md` 各有一份。
+  - **与计划的偏离（有证据）**：计划要求把权威映射表放在 `single-source.md`、把 `docs/spec/index.md` 改为指针。执行前核实发现 `.trellis/` **整个目录被 gitignore**（`git ls-files .trellis` 为空、`.gitignore:19` 命中），那样做会让一份已跟踪文档指向克隆里不存在的路径——指针本身就是断的。故按计划的**目标**（收敛成一份权威）反向执行：已跟踪的 `docs/spec/index.md` 承载映射表（合并 Lock 列，补入只在 single-source.md 里有的两行：Go 工具链发现、WPF/引擎参数引用），`.trellis/spec/backend/single-source.md` 只保留 Rule / 变更规程 / 反模式并指向 `docs/spec/index.md`。
+- **C3 帮助块补齐**：`lenovo_driver_wpf.ps1` 的注释帮助补 `.PARAMETER Model` / `.PARAMETER DownloadDir`，语义对齐 `help.go`（型号覆盖、下载目录默认 `%TEMP%\LenovoDrivers`），并写明两者随 UAC 提权重启传递。
+- **C4 输出方式统一**：`scripts/dev.ps1` 的失败汇总行由 `Write-Output` 改为 `Write-Host`，与同块及 `verify.ps1` 的 `Failed: …` 行一致。
+- 附带：`docs/howto/run.md` 开头声明构建/门禁命令的权威清单在 `develop.md`，把自己定位为「刚克隆完的最短路」，把该处的重复从静默副本变为已声明的捷径。
+
+### Testing
+
+- [实测] 双宿主全量门禁 41/41 VERIFY_OK（`powershell.exe` 5.1 与 `pwsh` 7）。
+- [实测] 改动的两个 `.ps1` 在双宿主 Parser 零错误；`git diff --check` 干净。
+- [实测] `grep` 复核：门禁/内循环命令表只剩 `docs/howto/develop.md` 一份；`quality-guidelines.md` 不再把 `README.md` 当参数源。
+
+### Status
+
+[OK] **Completed**

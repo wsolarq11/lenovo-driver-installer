@@ -19,6 +19,16 @@ read-only previews.
 .PARAMETER WorkerSmoke
 Run the background worker against the real QuickFix API, parse the JSON
 export, print the loaded row count, and exit. Intended for verification.
+
+.PARAMETER Model
+Lenovo machine model override, forwarded to the engine's -Model. Leave empty
+to let the engine resolve the model from the machine itself.
+
+.PARAMETER DownloadDir
+Download cache directory, forwarded to the engine's -DownloadDir. Leave empty
+to use the engine default (%TEMP%\LenovoDrivers). Both parameters are carried
+across the UAC elevation relaunch, so an elevated run downloads to the same
+place as an unelevated one.
 #>
 param(
     [switch]$SelfTest,
