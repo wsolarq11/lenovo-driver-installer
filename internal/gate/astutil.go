@@ -371,6 +371,20 @@ func (r *Repo) fileDeclaring(dir, funcName string) (*file, error) {
 	return nil, &missingDeclError{dir: dir, name: funcName}
 }
 
+// fileWithName returns the parsed file in dir that declares the named top-level
+// entity, whether it is a function, a type, a constant or a variable. A rule
+// about a value (the help text, a struct's shape) has to find its file the same
+// way a rule about a function does, so that moving the declaration does not
+// break the rule.
+func (r *Repo) fileWithName(dir, name string) (*file, error) {
+	for _, f := range r.dirProd(dir) {
+		if hasTopLevelName(f.ast, name) {
+			return f, nil
+		}
+	}
+	return nil, &missingDeclError{dir: dir, name: name}
+}
+
 type missingDeclError struct {
 	dir  string
 	name string

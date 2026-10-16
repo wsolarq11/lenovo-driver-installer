@@ -926,3 +926,30 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed**
+
+---
+
+## Session: 门禁规则搬进 Go（批 3：最后四条读 Go 源码/文档对照的步骤）
+
+**Branch**: `chore/repo-entropy-sweep`
+
+### Main Changes
+
+- **又先证明缺陷**。批 2 后仍剩四条步骤读 Go 源码，动手前逐条探针，三条有真实缺陷：
+  - `the documented JSON contracts match the engine` 用 `json:"..."` 正则扫 `export.go`。在类型上方写一行**注释** `// shape: json:"GhostField"` → 扫描数 28→29，`GhostField` 进入"引擎字段集"，于是门禁会要求 `contracts.md` 也声明一个不存在的字段。实测确认。
+  - `evidence chain runs on real fixtures` 用 `-notmatch 'diffDeviceSnapshots'` 断言链上每个环节都被调用。把真实调用改名、只在注释里留下原名 → 旧步**绿**（假绿）。实测确认。
+  - `CLI exit codes match docs contract` 用 `(?ms)Exit codes:\r?\n(.*?)` 从 `help.go` 里抓块。该正则从**文件开头**找第一个匹配，所以在常量上方写一段注释形式的 `Exit codes:` 块会把解析锚点整个挪走。
+- **新建 `internal/gate/checks_docs.go` + `gosource.go` + `docparse.go` + `fixtures.go` + `fileutil.go`**：四条规则改写。关键取舍写进注释：**文档侧是文本，正则是对的读法；Go 侧必须按声明读**。所以 json tag 用 `reflect.StructTag`（编码器自己的解析器，`,omitempty` 等选项由标准库处理）从 struct 字段读出，注释里的 tag 不再是字段；链的环节用"这个文件里有没有对名为 X 的调用"判定；`helpText` 按常量声明取值，注释里的锚点不再能挪动它。
+- 四条步骤名逐字节保留，`verify.ps1` 对应四段正则删除（约 150 行）。`checks_docs.go` 一度 640 行触线，按域拆成 `checks_docs.go`(240) / `gosource.go`(111) / `docparse.go`(206) / `fixtures.go`(115)。
+- 同步两处失真的规格引用：`contracts.md` §2 与 `docs/spec/index.md` 的机器源表原本说这些步骤在 `scripts/verify.ps1`，改为点名步骤并注明检查体在 `internal/gate`（并补一句"写在注释里的 tag 不算字段"）。
+
+### Testing
+
+- [实测] 四条新检查红灯（真实仓库注入 → 点名 FAIL → 复原转绿）：`help.go` 里塞一个假退出码 → `exit-code drift: engine only: 9`；改名一个产物路径 → `artifact-path drift: engine only: …blueprint.txt; docs only: …plan.txt`；链上环节改名 → `the evidence chain no longer calls diffDeviceSnapshots`。
+- [实测] **两条改进方向的回归**（已写成单测）：注释里的 `json:"GhostField"` → 新检查 PASS（旧扫描会把它当字段）；改名链环节 + 留下提到原名的注释 → 新检查 FAIL 点名（旧步绿）。
+- [实测] `go build ./...`、`go build -tags legacyps ./...`、`go vet ./...`、`go test ./...` 全绿；`internal/gate` 覆盖率 80.1%（地板 70%）。
+- [实测] 双宿主全量门禁 **44/44 VERIFY_OK**（`powershell.exe` 5.1 与 `pwsh` 7）。
+
+### Status
+
+[OK] **Completed**

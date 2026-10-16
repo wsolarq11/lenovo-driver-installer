@@ -239,6 +239,10 @@ func checks() []check {
 		{"driver selection order is a total order", checkSelectionOrderTotal},
 		{"the automatic install set is backed by measurements only", checkAutomaticSetBackedByMeasurements},
 		{"software-versioned compare falls back to the measured device version", checkSoftwareVersionedFallback},
+		{"CLI exit codes match docs contract", checkCLIExitCodesMatchDocs},
+		{"CLI artifact paths match docs contract", checkCLIArtifactPathsMatchDocs},
+		{"the documented JSON contracts match the engine", checkJSONContractsMatchDocs},
+		{"evidence chain runs on real fixtures", checkEvidenceChainRunsOnFixtures},
 	}
 }
 

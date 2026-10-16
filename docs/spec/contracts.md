@@ -80,7 +80,7 @@ Go CLI 写出的 JSON：
 
 字段机器源是 `internal/app/export.go` 的 `guiExportPayload` / `guiDriverRow` 结构体 tag（`OsList` 元素取自 `model.OSListEntry`），由 `export_test.go` 的 golden 锁死；上面的示例是示意，字段增删必须同步两处，否则测试失败。`SourceAudit` 是规范字符串形式 `Category: Summary`。WPF 直接渲染此 JSON，并用 `-GuiInstallCodes` 回传选择。`NonMatchReason` 压缩为 `hardware ids X, Y, ... (N ids)`。
 
-本节的块与 §4 的回退 offer 块是人读副本，`scripts/verify.ps1` 的 `the documented JSON contracts match the engine` 把这两块的字段名集合与引擎 tag 集合逐个比对：只改引擎或只改文档都会让门禁失败。
+本节的块与 §4 的回退 offer 块是人读副本，门禁步骤 `the documented JSON contracts match the engine`（检查体在 `internal/gate`，由 `scripts/verify.ps1` 逐条调用）把这两块的字段名集合与引擎 tag 集合逐个比对：只改引擎或只改文档都会让门禁失败。引擎侧的 tag 由 `go/parser` 从 struct 声明读出——写在注释里的 tag 不算字段。
 
 ## 3. 退出码
 

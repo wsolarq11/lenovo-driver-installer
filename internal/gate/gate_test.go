@@ -321,3 +321,101 @@ func TestSoftwareVersionedFallbackRejectsMissingDeviceVersion(t *testing.T) {
 		t.Fatal("a software-versioned branch with no device fallback was not rejected")
 	}
 }
+
+// The four checks below pin a Go artifact against a document or against the
+// tests that use it. Each red-light pins a defect the move fixed: a comment must
+// no longer be able to enter the artifact's field set, or stand in for a call.
+
+// A doc comment that spells a json tag is prose about the shape, not a field.
+// The PowerShell scan read `json:"GhostField"` out of the comment and compared
+// it against contracts.md as though the engine had declared it.
+func TestJSONContractIgnoresTagInComment(t *testing.T) {
+	fields := ""
+	for i := 0; i < 25; i++ {
+		fields += "\tField" + string(rune('A'+i)) + " string `json:\"Field" + string(rune('A'+i)) + "\"`\n"
+	}
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/app/export.go": "package app\n\n" +
+			"// The shape is `json:\"GhostField\"` when set.\n" +
+			"type payload struct {\n" + fields + "}\n",
+		"internal/model/model.go":  "package model\n\ntype OSListEntry struct {\n\tOSID string `json:\"OSID\"`\n}\n",
+		"internal/app/rollback.go": "package app\n\ntype offer struct {\n\tState string `json:\"State\"`\n}\n",
+		// The documented block carries exactly the real fields, no GhostField.
+		"docs/spec/contracts.md": "```json\n" + docBlock(fields) + "```\n\n```json\n{\n  \"State\": \"...\"\n}\n```\n",
+	})
+	err := checkErr(t, ctx, "the documented JSON contracts match the engine")
+	if err != nil && strings.Contains(err.Error(), "GhostField") {
+		t.Fatalf("a json tag written in a comment entered the engine's field set: %v", err)
+	}
+}
+
+// docBlock renders the same fields as a JSON object body, so the fixture's two
+// sides agree on everything but the commented ghost.
+func docBlock(fields string) string {
+	var names []string
+	for _, line := range strings.Split(fields, "\n") {
+		idx := strings.Index(line, `json:"`)
+		if idx < 0 {
+			continue
+		}
+		rest := line[idx+len(`json:"`):]
+		names = append(names, rest[:strings.Index(rest, `"`)])
+	}
+	var b strings.Builder
+	b.WriteString("{\n")
+	for _, name := range names {
+		b.WriteString("  \"" + name + "\": \"...\",\n")
+	}
+	b.WriteString("  \"OSID\": \"...\"\n}\n")
+	return b.String()
+}
+
+// A renamed chain call must not be satisfied by a comment that still names the
+// old function. The PowerShell scan matched the name anywhere in the file text.
+func TestEvidenceChainRejectsRenamedCallWithComment(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/app/chain.go": "package app\n\n" +
+			"func ParseQuickFix() {}\nfunc filterDriverRows() {}\nfunc SelectLatestDrivers() {}\n" +
+			"func TestDriverApplicable() {}\nfunc ResolveLocalDriverVersion() {}\n" +
+			"func CompareDriverStatus() {}\nfunc partitionViewDrivers() {}\nfunc WriteHistoryRecord() {}\n" +
+			"func diffDeviceSnapshots() {}\n",
+		"internal/app/evidence_chain_test.go": "package app\n\nimport \"testing\"\n\n" +
+			"// diffDeviceSnapshots is exercised via renamed.\n" +
+			"func renamed() {}\n\n" +
+			"func TestChain(t *testing.T) {\n\tParseQuickFix()\n\tfilterDriverRows()\n" +
+			"\tSelectLatestDrivers()\n\tTestDriverApplicable()\n\tResolveLocalDriverVersion()\n" +
+			"\tCompareDriverStatus()\n\tpartitionViewDrivers()\n\tWriteHistoryRecord()\n}\n",
+		"internal/app/fixtures_test.go": "package app\n\nimport \"testing\"\n\n" +
+			"func TestFixtures(t *testing.T) {\n\t_ = \"testdata/quickfix_real_82jq.json\"\n" +
+			"\t_ = \"testdata/local_devices_82jq.json\"\n\t_ = \"testdata/local_software_82jq.json\"\n}\n",
+		"internal/app/testdata/quickfix_real_82jq.json":  strings.Repeat("x", 4096),
+		"internal/app/testdata/local_devices_82jq.json":  strings.Repeat("x", 4096),
+		"internal/app/testdata/local_software_82jq.json": strings.Repeat("x", 4096),
+	})
+	err := checkErr(t, ctx, "evidence chain runs on real fixtures")
+	if err == nil {
+		t.Fatal("a comment naming the removed chain call satisfied the guard")
+	}
+	if !strings.Contains(err.Error(), "diffDeviceSnapshots") {
+		t.Fatalf("error should name the dropped link, got: %v", err)
+	}
+}
+
+// The exit-code block is a constant in the help text. A comment above it that
+// quotes the anchor must not be read as the block, which is how the old scan
+// could be poisoned into comparing the wrong numbers.
+func TestExitCodesIgnoreCommentQuotingTheAnchor(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/app/help.go": "package app\n\n" +
+			"// Exit codes:\n//   9  not a real code\n\n" +
+			"const helpText = `Usage:\n  lenovo-driver\n\nExit codes:\n  0  ok\n  2  bad args\n`\n",
+		"docs/spec/contracts.md": "| `0` | ok |\n| `2` | bad args |\n",
+	})
+	err := checkErr(t, ctx, "CLI exit codes match docs contract")
+	if err != nil && strings.Contains(err.Error(), "9") {
+		t.Fatalf("a comment quoting the anchor was read as the exit-code block: %v", err)
+	}
+}
