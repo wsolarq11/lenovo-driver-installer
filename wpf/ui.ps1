@@ -167,7 +167,7 @@ function New-LenovoDriverWindow {
 
     Add-DriverGridColumns -Grid $script:Ui['DriverGrid']
     $script:Ui['RefreshButton'].Add_Click({
-        Start-LenovoDriverJob -Export -TargetOsId (Get-SelectedOsId)
+        Start-LenovoDriverJob -Export -TargetOsId (Get-SelectedOsId) -Model $Model -DownloadDir $DownloadDir
     })
     $script:Ui['InstallUpdatesButton'].Add_Click({
         Start-InstallAction -Kind Updates

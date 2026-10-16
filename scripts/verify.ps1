@@ -47,7 +47,23 @@ function Assert-Step {
 
 . (Join-Path $PSScriptRoot 'lib\go-toolchain.ps1')
 . (Join-Path $PSScriptRoot 'fix-bom.ps1')
-$GoExe = Resolve-GoExe -GoExe $GoExe
+
+# Go discovery is the one prerequisite every later step stands on, so it runs as
+# a named step: a missing toolchain used to kill the gate with a raw throw
+# before any step had run, leaving no step name and no failure count. The gate
+# then stops instead of cascading "term '' is not recognized" through every
+# step that invokes the toolchain.
+$resolvedGoExe = ''
+Assert-Step 'Go toolchain is discoverable' {
+    $script:resolvedGoExe = Resolve-GoExe -GoExe $GoExe
+}
+if (-not $resolvedGoExe) {
+    Write-Host 'The gate stopped: no Go toolchain to run its steps with.'
+    Write-Host "Verify summary: $total steps, $($failed.Count) failed"
+    Write-Host ("Failed: {0}" -f ($failed -join ', '))
+    exit 1
+}
+$GoExe = $resolvedGoExe
 
 # -FixBom is an explicit local convenience: restore drifted BOM before the gate
 # runs. CI never passes this switch, so a BOM-less non-ASCII ps1 fails the gate

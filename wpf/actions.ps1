@@ -27,7 +27,7 @@
         return
     }
     $codes = @($targets | ForEach-Object { $_.DriverCode }) -join ','
-    Start-LenovoDriverJob -Install -DownloadOnly:$DownloadOnly -TargetOsId (Get-DisplayedOsId) -InstallCodes $codes
+    Start-LenovoDriverJob -Install -DownloadOnly:$DownloadOnly -TargetOsId (Get-DisplayedOsId) -InstallCodes $codes -Model $Model -DownloadDir $DownloadDir
 }
 
 function Get-RollbackOfferPath {
@@ -62,5 +62,5 @@ function Show-RollbackOffers {
         return
     }
     $codes = @($offers | ForEach-Object { $_.DriverCode }) -join ','
-    Start-LenovoDriverJob -Rollback -RollbackCodes $codes
+    Start-LenovoDriverJob -Rollback -RollbackCodes $codes -Model $Model -DownloadDir $DownloadDir
 }

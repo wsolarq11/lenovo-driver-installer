@@ -150,7 +150,14 @@ function Start-LenovoDriverJob {
         [switch]$Rollback,
         [string]$TargetOsId = '',
         [string]$InstallCodes = '',
-        [string]$RollbackCodes = ''
+        [string]$RollbackCodes = '',
+        # The entry script's -Model / -DownloadDir travel as parameters rather
+        # than being read from the caller's scope: this file is also dot-sourced
+        # on its own (the gate does it for the argument-quoting golden), where
+        # those variables do not exist and the engine would silently start
+        # without them.
+        [string]$Model = '',
+        [string]$DownloadDir = ''
     )
     if ($null -ne $script:WorkerProcess) {
         Add-GuiLog -Message '已有任务正在运行，请等待完成。'
@@ -194,7 +201,14 @@ function Start-LenovoDriverJob {
         $argsList += $RollbackCodes
     }
 
-    $script:WorkerMode = if ($Export) { 'Export' } elseif ($Rollback) { 'Rollback' } else { 'Install' }
+    # Every caller names its mode. The old fall-through default meant a future
+    # caller that forgot one would silently launch an install — the one action
+    # that changes machine state — so a missing mode fails loudly instead.
+    $script:WorkerMode =
+        if ($Export) { 'Export' }
+        elseif ($Rollback) { 'Rollback' }
+        elseif ($Install) { 'Install' }
+        else { throw 'Start-LenovoDriverJob needs a mode: -Export, -Install or -Rollback' }
     $script:WorkerStdoutPath = Join-Path $env:TEMP ('lenovo_gui_out_{0}.txt' -f ([guid]::NewGuid().ToString('N')))
     $script:WorkerStderrPath = Join-Path $env:TEMP ('lenovo_gui_err_{0}.txt' -f ([guid]::NewGuid().ToString('N')))
     $script:WorkerStdoutRead = 0

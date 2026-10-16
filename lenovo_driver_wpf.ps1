@@ -72,7 +72,7 @@ if ($WorkerSmoke) {
     }
     $window = New-LenovoDriverWindow
     $window.Hide()
-    Start-LenovoDriverJob -Export -TargetOsId '248'
+    Start-LenovoDriverJob -Export -TargetOsId '248' -Model $Model -DownloadDir $DownloadDir
     $smokeExportPath = $script:WorkerExportPath
     while ($null -ne $script:WorkerProcess) {
         Start-Sleep -Milliseconds 300
@@ -108,7 +108,7 @@ if (-not $NoElevation -and -not (Test-IsAdministrator)) {
 $window = New-LenovoDriverWindow
 # 启动后自动执行一次机器识别（Export）。否则标题栏会停在 XAML 默认的“正在识别机器...”，
 # 因为没有任何后台任务去更新 MachineText。
-$window.Add_Loaded({ Start-LenovoDriverJob -Export })
+$window.Add_Loaded({ Start-LenovoDriverJob -Export -Model $Model -DownloadDir $DownloadDir })
 $app = New-Object System.Windows.Application
 $app.ShutdownMode = [System.Windows.ShutdownMode]::OnMainWindowClose
 $app.Run($window) | Out-Null
