@@ -8,14 +8,6 @@ import (
 	"lenovo-driver/internal/model"
 )
 
-func TestDeleteDriverArgs(t *testing.T) {
-	got := deleteDriverArgs("oem42.inf")
-	want := []string{"/delete-driver", "oem42.inf", "/uninstall", "/force"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("deleteDriverArgs = %#v, want %#v", got, want)
-	}
-}
-
 func TestRollbackErrorClassification(t *testing.T) {
 	noBackup := &RollbackError{Code: 259}
 	if !noBackup.NoBackup() {

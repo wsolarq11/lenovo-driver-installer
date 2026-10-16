@@ -286,7 +286,6 @@ type ImportRecord struct {
 	PackageDir string
 	LogPath    string
 	LineNumber int
-	HeaderKind string
 }
 
 // SelectionResult is the parsed manual selection result.

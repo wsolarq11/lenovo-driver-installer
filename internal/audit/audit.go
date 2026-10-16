@@ -68,15 +68,14 @@ func ResolveExternalDriverSourceLabel(driver *model.Driver, alternateSourceMap m
 
 type sectionStartRule struct {
 	re            *regexp.Regexp
-	kind          string
 	updateCurrent bool
 }
 
 var sectionStartRules = []sectionStartRule{
-	{re: reSectionImport, kind: "Import"},
-	{re: reSectionDriverInstall, kind: "DriverInstall"},
-	{re: reSectionDeviceInstall, kind: "DeviceInstall"},
-	{re: reSectionStoDvsImport, kind: "Import", updateCurrent: true},
+	{re: reSectionImport},
+	{re: reSectionDriverInstall},
+	{re: reSectionDeviceInstall},
+	{re: reSectionStoDvsImport, updateCurrent: true},
 }
 
 // fieldExtractRule maps one setupapi log line shape to a field setter. Each
@@ -172,7 +171,6 @@ func ConvertFromImportLogText(lines []string, logPath string) []model.ImportReco
 					SourcePath: strings.TrimSpace(submatch(rule.re, trimmed, "source")),
 					LogPath:    logPath,
 					LineNumber: lineNum,
-					HeaderKind: rule.kind,
 				}
 				section.InfName = pathutil.Base(section.SourcePath)
 				isNewSection = true

@@ -740,6 +740,28 @@ Assert-Step 'the automatic install set is backed by measurements only' {
     }
 }
 
+Assert-Step 'package cleanup is never presented as rollback' {
+    # Invariant 6: rollback is device-level — DiRollbackDriver, or reinstalling
+    # the previous INF. Deleting the published package by INF does not put a
+    # device back on its previous driver and can leave it with none until PnP
+    # re-enumerates, so no code may carry that argument vector. The dead
+    # primitive that held it was removed; this step keeps it gone rather than
+    # trusting that nobody re-adds it. Tests are scanned too: a test that pins
+    # the vector is exactly how the primitive comes back.
+    $hits = Get-ChildItem -Path 'internal' -Recurse -Filter *.go |
+        Select-String -Pattern '"/delete-driver"' -SimpleMatch
+    if ($hits) {
+        $files = ($hits | ForEach-Object { "$($_.Path):$($_.LineNumber)" }) -join ', '
+        throw "engine code carries the driver-package delete vector ($files); package cleanup is not rollback and must not exist as an action"
+    }
+    # Refusing package cleanup is only meaningful while a real device-level
+    # rollback path exists, so pin that side too.
+    $native = Read-GateText (Join-Path $repoRoot 'internal\install\rollback_native_windows.go')
+    if ($native -notmatch 'DiRollbackDriver') {
+        throw 'the device-level rollback call is gone; refusing package cleanup guards nothing'
+    }
+}
+
 Assert-Step 'software-versioned compare falls back to the measured device version' {
     # Not installed is the only status the automatic set acts on, so what
     # produces it has to rest on measurement. A software-versioned driver whose
@@ -839,7 +861,7 @@ Assert-Step 'untracked artifact hygiene' {
     $untracked = git status --porcelain | Where-Object { $_ -match '^\?\?' }
     foreach ($line in @($untracked)) {
         $path = ($line -replace '^\?\?\s+', '').Trim('"')
-        if ($path -match '^(\.trellis/tasks/08-26-go-migration/|\.github/|scripts/)') {
+        if ($path -match '^(\.github/|scripts/)') {
             continue
         }
         if ($path -match '\.(go|md|ps1|bat|json)$' -or $path -eq 'go.mod' -or $path -eq '.gitignore' -or $path -eq '.gitattributes') {
