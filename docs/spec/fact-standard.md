@@ -36,12 +36,14 @@
 | 选择安装 | 有界面选择 | 人工下载 | 数字选择 |
 | 官方 MD5 | 后端返回 | 否 | 使用 |
 | Authenticode 签名 | 官方包自带 | 是 | 使用（WinVerifyTrust） |
-| 官方安装参数 | 后端返回 | 有 `InstallCode` | 使用 `InstallCode` |
+| 官方安装参数 | 后端返回 | 有 `InstallCode` | 仅记录，不据以静默安装（`.exe` 一律交互；见下） |
 | 安装历史/来源记录 | 有限日志 | 否 | 是（CSV 记录 OSID） |
 | 超时/回退保护 | 内部实现，不透明 | 否 | 是 |
 | 第三方万能驱动 | 否 | 否 | 否 |
 
 QuickFix 适合普通用户“当前系统一键匹配”，但它是 GUI 黑盒，不公开可审计的 dry-run 和安装来源记录；官网驱动页面适合人工查看、按需选择，但不自动对比本机驱动、不提供批量安装。
+
+官方返回的安装参数（`InstallCode` / `Parameter`）只作为**记录**保留在驱动行里，生产路径不据以构造静默安装命令：`.inf`/`.zip`/`.cab` 走 `pnputil`/`DiInstallDriverW`（本身无 GUI），`.exe` 一律交互。理由见 `internal/install/installer_family.go`——82JQ 上没有任何 `.exe` 静默开关被端到端验证过，厂商声明的 Parameter 列已被证伪（AMD 声明 `-QuietInstall`，其二进制里没有该字面量）。
 
 ## 3. 推荐工作流
 

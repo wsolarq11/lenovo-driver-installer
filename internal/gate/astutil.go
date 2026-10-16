@@ -143,31 +143,7 @@ func callsOn(n ast.Node, recv, method string) bool {
 // `var (...)` and `const (...)` blocks too, which a line-anchored pattern reads
 // as neither a var nor a const and therefore never sees.
 func hasTopLevelName(f *ast.File, name string) bool {
-	found := false
-	for _, decl := range f.Decls {
-		switch d := decl.(type) {
-		case *ast.FuncDecl:
-			if d.Recv == nil && d.Name.Name == name {
-				found = true
-			}
-		case *ast.GenDecl:
-			for _, spec := range d.Specs {
-				switch s := spec.(type) {
-				case *ast.TypeSpec:
-					if s.Name.Name == name {
-						found = true
-					}
-				case *ast.ValueSpec:
-					for _, id := range s.Names {
-						if id.Name == name {
-							found = true
-						}
-					}
-				}
-			}
-		}
-	}
-	return found
+	return declaredNames(f)[name]
 }
 
 // ifStmts returns every if statement in a node.
@@ -255,26 +231,25 @@ func switchCases(block *ast.BlockStmt) []caseClause {
 	return out
 }
 
-// assignsIdent reports whether the block assigns to a bare identifier, which is
-// how a partition appends to its result slice.
-func assignsIdent(block *ast.BlockStmt, name string) bool {
-	found := false
-	if block == nil {
-		return false
+// calleeIdent returns the identifier a call names, whether the call is spelled
+// bare or through a receiver or package qualifier. The identifier is returned
+// rather than its name because a type check resolves it to the object it names.
+func calleeIdent(call *ast.CallExpr) *ast.Ident {
+	switch fun := call.Fun.(type) {
+	case *ast.Ident:
+		return fun
+	case *ast.SelectorExpr:
+		return fun.Sel
 	}
-	ast.Inspect(block, func(n ast.Node) bool {
-		assign, ok := n.(*ast.AssignStmt)
-		if !ok {
-			return true
-		}
-		for _, lhs := range assign.Lhs {
-			if id, ok := lhs.(*ast.Ident); ok && id.Name == name {
-				found = true
-			}
-		}
-		return !found
-	})
-	return found
+	return nil
+}
+
+// calleeName is the same query for the callers that only need the spelling.
+func calleeName(call *ast.CallExpr) string {
+	if id := calleeIdent(call); id != nil {
+		return id.Name
+	}
+	return ""
 }
 
 // hasTypeNamed reports whether a signature mentions the named type in its

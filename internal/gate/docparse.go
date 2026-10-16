@@ -6,6 +6,7 @@ package gate
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -68,6 +69,47 @@ func sectionAfter(text, anchor string) (string, bool) {
 		return strings.Join(body, "\n"), true
 	}
 	return "", false
+}
+
+// parenthesised returns the text inside the first full-width （...） that
+// follows the anchor. These documents list a claim's subjects in that form
+// ("which packages may do X"), so it is where a claim's name list is read.
+func parenthesised(text, anchor string) (string, bool) {
+	idx := strings.Index(text, anchor)
+	if idx < 0 {
+		return "", false
+	}
+	rest := text[idx:]
+	open := strings.Index(rest, "（")
+	if open < 0 {
+		return "", false
+	}
+	rest = rest[open+len("（"):]
+	close := strings.Index(rest, "）")
+	if close < 0 {
+		return "", false
+	}
+	return rest[:close], true
+}
+
+// backtickedNames returns the spans a text wraps in backticks, in order. A
+// backtick is how these documents mark a literal name as opposed to prose, so
+// it is the right reader for "which names does this sentence claim".
+func backtickedNames(text string) []string {
+	var out []string
+	for {
+		start := strings.IndexByte(text, '`')
+		if start < 0 {
+			return out
+		}
+		rest := text[start+1:]
+		end := strings.IndexByte(rest, '`')
+		if end < 0 {
+			return out
+		}
+		out = append(out, rest[:end])
+		text = rest[end+1:]
+	}
 }
 
 // numbersAtLineStart returns the single-digit codes a block lists at the start
@@ -191,16 +233,7 @@ func compareSets(what string, want, got map[string]bool) error {
 }
 
 func dedupe(values []string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, v := range values {
-		if seen[v] {
-			continue
-		}
-		seen[v] = true
-		out = append(out, v)
-	}
-	return sorted(out)
+	return slices.Compact(sorted(values))
 }
 
 // allCalls returns every call expression in a file.

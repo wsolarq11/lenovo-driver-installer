@@ -203,8 +203,6 @@ type Device struct {
 	ImportLine          int
 	ImportKind          string
 
-	// StatusFlags is the raw CM_Get_DevNode_Status status bitmask.
-	StatusFlags uint32
 	// ProblemNumber is the Windows device problem code; 0 means no problem.
 	ProblemNumber int
 }

@@ -20,18 +20,6 @@ func allCalls(f *ast.File) []*ast.CallExpr {
 	return out
 }
 
-// calleeName returns the name a call names, whether bare or through a receiver
-// or package qualifier.
-func calleeName(call *ast.CallExpr) string {
-	switch fun := call.Fun.(type) {
-	case *ast.Ident:
-		return fun.Name
-	case *ast.SelectorExpr:
-		return fun.Sel.Name
-	}
-	return ""
-}
-
 // testdataFixtures returns the fixture filenames the test sources reference.
 // Both spellings a test can use are read: a literal path containing "testdata/"
 // and a filepath.Join whose arguments spell the directory and the file

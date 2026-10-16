@@ -953,3 +953,42 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed**
+
+---
+
+## Session: 全仓根本性整洁（死码、重复真相、规格漂移，44 → 45 步）
+
+**Branch**: `chore/repo-entropy-sweep`
+
+### Main Changes
+
+- **死码与死字段**（`internal/gate` 内的整洁 + 一个模型字段）：
+  - 删 `astutil.go` 的 `assignsIdent`——全仓零引用，只剩自己的定义。
+  - `calleeIdent`（返回 `*ast.Ident`，给类型检查解析用）与 `calleeName`（只要名字）曾是两份各自 `switch call.Fun` 的重复实现，合并为 `calleeName` 委托 `calleeIdent`，两个函数移进 `astutil.go` 与其余 AST 查询同处。
+  - `contains`（`checks.go`）与 `toSet`（`docparse.go`）语义重复，`contains` 删掉，调用点改用 `slices.Contains`。
+  - `sorted` / `dedupe` / `selectorNamesAssigned` / 目录遍历的排序改用标准库 `slices.Sort` / `slices.Clone` / `slices.Compact`（go 1.27 可用），删掉 `sort` 导入。`dedupe` 现在是 `slices.Compact(sorted(v))`，从 12 行变 3 行。
+  - **`model.Device.StatusFlags` 删除**。它是只写不读字段：`internal/inventory/native_windows.go` 的 `nativeDevNodeStatus` 从 `CM_Get_DevNode_Status` 填它，全仓无任何读取点，也不在任何产物/测试里。与 P1 删掉的 `HeaderKind` 同类。`nativeDevNodeStatus` 相应改为只返回 problem code，注释写明"同一个调用填出的状态位掩码被丢弃：无人消费它，留着只会诱使读者去信任一个没有规则检查的值"。
+  - **反例（保留）**：`model.Driver.InstallCode` / `InstallParameter` 一度疑似死字段，核查后**不是**——`model.Driver` 经 `driverListCache` 的逃生缓存 JSON 往返，这两个字段保住原始 API 记录，必须留。
+- **`declaredNames` 语义收紧**：它原先把**每个** `*ast.FuncDecl` 都记为包级名字，包括带接收者的方法。方法名不是包级名字（只能经接收者到达，从不裸写），`hasTopLevelName` 委托它后会把方法名当成"该文件声明了这个名字"。已改为跳过 `d.Recv != nil`，并在注释里写明这条区分。
+- **8 处规格/文档漂移修正**（每条都独立复核过）：
+  1. `docs/spec/architecture.md` §2.1 把 `api` 从"确定性包"移出，单列"联网包"（`api`、`download`）——`api` import `net/http` + `net/url`，与"不碰网络"直接矛盾。
+  2. 同文件 §6 的确定性逻辑清单同步去掉 `internal/api`。
+  3. `docs/howto/run.md` 的 `a` 由"安装全部适用驱动"改为"自动安装集（`Update` + `Not installed`）"，并点名 `Local newer`/`Up to date`/`Not applicable` 不在其中。
+  4. 同文件 WPF 按钮文案对齐真实 XAML：`安装需更新项 (a)`，并补一句 (a) 装的不是"全部可安装项"。
+  5. `docs/spec/fact-standard.md` 的"官方安装参数"一行原称本项目"使用 `InstallCode`"——生产路径无任何消费者（`.exe` 一律交互），改为"仅记录，不据以静默安装"，并补一段说明厂商 Parameter 列已被证伪。
+  6. `docs/howto/develop.md` 覆盖率下限清单补 `gate` 70。
+  7. 同文件内循环命令 `go fmt -l` 改为真实的 `gofmt -l`（`dev.ps1` 调的是 `gofmt.exe`）。
+  8. `README.md` 维护模式条目：`RolledBack` 并非只在"问题码恢复且版本已变"时记——需重启与核验不可用两种情形也记 `RolledBack`，只是带 caveat；改为写明这条区分。
+- **新增第 45 条门禁步 `the architecture doc names the network boundary the imports show`**。上面第 1 条漂移之所以能存在，是因为**没有任何东西**把"规格说哪些包联网"和"导入图显示哪些包联网"对上：代码侧有零网络导入步，文档侧没人管。新步做**集合相等**双向比对——多一个少一个都红。文档侧读 `architecture.md` 里 `**联网包**` 那一行 `（...）` 内的反引号名字（文档是文本，正则是对的读法）；代码侧从 AST 导入块收集真正 import `net/http`/`net/url` 的 `internal/*` 包（按声明读，注释不算）。
+
+### Testing
+
+- [实测] 新步红灯：把 `architecture.md` 的联网包名从 `api` 改成 `model` → `network-boundary drift: engine only: model; docs only: api`，两侧都点名；复原转绿。
+- [实测] 新步双向单测（`gate_test.go`）：漏报一个真的联网包 → FAIL 点名 `download`；文档多授予一个不联网的包 → FAIL 点名 `model`。这正是漂移的实际形状（`api` 被列进确定性包）对应的两个方向。
+- [实测] `go build ./...`、`go build -tags legacyps ./...`、`go vet ./...`、`gofmt -l`（无输出）、`go test ./...` 全绿；`internal/gate` 覆盖率 81.7%（地板 70%）。
+- [实测] 全仓死码复扫：`internal/` + `cmd/` 内已无零引用函数（剩下的"零引用"全是测试入口，由测试运行器调用）。
+- [实测] 双宿主全量门禁 **45/45 VERIFY_OK**（`powershell.exe` 5.1 与 `pwsh` 7）。
+
+### Status
+
+[OK] **Completed**

@@ -5,7 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -205,7 +205,7 @@ func checkTestsUseTestConstructor(ctx *Context) error {
 	}
 	assigned := selectorNamesAssigned(helper.ast)
 	for _, artifact := range []string{"LogPath", "PlanPath", "HistoryPath", "driverListCacheDir"} {
-		if !contains(assigned, artifact) {
+		if !slices.Contains(assigned, artifact) {
 			return fmt.Errorf("newTestApp must redirect %s into t.TempDir()", artifact)
 		}
 	}
@@ -213,27 +213,6 @@ func checkTestsUseTestConstructor(ctx *Context) error {
 		return fmt.Errorf("newTestApp must use t.TempDir(); the redirects could point anywhere")
 	}
 	return nil
-}
-
-// calleeIdent returns the identifier a call names, whether the call is spelled
-// bare or through a package qualifier.
-func calleeIdent(call *ast.CallExpr) *ast.Ident {
-	switch fun := call.Fun.(type) {
-	case *ast.Ident:
-		return fun
-	case *ast.SelectorExpr:
-		return fun.Sel
-	}
-	return nil
-}
-
-func contains(values []string, want string) bool {
-	for _, v := range values {
-		if v == want {
-			return true
-		}
-	}
-	return false
 }
 
 // mentions reports whether an identifier with the given name appears as a plain
@@ -310,7 +289,7 @@ func selectorNamesAssigned(f *ast.File) []string {
 		}
 		return true
 	})
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 

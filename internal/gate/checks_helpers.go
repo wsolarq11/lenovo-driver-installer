@@ -19,13 +19,16 @@ func positions[T ast.Node](ctx *Context, nodes []T) []string {
 }
 
 // declaredNames collects every package-level name a file declares, including
-// the specs inside grouped var and const blocks.
+// the specs inside grouped var and const blocks. A method's name is not a
+// package-level name: it is reached through a receiver, never spelled bare.
 func declaredNames(f *ast.File) map[string]bool {
 	out := map[string]bool{}
 	for _, decl := range f.Decls {
 		switch d := decl.(type) {
 		case *ast.FuncDecl:
-			out[d.Name.Name] = true
+			if d.Recv == nil {
+				out[d.Name.Name] = true
+			}
 		case *ast.GenDecl:
 			for _, spec := range d.Specs {
 				switch s := spec.(type) {

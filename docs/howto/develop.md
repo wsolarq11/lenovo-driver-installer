@@ -15,7 +15,7 @@
 
 ## 双环模型
 
-- **内循环**（`scripts/dev.ps1`）：日常迭代。按序跑 `go build ./...` → `go vet ./...` → `go fmt -l internal cmd`（有未格式化即失败）→ `go test ./...` → `go build -o bin\lenovo-driver.exe ./cmd\lenovo-driver`（`-SkipBin` 跳过）。全过打印 `DEV_OK`，否则打印失败步骤名退出 `1`。
+- **内循环**（`scripts/dev.ps1`）：日常迭代。按序跑 `go build ./...` → `go vet ./...` → `gofmt -l internal cmd`（有未格式化即失败）→ `go test ./...` → `go build -o bin\lenovo-driver.exe ./cmd\lenovo-driver`（`-SkipBin` 跳过）。全过打印 `DEV_OK`，否则打印失败步骤名退出 `1`。
 - **验收门禁**（`scripts/verify.ps1`）：CI 权威离线门禁。除内循环外还检查覆盖率下限、WPF 层 PowerShell 5.1 解析/BOM、CLI smoke、git-diff 卫生、未跟踪产物卫生，最后打印 `VERIFY_OK`。
 
 `go` 工具链发现共享：`scripts/lib/go-toolchain.ps1` 提供 `Resolve-GoExe`，`dev.ps1` 与 `verify.ps1` 都用它，查找规则不漂移；两者都接受 `-GoExe <path>` 覆盖。
@@ -24,13 +24,13 @@
 
 - Go build/test/vet/gofmt；`legacyps` tag 的 build/vet。
 - 生产 Go 文件 ≤ 500 行。
-- 覆盖率下限（`inventory` 8 / `app` 22 / `install` 45 / `compare` 50 / `audit` 50 / `download` 35 / `plan` 65 / `api` 55）。
+- 覆盖率下限（`inventory` 8 / `app` 22 / `install` 45 / `compare` 50 / `audit` 50 / `download` 35 / `plan` 65 / `api` 55 / `gate` 70）。
 - 含非 ASCII 的 `.ps1` 必须 UTF-8 BOM（Windows PowerShell 5.1 要求）；`verify.ps1` 检测即失败（CI 阻断）、`-FixBom` 显式修复，语法解析覆盖全部 `.ps1`。
 - 宿主无关读取：仓库内每个 `.ps1` 的 `Get-Content` 必须显式 `-Encoding`（门禁自身统一走 `Read-GateText`）。5.1 用 ANSI 代码页解码无 BOM 的 UTF-8，负向断言会在错宿主下**静默放过**——该步审计的是读取方而不是文件，注入一个裸 `Get-Content -Raw` 即红。
 - WPF 参数引用共享 golden（`internal/app/testdata/windows_argument_quoting.json`）。
 - 旧 PowerShell 引擎文件已删除。
 - CLI 互斥参数组合退出码 `2` 且错误不进 stdout。
-- 零网络导入：`install/compare/inventory/plan/audit` 不得 import `net/http`/`net/url`。
+- 零网络导入：`install/compare/inventory/plan/audit` 不得 import `net/http`/`net/url`；`architecture.md` §2.1 声明的联网包集合必须等于实际 import 网络库的包集合。
 - `git diff --check` + 未跟踪产物卫生。
 
 ## 真机 smoke（可选，不在离线门禁内）

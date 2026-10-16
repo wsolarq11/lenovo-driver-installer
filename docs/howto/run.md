@@ -27,7 +27,7 @@ install_lenovo_drivers.bat
 正常运行时先打印 `y` / `a` 两套驱动集（驱动 code、名称、远端版本、本地版本、状态），再提示选择：
 
 - `y` 只安装 `Update` 驱动。
-- `a` 安装全部适用驱动。
+- `a` 安装自动安装集（`Update` + `Not installed`）——`Local newer`、`Up to date`、`Not applicable` 不在其中（见 `docs/spec/invariants.md` §3）。
 - `s` 手工选编号，如 `1,3,5`。
 - `t` 在支持的 OS 列表间切换。
 - `n` 取消。
@@ -57,7 +57,7 @@ install_lenovo_drivers.bat -LatestAcrossOS
 install_lenovo_drivers_wpf.bat
 ```
 
-WPF 窗口通过引擎加载官方驱动列表，显示相同的 `Update` / `Up to date` / `Not installed` / `Local newer` / `Not applicable` 状态与来源审计标签。按钮对应 CLI 选择：刷新列表、安装更新项（y）、安装全部（a）、安装选中项、仅下载选中项。启动前先构建引擎：`go build -o bin\lenovo-driver.exe .\cmd\lenovo-driver`。
+WPF 窗口通过引擎加载官方驱动列表，显示相同的 `Update` / `Up to date` / `Not installed` / `Local newer` / `Not applicable` 状态与来源审计标签。按钮对应 CLI 选择：刷新驱动列表、安装更新项 (y)、安装需更新项 (a)、安装选中项、仅下载选中项、打开计划文件。其中 (a) 装的是 CLI 的自动安装集（`Update` + `Not installed`），不是「全部可安装项」。启动前先构建引擎：`go build -o bin\lenovo-driver.exe .\cmd\lenovo-driver`。
 
 ## 参数
 

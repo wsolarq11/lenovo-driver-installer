@@ -4,7 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -39,7 +39,7 @@ func findFixture(root, name string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out, nil
 }
 
@@ -55,8 +55,8 @@ func statSize(r *Repo, rel string) (int64, error) {
 // sorted returns a sorted copy, so a failure message lists its findings in a
 // stable order rather than in map-iteration order.
 func sorted(values []string) []string {
-	out := append([]string(nil), values...)
-	sort.Strings(out)
+	out := slices.Clone(values)
+	slices.Sort(out)
 	return out
 }
 
@@ -88,6 +88,6 @@ func (r *Repo) projectPs1Files() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out, nil
 }

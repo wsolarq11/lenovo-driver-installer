@@ -39,4 +39,4 @@ install_lenovo_drivers_wpf.bat
 
 部署形态是**个人单机审计脚本**：CLI 引擎零遥测、无隐藏联网、无后台服务。签名、支持矩阵、安装器/卸载器、升级、遥测、品牌合规等产品尾保持冻结，理由见 `docs/decisions/distribution-frozen.md`。六条不变量见 `AGENTS.md`（清单权威）与 `docs/spec/invariants.md`（语义展开）。
 
-进入纯维护模式（不再加特性）需同时满足：`scripts/verify.ps1` 全绿（含零网络导入检查）；WORM 账本哈希链可证伪篡改；回退只在“问题码恢复且驱动版本已变”时记 `RolledBack`，不记假恢复；分发问题保持冻结（D0–D5 未被重新决策推翻）。
+进入纯维护模式（不再加特性）需同时满足：`scripts/verify.ps1` 全绿（含零网络导入检查）；WORM 账本哈希链可证伪篡改；回退只在“问题码恢复且驱动版本已变”时记 `RolledBack (recovered)`，恢复未经核验的两种情形（需重启、核验不可用）在账本里显式带 caveat 而不是记成已恢复，未恢复记 `RollbackFailed`；分发问题保持冻结（D0–D5 未被重新决策推翻）。

@@ -169,6 +169,76 @@ func checkCLIArtifactPathsMatchDocs(ctx *Context) error {
 	return nil
 }
 
+// checkArchitectureNetworkBoundary holds architecture.md's claim about which
+// packages may reach the network against the import graph itself. The claim is
+// the human-readable half of invariant 1; the code half is pinned by the
+// zero-network check. They had drifted apart: the spec listed api among the
+// deterministic packages while api imports net/http and net/url. A reader
+// trusting the spec would have believed a network client was side-effect free.
+//
+// The comparison is a set equality, so both directions are caught: a package
+// that imports the network without being named, and a name the doc grants that
+// no longer imports it.
+func checkArchitectureNetworkBoundary(ctx *Context) error {
+	doc, err := ctx.Repo.readFile("docs/spec/architecture.md")
+	if err != nil {
+		return err
+	}
+	const anchor = "**联网包**"
+	line, ok := lineContaining(doc, anchor)
+	if !ok {
+		return fmt.Errorf("architecture.md no longer states which packages may touch the network; " +
+			"the boundary is unstated")
+	}
+	listed := parenthesisedNames(line)
+	if len(listed) == 0 {
+		return fmt.Errorf("architecture.md's network-boundary line names no package; the claim is unreadable")
+	}
+
+	actual := map[string]bool{}
+	for _, f := range ctx.Repo.prod() {
+		if !under(f.dir) {
+			continue
+		}
+		for _, spec := range f.ast.Imports {
+			path := strings.Trim(spec.Path.Value, `"`)
+			if path == "net/http" || path == "net/url" {
+				actual[strings.TrimPrefix(f.dir, "internal/")] = true
+			}
+		}
+	}
+	if len(actual) == 0 {
+		return fmt.Errorf("no production package imports the network; the boundary check has nothing to " +
+			"compare and would pass vacuously")
+	}
+	// compareSets labels its first argument "engine only" and its second
+	// "docs only", so the import graph is passed first: a package that imports
+	// the network without being named reads as "engine only", which is the
+	// direction that widens the boundary silently.
+	return compareSets("network-boundary", actual, toSet(listed))
+}
+
+// lineContaining returns the first line of text that contains the anchor.
+func lineContaining(text, anchor string) (string, bool) {
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, anchor) {
+			return line, true
+		}
+	}
+	return "", false
+}
+
+// parenthesisedNames returns the backticked names inside the first （...） that
+// follows the anchor. These documents list a claim's subjects that way, so it is
+// where a claim's name list is read.
+func parenthesisedNames(text string) []string {
+	inner, ok := parenthesised(text, "（")
+	if !ok {
+		return nil
+	}
+	return backtickedNames(inner)
+}
+
 // checkEvidenceChainRunsOnFixtures requires the end-to-end chain to call every
 // link, and requires each fixture a test reads to exist and, when it is recorded
 // machine data, to be large enough to be real. A renamed call used to satisfy

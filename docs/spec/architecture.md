@@ -35,8 +35,9 @@ WPF 只是表现壳：渲染 JSON 导出、启动后台 Go 进程、回传 `Driv
 
 ### 2.1 确定性边界（架构级约束）
 
-- **确定性包**（`api`、`compare`、`audit`、`plan`、`model`）：不碰网络、注册表、PnP、控制台、进程或文件 API。同输入同输出。
+- **确定性包**（`compare`、`audit`、`plan`、`model`）：不碰网络、注册表、PnP、控制台、进程或文件 API。同输入同输出。
 - **副作用包**（`app`、`download`、`install`、`inventory`）：系统副作用集中于此，是“确定性”与“外部世界”之间的唯一接口。
+- **联网包**（`api`、`download`）：`api` 是联想接口客户端（`net/http` + `net/url`），`download` 取文件；除这两个包外全仓不得 import 网络库，由门禁步骤钉住（见 `docs/spec/invariants.md` §1）。
 - **门禁包**（`gate`）：只读源码分析，只用 Go 标准库，绝不开进程。它需要的外部信息（依赖包的导出数据）由 `cmd/gatecheck` 这唯一的进程边界取得——把规则放在 `internal/gate` 而不是 PowerShell 里，是为了让每条规则由 `go/parser` + `go/types` 判定（名字解析到它真正指代的对象），而不是由正则匹配源码文本。
 - 运行时只派生到原生 Windows API 与联想官方接口，从不派生 PowerShell。
 
@@ -104,7 +105,7 @@ docs/                        本文档树
 
 ## 6. 开发边界
 
-- 确定性逻辑放 `internal/compare`、`internal/audit`、`internal/plan`、`internal/api`；副作用放 `internal/app`、`internal/install`、`internal/download`、`internal/inventory`。
+- 确定性逻辑放 `internal/compare`、`internal/audit`、`internal/plan`、`internal/model`；联网放 `internal/api`、`internal/download`；副作用放 `internal/app`、`internal/install`、`internal/inventory`。
 - 保留公开 CLI 参数、交互选择、退出码、缓存规则、安装器交互（`r`/`s`）。
 - 不新增第二个运行时语言入口点。
 - 任何行为变更必须更新测试并通过 `scripts/verify.ps1`。

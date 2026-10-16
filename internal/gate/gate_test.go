@@ -419,3 +419,40 @@ func TestExitCodesIgnoreCommentQuotingTheAnchor(t *testing.T) {
 		t.Fatalf("a comment quoting the anchor was read as the exit-code block: %v", err)
 	}
 }
+
+// The architecture doc's network-boundary line is the human half of invariant 1.
+// It drifted: api was listed as deterministic while api imports net/http. The
+// check compares the doc's name list against the import graph, so a package that
+// gains the network without being named is a red light, not a silent widening.
+func TestArchitectureNetworkBoundaryRejectsUnnamedImporter(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod":                    "module example.com/m\n\ngo 1.27\n",
+		"internal/api/client.go":    "package api\n\nimport \"net/http\"\n\nvar _ = http.Get\n",
+		"internal/download/get.go":  "package download\n\nimport \"net/http\"\n\nvar _ = http.Get\n",
+		"docs/spec/architecture.md": "- **联网包**（`api`）：`api` 是联想接口客户端。\n",
+	})
+	err := checkErr(t, ctx, "the architecture doc names the network boundary the imports show")
+	if err == nil {
+		t.Fatal("a network-importing package missing from the doc's boundary line was accepted")
+	}
+	if !strings.Contains(err.Error(), "download") {
+		t.Fatalf("error should name the unnamed importer, got: %v", err)
+	}
+}
+
+// The same check must catch the other direction: a name the doc grants the
+// network that no longer imports it. That is what the real drift looked like.
+func TestArchitectureNetworkBoundaryRejectsStaleGrant(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod":                    "module example.com/m\n\ngo 1.27\n",
+		"internal/api/client.go":    "package api\n\nimport \"net/http\"\n\nvar _ = http.Get\n",
+		"docs/spec/architecture.md": "- **联网包**（`api`、`model`）：只有 `api` 真的联网。\n",
+	})
+	err := checkErr(t, ctx, "the architecture doc names the network boundary the imports show")
+	if err == nil {
+		t.Fatal("a package the doc grants the network but which does not import it was accepted")
+	}
+	if !strings.Contains(err.Error(), "model") {
+		t.Fatalf("error should name the stale grant, got: %v", err)
+	}
+}

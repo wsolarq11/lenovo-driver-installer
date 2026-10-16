@@ -10,6 +10,7 @@
 
 - 约束：CLI 引擎零遥测、无隐藏联网、无后台服务。
 - 强制点：门禁步骤 `engine zero-network import (local side-effect packages)`——`internal/install`、`internal/compare`、`internal/inventory`、`internal/plan`、`internal/audit` 不得 import `net/http` / `net/url`，只有 `download` / `api` 能碰网络。运行时只派生到原生 Windows API 与联想官方接口，从不派生 PowerShell。该步骤的检查体在 `internal/gate`（由 `cmd/gatecheck` 驱动、`scripts/verify.ps1` 逐条调用），用 AST 判定导入而不是匹配源码文本。
+- 强制点：门禁步骤 `the architecture doc names the network boundary the imports show`——`docs/spec/architecture.md` §2.1 声明的联网包集合必须**等于**实际 import 网络库的包集合（双向比对，多一个少一个都红）。规格是给人读的那一半，代码是给编译器读的那一半，两边曾漂移：`architecture.md` 把 `api` 列进“确定性包”，而 `api` import `net/http`。
 
 ## 2. 证据优先
 
