@@ -178,3 +178,146 @@ func TestTestsUseTestConstructorRejectsBareNew(t *testing.T) {
 		t.Fatal("a test calling New directly was not rejected")
 	}
 }
+
+// The nine checks below were PowerShell regexes. Each red-light here pins the
+// defect the move fixed, so the check cannot quietly regress to reading text.
+
+// A comment that explains the rule must not be read as a breach of it. The
+// PowerShell step matched `!=` anywhere in the function body, so documenting the
+// allow-list tripped the gate.
+func TestAllowListIgnoresCommentMentioningNotEqual(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/model/model.go": "package model\n\ntype CompareStatus int\n\n" +
+			"const (\n\tStatusUpdate CompareStatus = iota\n\tStatusNotInstalled\n)\n\n" +
+			"func InAutomaticInstallSet(status CompareStatus) bool {\n" +
+			"\t// never widen this with a != comparison\n" +
+			"\treturn status == StatusUpdate || status == StatusNotInstalled\n}\n",
+		"internal/app/view.go": "package app\n\nimport \"example.com/m/internal/model\"\n\n" +
+			"func partition() {\n\tif model.InAutomaticInstallSet(0) {\n\t\treturn\n\t}\n}\n",
+		"internal/app/export.go": "package app\n\nimport \"example.com/m/internal/model\"\n\n" +
+			"type payload struct {\n\tIsApplicable bool\n}\n\n" +
+			"func export() payload {\n\treturn payload{IsApplicable: model.InAutomaticInstallSet(0)}\n}\n",
+		"internal/app/interactive.go": "package app\n\nfunc prompt() {}\n",
+		"wpf/window.xaml":             "<Window />\n",
+	})
+	if err := checkErr(t, ctx, "automatic install set excludes downgrade and no-op statuses"); err != nil {
+		t.Fatalf("a comment explaining the allow-list was read as a breach: %v", err)
+	}
+}
+
+// A commented-out declaration must not satisfy an existence guard. The
+// PowerShell step matched `func\s+TestX` anywhere in the file text, so a comment
+// naming a deleted test kept the rule looking guarded.
+func TestTestGuardIgnoresCommentNamingTheTest(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		// The branch itself is correct; only the test that guards it is gone,
+		// which is exactly the drift the comment used to hide.
+		"internal/model/model.go": "package model\n\ntype CompareStatus int\n\n" +
+			"const (\n\tStatusUnknown CompareStatus = iota\n\tStatusNotInstalled\n)\n\n" +
+			"const LocalVersionProvisioned = \"Provisioned\"\n",
+		"internal/compare/matching.go": "package compare\n\nimport \"example.com/m/internal/model\"\n\n" +
+			"func CompareDriverStatus(local string) model.CompareStatus {\n" +
+			"\tif local == model.LocalVersionProvisioned {\n" +
+			"\t\treturn model.StatusUnknown\n\t}\n" +
+			"\treturn model.StatusNotInstalled\n}\n",
+		"internal/app/evidence_chain_test.go": "package app\n\nimport \"testing\"\n\n" +
+			"// TestProvisionedIsNotAVersion lives here.\n" +
+			"func TestSomethingElse(t *testing.T) {}\n",
+	})
+	err := checkErr(t, ctx, "the provisioning placeholder never reaches a decision")
+	if err == nil {
+		t.Fatal("a comment naming the test satisfied the guard")
+	}
+	if !strings.Contains(err.Error(), "TestProvisionedIsNotAVersion") {
+		t.Fatalf("error should name the missing test, got: %v", err)
+	}
+}
+
+func TestSelectionOrderRejectsStableSort(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/compare/selection.go": "package compare\n\nimport \"sort\"\n\n" +
+			"type row struct{ PartID, DriverName, DriverCode string }\n\n" +
+			"func SelectLatestDrivers(rows []row) []row {\n" +
+			"\tselected := rows\n" +
+			"\tsort.SliceStable(selected, func(i, j int) bool { return selected[i].PartID < selected[j].PartID })\n" +
+			"\treturn selected\n}\n",
+		"internal/app/evidence_firmware_determinism_test.go": "package app\n\nimport \"testing\"\n\n" +
+			"func TestSelectionOrderIsDeterministic(t *testing.T) {}\n\n" +
+			"func TestFirmwareRowsAreDroppedUnlessRequested(t *testing.T) {}\n",
+	})
+	err := checkErr(t, ctx, "driver selection order is a total order")
+	if err == nil {
+		t.Fatal("a stable sort on a non-total key was not rejected")
+	}
+}
+
+func TestSilentDispatchRejectsSwitchTable(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/install/installer_family.go": "package install\n\n" +
+			"var familyMarkers = []string{\"Inno\"}\n\n" +
+			"func planSilentInstall() {}\n\n" +
+			"func switches() []string {\n\treturn []string{\"/S\"}\n}\n",
+	})
+	err := checkErr(t, ctx, "silent install dispatches on the package, not on the vendor column")
+	if err == nil {
+		t.Fatal("a silent switch table was not rejected")
+	}
+}
+
+func TestSilentMechanismRejectsBarePositionalEvidence(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod":                               "module example.com/m\n\ngo 1.27\n",
+		"internal/install/installer_family.go": "package install\n\nfunc SilentPlanFor() (bool, string) { return false, \"\" }\n",
+		"internal/app/install_silent.go": "package app\n\nimport \"example.com/m/internal/install\"\n\n" +
+			"func evidence() string {\n\t_, e := install.SilentPlanFor()\n\treturn e\n}\n",
+		"internal/app/install.go": "package app\n\n" +
+			"func record(a *App, silence string) {\n" +
+			"\ta.writeHistoryRecordChecked(\"Installed\", \"silent via \"+silence, silence, \"\")\n}\n\n" +
+			"func (a *App) writeHistoryRecordChecked(result, message, verifiedVersion, beforeVersion string) {}\n\n" +
+			"type App struct{}\n",
+	})
+	err := checkErr(t, ctx, "the silent mechanism reaches the ledger as prose, never as a version")
+	if err == nil {
+		t.Fatal("the evidence variable as a bare positional argument was not rejected")
+	}
+}
+
+func TestAutomaticSetEvidenceRejectsInference(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/model/model.go": "package model\n\ntype CompareStatus int\n\n" +
+			"const (\n\tStatusUpdate CompareStatus = iota\n\tStatusUpToDate\n\tStatusNotInstalled\n)\n\n" +
+			"func StatusEvidenceBasis(status CompareStatus) string {\n" +
+			"\tswitch status {\n\tcase StatusUpdate, StatusUpToDate, StatusNotInstalled:\n" +
+			"\t\treturn \"inference\"\n\tdefault:\n\t\treturn \"undetermined\"\n\t}\n}\n",
+		"internal/model/evidence_basis_test.go": "package model\n\nimport \"testing\"\n\n" +
+			"func TestAutomaticSetStatusesAreMeasured(t *testing.T) {}\n\n" +
+			"func TestNonFactStatusesStayOutOfTheAutomaticSet(t *testing.T) {}\n",
+	})
+	err := checkErr(t, ctx, "the automatic install set is backed by measurements only")
+	if err == nil {
+		t.Fatal("an inference basis for an automatic-set member was not rejected")
+	}
+}
+
+func TestSoftwareVersionedFallbackRejectsMissingDeviceVersion(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/compare/matching.go": "package compare\n\n" +
+			"func isSoftwareVersionedDriver(name string) bool { return true }\n\n" +
+			"func deviceVersionFrom(versions []string) string { return \"\" }\n\n" +
+			"func local(name string, versions []string) string {\n" +
+			"\tif isSoftwareVersionedDriver(name) {\n\t\treturn \"\"\n\t}\n" +
+			"\treturn deviceVersionFrom(versions)\n}\n",
+		"internal/compare/software_version_fallback_test.go": "package compare\n\nimport \"testing\"\n\n" +
+			"func TestSoftwareVersionedDriverFallsBackToMeasuredDeviceVersion(t *testing.T) {}\n",
+	})
+	err := checkErr(t, ctx, "software-versioned compare falls back to the measured device version")
+	if err == nil {
+		t.Fatal("a software-versioned branch with no device fallback was not rejected")
+	}
+}

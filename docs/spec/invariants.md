@@ -22,7 +22,7 @@
 - 自动安装集的成员资格是**显式白名单**，由 `model.InAutomaticInstallSet` 单点声明：只收 `Update` 与 `Not installed`。`Local newer`（装机即降级）与 `Up to date`（装了不起变化）被排除，`Not applicable`（硬件未检出）本就无关，`Unknown` 证据不足也不收。任何新增状态必须在这里表态，不许用宽松比较默认放行。
 - 排除只约束**无人值守的自动集**。处于这两类状态的驱动仍可被显式选中（交互 `s`、`-GuiInstallCodes`）——那是操作者的判断，不是工具的判断。
 - 强制点：`CM_Get_DevNode_Status` 问题码为 0 只表示未观察到问题，不证明功能正常；计划不把“无问题码”写成“正常”。来源审计的 provenance 归因是**推断**级（本机实测 `setupapi.*` 日志会轮转截断、历史导入行不可复现，无法事后对照 DriverStore ground truth），不得当事实展示。
-- 强制点（`scripts/verify.ps1`）：`InAutomaticInstallSet` 必须是 `==` 白名单，函数体出现 `!=` 即门禁失败；`view.go` 不得用宽松比较划分自动集；交互提示不得再宣称“all applicable”。真机证据：82JQ 修复前 `Applicable candidates: 11`，其中 9 个 `Local newer`（含 AMD VGA `30.0.14052.9003` → `27.20.15026.8004`、NVIDIA `31.0.15.4630` → `31.0.15.2799`），按 `a` 即降级；修复后为 `1`。
+- 强制点（门禁步骤 `automatic install set excludes downgrade and no-op statuses`，检查体在 `internal/gate`）：`InAutomaticInstallSet` 必须是 `==` 白名单，函数体出现 `!=` 即门禁失败——按语法树判定，因此解释规则的注释不会误触；`view.go` 不得用宽松比较划分自动集；交互提示不得再宣称“all applicable”。真机证据：82JQ 修复前 `Applicable candidates: 11`，其中 9 个 `Local newer`（含 AMD VGA `30.0.14052.9003` → `27.20.15026.8004`、NVIDIA `31.0.15.4630` → `31.0.15.2799`），按 `a` 即降级；修复后为 `1`。
 
 ## 4. 事实分级
 
@@ -38,8 +38,8 @@
   - `.exe` → **交互**：带 GUI 的安装器需要静默开关，而 82JQ 上**没有任何 `.exe` 静默开关端到端验证过**（`⊥`），`⊥` 一律落到不动作分支。家族仍从包自身字节识别并写进证据，但识别≠验证。
 - 顺序是规格的一部分：这些包都是自解压壳，一个二进制会同时命中多个标识，而跑起来的是包装器，所以包装器标识排在载荷标识之前；但命中只决定「证据里写哪个家族名」，不决定「是否派发开关」。
 - 禁止项：**不得给任何 `.exe` 家族下发静默开关**，直到某家族开关在真机端到端验证为 `fact`。安装器不认识的开关是静默 no-op——进程退出 0 而什么也没变，这正是「报假成功」的成因。
-- 强制点：门禁 `silent install dispatches on the package, not on the vendor column` 禁止 `installer_family.go` 里重新出现任何开关数组（`return []string{`），并要求 `familyMarkers` 仍在（拒绝证据必须能命名家族）；测试 `TestSilentPlanRefusesUnverifiedInno`、`TestSilentPlanRefusesEveryUnverifiedFamily`、`TestSilentPlanEvidenceNamesTheRefusedFamily`、`TestSilentPlanEvidenceAgreesWithTheDecision`、`TestInstallDriverFileEXEIsTerminal`。
-- 证据出口：拒绝决定必须落到账本 `Message` 列（散文，命名家族与「interactive」），**绝不**写进 `VerifiedVersion`/`BeforeVersion` 列——那两列是版本，机制写进去就把「Inno Setup 标记」伪装成版本声明。强制点：门禁 `the silent mechanism reaches the ledger as prose, never as a version`（`install_silent.go` 必须 `install.SilentPlanFor(` 且 `Installed` 行含 `silent via`，证据变量不得作裸位置参数）。
+- 强制点：门禁 `silent install dispatches on the package, not on the vendor column` 禁止重新出现任何返回 `[]string` 字面量的开关数组（按语法树判定，检查体在 `internal/gate`），并要求 `familyMarkers` 仍在（拒绝证据必须能命名家族）；测试 `TestSilentPlanRefusesUnverifiedInno`、`TestSilentPlanRefusesEveryUnverifiedFamily`、`TestSilentPlanEvidenceNamesTheRefusedFamily`、`TestSilentPlanEvidenceAgreesWithTheDecision`、`TestInstallDriverFileEXEIsTerminal`。
+- 证据出口：拒绝决定必须落到账本 `Message` 列（散文，命名家族与「interactive」），**绝不**写进 `VerifiedVersion`/`BeforeVersion` 列——那两列是版本，机制写进去就把「Inno Setup 标记」伪装成版本声明。强制点：门禁 `the silent mechanism reaches the ledger as prose, never as a version`（检查体在 `internal/gate`；`install_silent.go` 必须调 `install.SilentPlanFor`，`Installed` 行含 `silent via`，且证据变量不得作账本写入的裸位置参数——按调用实参判定，不靠行文本）。
 - 已知弱点：**当前没有任何 `.exe` 静默开关端到端验证过，所以全部 `.exe` 走交互。** 真机只证明过「INF 载荷包（Inno 自解压，`[Run]` 是 pnputil）装了且驱动绑上」，但那是操作者点完向导的路径，不构成 `/VERYSILENT` 的无人值守证据。将来要恢复某个家族，前提是一次可复现的真机钻探：无人值守运行 + 装后复核 `bound` + 记录退出码与字节证据。
 
 
@@ -47,14 +47,14 @@
 
 - 规则：**凡可进入自动安装集的状态，其 `StatusEvidenceBasis` 必须是 `fact`。** 自动安装集是唯一无人值守地改变机器状态的路径；集内出现 inference 或 undetermined，等于让工具依据没测到的东西动手。
 - 含义：`Not installed` 必须是「硬件 ID 命中的设备没有绑定驱动版本」这一**实测**，而不是「在软件列表里没查到」这一证据缺失。软件侧查不到时必须回退到设备实测版本。
-- 强制点：`TestAutomaticSetStatusesAreMeasured`（正）+ `TestNonFactStatusesStayOutOfTheAutomaticSet`（反）；门禁 `the automatic install set is backed by measurements only` 防止测试被删除以放行改动。
+- 强制点：`TestAutomaticSetStatusesAreMeasured`（正）+ `TestNonFactStatusesStayOutOfTheAutomaticSet`（反）；门禁 `the automatic install set is backed by measurements only`（检查体在 `internal/gate`）防止测试被删除以放行改动——它按语法树确认测试**声明**存在，注释里提到测试名不再能顶替测试本身。
 
 ### 4.1 比较只有一个原语，且「未决」是独立值
 
 - 规则：**版本比较的结果有四个值，不是三个：`<`、`=`、`>`、**`⊥`（未决）**。`⊥` 必须独立于 `<`，不得折叠进任何方向。** 系统内所有版本判断——状态判定、装后复核、跨 edition 选择——都必须经由同一个原语 `compare.Order`，禁止调用方各自实现（尤其禁止原始字符串相等）。
 - 理由：`⊥` 折叠成 `<` 就是"不可测量的值冒充事实"。`Version.Compare` 历史上把 `nil` 当作"比任何东西都小"，于是解析不出版本的驱动会被报成"落后于列表"并进入自动安装集——与 `Provisioned` 占位符冒充 `Up to date` 是同一族缺陷。`Provisioned` 正是靠这条修掉的：它既不能证明已装，也不能证明未装（系统确实为它持有一个 `.ppkg`），所以判 `StatusUnknown`，由 §3.1 的事实级白名单挡在自动集之外。改成 `Not installed` 是错的，那等于在系统持有包的情况下断言它不存在。
 - 前置：两侧必须先**归一到同一个可比分量**。厂商 `Version` 字段在 82JQ 两个 edition 的 47 行里有 49 种形态：裸版本（`31.0.15.4630`）、带前缀（`Intel_22.10.0.7`）、带后缀（`15.11.29.13 MS signed`）、**组合串**（`Intel_22.10.0.7/Realtek8852AE_6001.0.10.336/Mediatek_3.0.1.1314`，一个字段三个包）、以及非版本（`Inbox`）。`compare.ResolveComparableVersion` 负责按 vendor 选出对应分量。**不做这一步的直接后果**：装后复核原本用原始字符串相等，而 WLAN 那些行的 `Version` 是组合串，任何设备的本机版本都不可能等于它——**这些驱动永远无法被判定为 `bound`**，装没装成都报"没变化"。
-- 强制点：门禁 `one comparison primitive decides every version question` 要求 `VersionOrder` 四值齐全、`Order` 对缺失版本先返回 `OrderUndecided` 再谈方向、`CompareDriverStatus` 不得直接调 `Version.Compare`、`installBindingLabel` 不得出现 `== packageVersion` 一类原始字符串比较。
+- 强制点：门禁 `one comparison primitive decides every version question`（检查体在 `internal/gate`）要求 `VersionOrder` 四值齐全（含块式 `const (...)` 声明）、`Order` 对缺失版本先返回 `OrderUndecided` 再谈方向、`CompareDriverStatus` 不得直接调 `Version.Compare`、`installBindingLabel` 不得出现 `== packageVersion` 一类原始字符串比较。注：直接调 `Version.Compare` 这一条现在**编译器也会挡**（返回值类型不匹配），门禁仍保留以覆盖参数顺序写反等能编译的变体。
 
 ## 5. 审计先于状态变更
 

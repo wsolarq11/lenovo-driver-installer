@@ -148,6 +148,13 @@ func (r *Repo) dirProd(dir string) []*file {
 	return r.filter(func(f *file) bool { return !f.isTest && f.dir == dir })
 }
 
+// dirFiles returns every file of one package directory, tests included. A rule
+// that pins a test reads this: the test is a declaration in the tree, not a line
+// of text.
+func (r *Repo) dirFiles(dir string) []*file {
+	return r.filter(func(f *file) bool { return f.dir == dir })
+}
+
 // buildAll returns the files the current build selects, which is the set a type
 // check can treat as one coherent package.
 func (r *Repo) buildAll() []*file { return r.filter(func(f *file) bool { return f.inBuild }) }
@@ -223,6 +230,15 @@ func checks() []check {
 		{"ledger hash column located by header name", checkLedgerHashByName},
 		{"tests never write to the real audit directory", checkTestsUseTestConstructor},
 		{"no package exports what nothing outside it names", checkUnusedExports},
+		{"automatic install set excludes downgrade and no-op statuses", checkAutomaticSetExcludesDowngrade},
+		{"a run reports only what the recheck confirmed", checkRunReportsOnlyConfirmed},
+		{"one comparison primitive decides every version question", checkOneComparisonPrimitive},
+		{"silent install dispatches on the package, not on the vendor column", checkSilentDispatchOnPackage},
+		{"the silent mechanism reaches the ledger as prose, never as a version", checkSilentMechanismIsProse},
+		{"the provisioning placeholder never reaches a decision", checkProvisioningPlaceholderUndecided},
+		{"driver selection order is a total order", checkSelectionOrderTotal},
+		{"the automatic install set is backed by measurements only", checkAutomaticSetBackedByMeasurements},
+		{"software-versioned compare falls back to the measured device version", checkSoftwareVersionedFallback},
 	}
 }
 

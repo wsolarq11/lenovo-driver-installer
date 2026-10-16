@@ -397,132 +397,6 @@ for ($i = 0; $i -lt $invalidCombinations.Count; $i++) {
     }
 }
 
-Assert-Step 'automatic install set excludes downgrade and no-op statuses' {
-    # Invariant 3 admits only Update and Not installed into the unattended set.
-    # A loose "!= Not applicable" admits Local newer, which downgrades the
-    # device (82JQ: 9 of 11 candidates, AMD VGA 30.0.14052.9003 -> 27.20.15026.8004)
-    # and Up to date, which is a no-op. Membership is owned by one model
-    # predicate so the rule cannot drift back into the view layer.
-    $model = Read-GateText (Join-Path $repoRoot 'internal\model\model.go')
-    if ($model -notmatch '(?s)func\s+InAutomaticInstallSet\(status\s+CompareStatus\)\s*bool\s*\{(.*?)\n\}') {
-        throw 'model.go must own InAutomaticInstallSet as the single membership authority'
-    }
-    $body = $Matches[1]
-    if ($body -match '!=') {
-        throw 'InAutomaticInstallSet must be an explicit allow-list (==); a "!=" comparison silently re-admits downgrade/no-op statuses'
-    }
-    foreach ($required in @('StatusUpdate', 'StatusNotInstalled')) {
-        if ($body -notmatch $required) {
-            throw "InAutomaticInstallSet must admit $required explicitly"
-        }
-    }
-    $view = Read-GateText (Join-Path $repoRoot 'internal\app\view.go')
-    if ($view -match 'CompareStatus\s*!=\s*model\.StatusNotApplicable\s*\{\s*\n\s*applicable\s*=') {
-        throw 'view.go partitions the automatic install set with a loose comparison; use model.InAutomaticInstallSet'
-    }
-    # The interactive prompt must describe the set it actually installs, and the
-    # manual selection path must stay reachable for excluded statuses.
-    $interactive = Read-GateText (Join-Path $repoRoot 'internal\app\interactive.go')
-    if ($interactive -match 'all-applicable|all applicable') {
-        throw 'interactive prompt still advertises the old "all applicable" set whose membership changed'
-    }
-    # The GUI export is a second exit onto the same set: the WPF "install all"
-    # button filters on IsApplicable and passes the codes via -GuiInstallCodes,
-    # which bypasses partitionViewDrivers entirely. It must project the same
-    # predicate or the GUI keeps downgrading what the CLI now refuses.
-    $export = Read-GateText (Join-Path $repoRoot 'internal\app\export.go')
-    if ($export -match 'IsApplicable:\s*ad\.CompareStatus\s*!=\s*model\.StatusNotApplicable') {
-        throw 'export.go redefines IsApplicable loosely; it must project model.InAutomaticInstallSet'
-    }
-    if ($export -notmatch 'IsApplicable:\s*model\.InAutomaticInstallSet') {
-        throw 'export.go must project model.InAutomaticInstallSet onto IsApplicable'
-    }
-    $xaml = Read-GateText (Join-Path $repoRoot 'wpf\window.xaml')
-    if ($xaml -match '安装全部可安装') {
-        throw 'WPF install-all button still says "安装全部可安装"; the set no longer contains every applicable driver'
-    }
-}
-
-Assert-Step 'a run reports only what the recheck confirmed' {
-    # An installer can exit 0 without changing the machine. On 82JQ a drill for
-    # DRV202102040007 logged "Install success" plus "Recheck: unchanged" while the
-    # machine gained nothing, because the verdict came from the exit code alone.
-    # The recheck's binding must gate the summary, and the labels that carry no
-    # evidence must not be counted as successes.
-    $install = Read-GateText (Join-Path $repoRoot 'internal\app\install.go')
-    # The pure binding verdicts live beside install.go, not inside it, so the
-    # gate follows them rather than pinning a file that a later split would move.
-    $bindingPath = Join-Path $repoRoot 'internal\app\install_binding.go'
-    if (-not (Test-Path -LiteralPath $bindingPath)) {
-        throw 'install_binding.go is gone; the binding verdicts lost their single owner'
-    }
-    $binding = Read-GateText $bindingPath
-    if ($binding -notmatch 'func\s+installBindingConfirmsEffect') {
-        throw 'installBindingConfirmsEffect is gone; the run summary is no longer gated on the recheck'
-    }
-    # Read the confirmation function's own body: the labels share one case arm,
-    # so matching case arms line by line would miss all three.
-    $cm = [regex]::Match($binding, '(?s)func\s+installBindingConfirmsEffect\(binding\s+string\)\s*bool\s*\{(.*?)\n\}')
-    if (-not $cm.Success) {
-        throw 'could not locate installBindingConfirmsEffect'
-    }
-    $confirms = $cm.Groups[1].Value
-    if ($confirms -notmatch '(?m)^\s*case\s') {
-        throw 'installBindingConfirmsEffect no longer enumerates confirmed bindings by name'
-    }
-    foreach ($label in @('bound', 'staged', 'unchanged-same')) {
-        if ($confirms -notmatch [regex]::Escape($label)) {
-            throw "binding $label no longer counts as a confirmed install"
-        }
-    }
-    foreach ($label in @('unchanged', 'undetected')) {
-        if ($confirms -match ('case[^\r\n]*"' + [regex]::Escape($label) + '"[^\r\n]*:\s*\r?\n\s*return\s+true')) {
-            throw "binding $label carries no evidence of effect but is counted as a confirmed install"
-        }
-    }
-    # Comparability must come from the value, not the driver family, and the
-    # decision must live in the binding owner rather than at the call site.
-    # Re-keying it on the driver-family predicate silently reports every
-    # correctly installed software-versioned driver as unverified - which is why
-    # the next assertion names that predicate and is re-checked when it moves.
-    if ($binding -notmatch 'model\.IsMeasuredLocalVersion\(after\)') {
-        throw 'installBindingLabel no longer decides comparability from the value it read'
-    }
-    if ($install -match 'installBindingLabel\([^)]*isSoftwareVersionedDriver') {
-        throw 'installBindingLabel is keyed on the driver family again; a real version read back from the ' +
-              'installed-app list (Energy Management 15.11.29.65) is measurable and must carry a verdict'
-    }
-    $cm2 = [regex]::Match($binding, '(?s)func\s+installBindingLabel\([^)]*\)')
-    if ($cm2.Success -and $cm2.Value -match 'bool\s*[,)]') {
-        throw 'installBindingLabel takes a comparability flag again; the call site must not decide the verdict'
-    }
-    $model = Read-GateText (Join-Path $repoRoot 'internal\model\model.go')
-    if ($model -notmatch 'const\s+LocalVersionProvisioned\s+=') {
-        throw 'model.LocalVersionProvisioned is gone; the provisioning placeholder lost its single owner'
-    }
-    if ($model -notmatch 'func\s+IsMeasuredLocalVersion') {
-        throw 'model.IsMeasuredLocalVersion is gone; callers must not each decide what counts as a version'
-    }
-    $stale = Select-String -LiteralPath (Join-Path $repoRoot 'internal\compare\matching.go') -Pattern '"Provisioned"' -SimpleMatch
-    if ($stale) {
-        throw "matching.go still spells the provisioning placeholder itself at line(s): $($stale.LineNumber -join ',')"
-    }
-    if ($install -notmatch 'unverified=\%d') {
-        throw 'the Finished summary no longer reports an unverified count'
-    }
-    if ($install -notmatch 'installBindingConfirmsEffect\(binding\)') {
-        throw 'verifyInstalled no longer filters drivers through the confirmation gate'
-    }
-    $t = Join-Path $repoRoot 'internal\app\app_test.go'
-    $text = Read-GateText $t
-    foreach ($fn in @('TestInstallBindingLabelHasNoVerdictWithoutComparableVersions',
-                      'TestOnlyConfirmedBindingsCountAsSuccess')) {
-        if ($text -notmatch ('func\s+' + [regex]::Escape($fn))) {
-            throw "$fn is gone; the recheck-to-summary gate is unguarded"
-        }
-    }
-}
-
 Assert-Step 'the invariants spec carries every rule the code enforces' {
     # docs/spec/invariants.md is the semantic single source. A rule that lives
     # only in a gate is a rule nobody reads; a rule that lives only in the spec is
@@ -554,6 +428,7 @@ Assert-Step 'the invariants spec carries every rule the code enforces' {
     # The citations above name gate steps by title; a citation to a step that no
     # longer exists is the silent drift this whole gate family exists to catch.
     # Verify both directions: the spec names the step, and the step is declared.
+    #
     # Step names come from two places now — the literal Assert-Step lines in this
     # file, and the Go registry internal/gate exposes through cmd/gatecheck -list.
     # Both are consulted, so a rule that moved from a PowerShell regex into Go
@@ -562,11 +437,29 @@ Assert-Step 'the invariants spec carries every rule the code enforces' {
     if ($script:GateCheckExe -and (Test-Path -LiteralPath $script:GateCheckExe)) {
         $declared += @(& $script:GateCheckExe -list -root $repoRoot)
     }
-    foreach ($gateName in @('engine zero-network import (local side-effect packages)',
-                            'silent install dispatches on the package, not on the vendor column',
-                            'one comparison primitive decides every version question')) {
+    # Every gate step the spec cites must be declared. The citations are read out
+    # of the spec rather than listed here: a hardcoded list only guards the names
+    # someone remembered to add, so renaming a step would leave the spec pointing
+    # at a title nothing enforces and this check would not notice. A gate step
+    # title is spelled in backticks, starts lowercase, holds a space, is long
+    # enough to be a sentence, and carries no path or version punctuation -- which
+    # is what tells it apart from the backticked status names, paths and version
+    # strings the spec also uses.
+    $cited = @()
+    foreach ($m in [regex]::Matches($inv, '`([^`]+)`')) {
+        $span = $m.Groups[1].Value
+        if ($span -notmatch '^[a-z]') { continue }
+        if ($span -notmatch ' ') { continue }
+        if ($span.Length -lt 25) { continue }
+        if ($span -match '[\\/.:%]') { continue }
+        $cited += $span
+    }
+    if ($cited.Count -eq 0) {
+        throw 'invariants.md cites no gate step titles; this audit lost its subjects'
+    }
+    foreach ($gateName in $cited) {
         if ($declared -notcontains $gateName) {
-            throw "a doc cites the gate step '$gateName' but neither this file nor the Go registry declares it"
+            throw "invariants.md cites the gate step '$gateName' but neither this file nor the Go registry declares it"
         }
     }
     # A sub-section may be added, but the six top-level invariants are what the
@@ -608,231 +501,6 @@ Assert-Step 'the CI trigger is public' {
                 }
             }
         }
-    }
-}
-
-Assert-Step 'one comparison primitive decides every version question' {
-    # ord(a,b) has four values, not three: Undecided is not Less. Folding them
-    # together is how an unmeasurable value becomes a fact — nil reads as older
-    # than everything, so an unparseable version would be reported as behind the
-    # list and handed to the automatic set.
-    $version = Read-GateText (Join-Path $repoRoot 'internal\compare\version.go')
-    if ($version -notmatch 'type\s+VersionOrder\s+int') {
-        throw 'VersionOrder is gone; the undecided outcome is lost again'
-    }
-    foreach ($v in @('OrderUndecided', 'orderLess', 'OrderEqual', 'orderGreater')) {
-        if ($version -notmatch ("\b$v\b")) {
-            throw "VersionOrder lost the $v outcome"
-        }
-    }
-    $ord = [regex]::Match($version, '(?s)func\s+Order\(a, b \*Version\)\s*VersionOrder\s*\{(.*?)\n\}')
-    if (-not $ord.Success) {
-        throw 'the single Order comparator is gone'
-    }
-    if ($ord.Groups[1].Value -notmatch '(?s)a\s*==\s*nil\s*\|\|\s*b\s*==\s*nil\s*\{\s*return\s+OrderUndecided') {
-        throw 'Order must return OrderUndecided for a missing version before it considers direction'
-    }
-    if ($version -notmatch 'func\s+ResolveComparableVersion\(raw, vendor string\)') {
-        throw 'ResolveComparableVersion is gone; callers will compare raw strings again'
-    }
-    # The recheck and the compare pass must speak through that one primitive.
-    $binding = Read-GateText (Join-Path $repoRoot 'internal\app\install_binding.go')
-    if ($binding -match '==\s*packageVersion|==\s*after\b|==\s*before\b') {
-        throw 'the post-install recheck is comparing raw version strings again; the WLAN rows carry ' +
-              '"Intel_22.10.0.7/Realtek8852AE_6001.0.10.336/Mediatek_3.0.1.1314" in Version, which no ' +
-              'local version can equal, so those drivers could never be confirmed bound'
-    }
-    if ($binding -notmatch 'compare\.Order\(') {
-        throw 'the post-install recheck no longer uses the one comparator'
-    }
-    $matching = Read-GateText (Join-Path $repoRoot 'internal\compare\matching.go')
-    if ($matching -match 'localVersion\.Compare\(') {
-        throw 'CompareDriverStatus calls Version.Compare directly again; the undecided outcome would be ' +
-              'folded into a direction'
-    }
-    if ($matching -notmatch 'Order\(localVersion, remoteVersion\)') {
-        throw 'CompareDriverStatus no longer routes through Order'
-    }
-}
-
-Assert-Step 'silent install dispatches on the package, not on the vendor column' {
-    # The vendor Parameter column is falsified: DRV202102040007 declares
-    # "-QuietInstall" and its binary contains no such literal but carries the
-    # Inno header "Inno Setup Setup Data". Trusting the column launched a window
-    # that the operator dismissed, and the machine gained nothing. The formula
-    # therefore recognises the family from the package's own bytes, and drives
-    # every .exe to interactive because no .exe silent switch has a verified
-    # end-to-end run on 82JQ. Recognising a family is not verifying its switch.
-    $family = Read-GateText (Join-Path $repoRoot 'internal\install\installer_family.go')
-    if ($family -notmatch 'func\s+planSilentInstall') {
-        throw 'planSilentInstall is gone; the silent dispatch has no single owner'
-    }
-    # No family may send flags: any switch array here is a guess being launched,
-    # and a wrong switch is a silent no-op that reports success while changing
-    # nothing. The moment one switch is verified end-to-end, this assert and the
-    # refusing tests change together.
-    if ($family -match 'return\s+\[\]string\{') {
-        throw 'a switch array reappeared; no .exe silent switch is verified, so no family may send flags'
-    }
-    # Family recognition survives for the audit trail even though no family runs
-    # unattended: the refusal evidence must name what was recognised.
-    if ($family -notmatch 'familyMarkers') {
-        throw 'familyMarkers is gone; the refusal evidence can no longer name the recognised family'
-    }
-    $t = Read-GateText (Join-Path $repoRoot 'internal\install\install_test.go')
-    foreach ($fn in @('TestSilentPlanRefusesUnverifiedInno',
-                      'TestSilentPlanRefusesEveryUnverifiedFamily',
-                      'TestSilentPlanEvidenceNamesTheRefusedFamily',
-                      'TestSilentPlanEvidenceAgreesWithTheDecision',
-                      'TestInstallDriverFileEXEIsTerminal')) {
-        if ($t -notmatch ('func\s+' + [regex]::Escape($fn))) {
-            throw "$fn is gone; the formula is unguarded"
-        }
-    }
-}
-
-Assert-Step 'the silent mechanism reaches the ledger as prose, never as a version' {
-    # The evidence that authorised an unattended install has to survive into
-    # the audit row. It is prose: it names the installer family. The ledger's
-    # VerifiedVersion column is not a free slot, and writing a mechanism into
-    # it would silently convert "Inno Setup marker" into a version claim. The
-    # evidence therefore lives inside Message, which nothing parses
-    # (TestAuditAttributionIgnoresMessageText).
-    $app = Read-GateText (Join-Path $repoRoot 'internal\app\install.go')
-    $silent = Read-GateText (Join-Path $repoRoot 'internal\app\install_silent.go')
-    $fam = Read-GateText (Join-Path $repoRoot 'internal\install\installer_family.go')
-    if ($fam -notmatch 'func\s+SilentPlanFor\(') {
-        throw 'SilentPlanFor is gone; the evidence has no single source'
-    }
-    if ($silent -notmatch 'install\.SilentPlanFor\(') {
-        throw 'the app no longer asks for the silent mechanism; the audit row is blind again'
-    }
-    if ($app -notmatch 'silent via') {
-        throw 'the Installed row no longer records which mechanism authorised the run'
-    }
-    # The evidence variable must never appear as a bare positional argument:
-    # that is how it leaks into VerifiedVersion/BeforeVersion and turns a
-    # mechanism into a version claim.
-    if ($app -match ', silence, ') {
-        throw 'silence is a bare positional argument to a write; the evidence is leaking into a version column'
-    }
-}
-
-Assert-Step 'the provisioning placeholder never reaches a decision' {
-    # "Provisioned" is a fact about HKLM\...\Provisioning\Results, not a version.
-    # It reached a decision twice: as a local version in the recheck, and as
-    # StatusUpToDate in CompareDriverStatus, which is fact-grade and therefore
-    # treated as measured. A placeholder must be undetermined everywhere.
-    $matching = Read-GateText (Join-Path $repoRoot 'internal\compare\matching.go')
-    $cm = [regex]::Match($matching, '(?s)if\s+local\s*==\s*model\.LocalVersionProvisioned\s*\{(.*?)\n\t\}')
-    if (-not $cm.Success) {
-        throw 'CompareDriverStatus no longer handles the provisioning placeholder'
-    }
-    if ($cm.Groups[1].Value -notmatch 'return\s+model\.StatusUnknown') {
-        throw 'the provisioning placeholder is judged again; it proves neither presence nor absence, ' +
-              'so only an undetermined status is honest'
-    }
-    $t = Read-GateText (Join-Path $repoRoot 'internal\app\evidence_chain_test.go')
-    if ($t -notmatch 'func\s+TestProvisionedIsNotAVersion') {
-        throw 'TestProvisionedIsNotAVersion is gone; the placeholder-to-status rule is unguarded'
-    }
-}
-
-Assert-Step 'driver selection order is a total order' {
-    # PartID is not a total sort key: on 82JQ one PartID covers several groups
-    # (249 alone holds five different WLAN vendors). A PartID-only stable sort
-    # therefore left the surviving rows in map-iteration order, and consecutive
-    # -DryRun exports of identical input disagreed on row order. The tie-breaks
-    # below must match the grouping key so no two rows can tie.
-    $sel = Read-GateText (Join-Path $repoRoot 'internal\compare\selection.go')
-    $m = [regex]::Match($sel, '(?s)sort\.Slice\(selected, func\(i, j int\) bool \{(.*?)\n\t\}\)')
-    if (-not $m.Success) {
-        throw 'could not locate the SelectLatestDrivers sort; ordering is unguarded'
-    }
-    $body = $m.Groups[1].Value
-    foreach ($key in @('PartID', 'DriverName', 'DriverCode')) {
-        if ($body -notmatch [regex]::Escape($key)) {
-            throw "the selection sort does not tie-break on $key; equal prefixes would fall back to map order"
-        }
-    }
-    if ($sel -match 'sort\.SliceStable\(selected') {
-        throw 'selection still uses SliceStable on a non-total key'
-    }
-    $t = Join-Path $repoRoot 'internal\app\evidence_firmware_determinism_test.go'
-    if (-not (Test-Path -LiteralPath $t)) {
-        throw 'evidence_firmware_determinism_test.go is gone; determinism is unguarded'
-    }
-    $text = Read-GateText $t
-    if ($text -notmatch 'func\s+TestSelectionOrderIsDeterministic') {
-        throw 'TestSelectionOrderIsDeterministic is gone'
-    }
-    if ($text -notmatch 'func\s+TestFirmwareRowsAreDroppedUnlessRequested') {
-        throw 'the firmware branch has no coverage and no recorded list can provide it'
-    }
-}
-
-Assert-Step 'the automatic install set is backed by measurements only' {
-    # Two decisions, two files: which statuses may be installed unattended, and
-    # how strongly each status is evidenced. If they drift apart, the tool
-    # changes machine state on something it did not measure. The pairing is
-    # asserted in Go; this gate keeps the test from being deleted to unblock a
-    # change, and keeps the doc comment claiming the invariant.
-    $model = Read-GateText (Join-Path $repoRoot 'internal\model\model.go')
-    $inv = Join-Path $repoRoot 'internal\model\evidence_basis_test.go'
-    if (-not (Test-Path -LiteralPath $inv)) {
-        throw 'evidence_basis_test.go is gone; the fact/inference pairing is unguarded'
-    }
-    $text = Read-GateText $inv
-    if ($text -notmatch 'func\s+TestAutomaticSetStatusesAreMeasured') {
-        throw 'TestAutomaticSetStatusesAreMeasured is gone; the automatic set can drift onto unmeasured statuses'
-    }
-    if ($text -notmatch 'func\s+TestNonFactStatusesStayOutOfTheAutomaticSet') {
-        throw 'TestNonFactStatusesStayOutOfTheAutomaticSet is gone; widening the set no longer has to be argued'
-    }
-    # StatusEvidenceBasis must route every automatic-set member through fact.
-    $m = [regex]::Match($model, '(?s)func\s+StatusEvidenceBasis\(status\s+CompareStatus\)\s*string\s*\{(.*?)\n\}')
-    if (-not $m.Success) {
-        throw 'could not locate StatusEvidenceBasis in model.go'
-    }
-    $body = $m.Groups[1].Value
-    $factCase = [regex]::Match($body, 'case\s+([^\r\n:]+):\s*\r?\n\s*return\s+"fact"')
-    if (-not $factCase.Success) {
-        throw 'StatusEvidenceBasis no longer returns fact from an explicit case list'
-    }
-    foreach ($status in @('StatusUpdate', 'StatusUpToDate', 'StatusNotInstalled')) {
-        if ($factCase.Groups[1].Value -notmatch [regex]::Escape($status)) {
-            throw "automatic-set member $status is not routed to fact by StatusEvidenceBasis"
-        }
-    }
-    if ($body -match '"inference"') {
-        throw 'StatusEvidenceBasis still emits inference; every status it can name is either measured or undecided'
-    }
-}
-
-Assert-Step 'software-versioned compare falls back to the measured device version' {
-    # Not installed is the only status the automatic set acts on, so what
-    # produces it has to rest on measurement. A software-versioned driver whose
-    # name is missing from InstalledApps used to return an empty local version,
-    # which CompareDriverStatus turned into "not installed" while the device was
-    # in fact running a vendor package. On 82JQ that put a redundant reinstall
-    # of ACPI\VPC2004 in front of the user. The measured device version must win
-    # whenever the software lookup finds nothing.
-    $matching = Read-GateText (Join-Path $repoRoot 'internal\compare\matching.go')
-    if ($matching -notmatch 'func\s+deviceVersionFrom') {
-        throw 'deviceVersionFrom is gone; the device-measured version has no single extraction point'
-    }
-    $m = [regex]::Match($matching, '(?s)if\s+isSoftwareVersionedDriver\(driver\.DriverName\)\s*\{(.*?)\n\t\}')
-    if (-not $m.Success) {
-        throw 'could not locate the software-versioned branch in matching.go'
-    }
-    $branch = $m.Groups[1].Value
-    if ($branch -notmatch 'deviceVersionFrom') {
-        throw 'the software-versioned branch returns the software version with no device fallback; ' +
-              'a failed InstalledApps lookup would again be read as evidence of absence'
-    }
-    $t = Join-Path $repoRoot 'internal\compare\software_version_fallback_test.go'
-    if (-not (Test-Path -LiteralPath $t)) {
-        throw 'software_version_fallback_test.go is gone; the fallback rule is unguarded'
     }
 }
 

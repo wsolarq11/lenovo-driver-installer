@@ -894,3 +894,35 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed**（合并 PR #2 仍是你的决定；CI 只在仓库公开后触发）
+
+---
+
+## Session: 门禁规则搬进 Go（批 2：剩余九条 Go 源码正则步）
+
+**Branch**: `chore/repo-entropy-sweep`
+
+### Main Changes
+
+- **先证明缺陷，再动手**：批 1 搬走六条后，`scripts/verify.ps1` 里仍有九条步骤用正则读 Go 源码。动手前先探针，证实了两类真实缺陷，不是"看起来会更干净"：
+  - **假红**：`automatic install set excludes downgrade and no-op statuses` 断言 `InAutomaticInstallSet` 函数体内不得出现 `!=`。但它是按**文本**匹配，于是"解释这条规则"的注释（`// never widen this with a != comparison`）会让门禁失败。实测：注入该注释 → FAIL。
+  - **假绿**：多处用 `-notmatch 'func\s+TestX'` 断言测试仍在。这是文本匹配，**注释里提到测试名就能顶替测试本身**。实测：把 `TestProvisionedIsNotAVersion` 改名、只留一行提到它的注释 → 旧步绿，新检查 FAIL 点名。
+- **新建 `internal/gate/astutil.go` + `checks_rules.go` + `checks_install.go` + `checks_helpers.go`**：九条规则改写为语法树查询。规则现在问的是"这个函数体里有没有 `!=` 运算符"、"这个包里有没有名为 X 的**声明**"、"这个调用传了哪些实参"，而不是"这一行文本像不像"。`const (...)` 块式声明对行首锚定的正则不可见，对 `declaredNames` 是普通事实。
+- **九条步骤名逐字节保留**，`scripts/verify.ps1` 里对应九段正则删除（约 350 行），仍由 `Go source checks build` 一步建 `gatecheck`、按 `-list` 逐条生成命名步骤。
+- **两个新检查自己先出 bug，靠红灯发现**（记录在此，因为正是这类错误最难自查）：
+  - `returnsStringSliceLiteral` 原用 `qualifiedName(lit.Type)` 判 `[]string`——而 `[]string` 是 `ArrayType`，`qualifiedName` 对它返回空串，于是"禁止开关表"这条**永远为绿**。改为 `isStringSliceType` 检查 `ArrayType` + 元素名。
+  - `classifyBindingLabels` 原来判"标签是否在返回 false 的臂里"，但注入 `"unchanged"` 进确认臂时它同时**也**出现在默认臂，判定落空。改为直接判"是否在确认臂内"。
+  两条都是"检查看起来在跑、实际永远放行"，与批 1 找到的 11 个死导出同一失效形式。
+- **不变量审计改为推导**：`the invariants spec carries every rule the code enforces` 原先硬编码三个步骤名去比对。硬编码只守住"有人记得加进去的名字"，改个步骤名就会让规格指向一个无人强制、审计也不报的标题。改为从 `invariants.md` 反引号 span 里推导门禁步骤标题（小写开头、含空格、长度 ≥25、不含路径/版本标点），再对"本文件声明 ∪ Go 注册表"求成员。实测 7 条全部推导出来；红灯：改掉注册表里一个步骤名 → FAIL 点名。
+- `docs/spec/invariants.md` 五处强制点补注检查体在 `internal/gate`，并说明"按语法树判定，注释不会误触/顶替"。§4.1 补一句：直接调 `Version.Compare` 现在**编译器也会挡**（返回值类型不匹配），门禁保留以覆盖参数写反等能编译的变体。
+
+### Testing
+
+- [实测] 九条新检查逐条红灯（真实仓库注入 → 点名 FAIL → 复原转绿）：allow-list `!=`、确认臂混入 `unchanged`、`VersionOrder` 少一值、开关表回归、证据变量作裸位置参数、占位符被判成 `StatusUpToDate`、`SliceStable`、`StatusEvidenceBasis` 返回 `inference`、软件版本分支丢掉设备回退。
+- [实测] **假红假绿双向回归**：注入"含 `!=` 的解释性注释" → 新检查 PASS（旧步 FAIL）；把被守护的测试改名、只留提到它的注释 → 新检查 FAIL 点名（旧步绿）。这两条已写成 `gate_test.go` 的单测，防止检查退回读文本。
+- [实测] 编译器归属边界：把 `switch Order(a,b)` 改成 `switch localVersion.Compare(b)` → **编译不过**（`VersionOrder` 与 `int` 不匹配），门禁根本不需要出手；改成 `switch Order(b,a)`（参数写反，能编译）→ 门禁 FAIL `CompareDriverStatus no longer routes through Order`。这正是"能交给编译器的全交、剩下的才门禁"。
+- [实测] `go build ./...`、`go build -tags legacyps ./...`、`go vet ./...`、`go test ./...` 全绿；`internal/gate` 覆盖率 82.0%（地板 70%）；`checks_rules.go` 一度 690 行触到本仓 500 行生产文件门禁，按域拆成 `checks_rules.go`(252) / `checks_install.go`(252) / `checks_helpers.go`(206)。
+- [实测] 双宿主全量门禁 **44/44 VERIFY_OK**（`powershell.exe` 5.1 与 `pwsh` 7）。
+
+### Status
+
+[OK] **Completed**
