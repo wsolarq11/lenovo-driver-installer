@@ -864,3 +864,33 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed**
+
+---
+
+## Session: 门禁规则搬进 Go（能交给编译器和类型系统的全交）
+
+**Branch**: `chore/repo-entropy-sweep`
+
+### Main Changes
+
+- **动因**：P6 那一步（`no package exports what nothing outside it names`）是 87 行 PowerShell，靠正则逐行匹配 Go 源码。它自己有已知盲区：把 `app := New(...)` 这种**局部变量**当成包限定符；块式 `const (...)` 枚举值（`Family*`、`OrderLess`）对行首锚定的正则完全不可见；按声明名做键收集，`ContractDriftError` 与 `InterfaceGateError` 各有一个 `Error` 方法就互相覆盖。更根本的问题是：源码文本能表达的判定，编译器本来就会替我们做。
+- **新建 `internal/gate`**（只用标准库）：`go/parser` + `go/ast` + `go/token` + `go/types`。本仓自己的包**从源码**做类型检查，外部依赖的导出数据由一次 `go list -export -deps -test` 取回。名字经 `types.Info.Uses` 解析到它真正指代的对象，于是「跨包引用」不再靠拼字符串猜。
+- **新建 `cmd/gatecheck`**：唯一进程边界（要工具链的导出数据）。`-list` 从注册表直接回答，**不读仓库**——门禁的步骤清单来自这里，若清单在源码解析失败时消失，六条规则就会被一个无关错误一起吞掉；`-check NAME` 跑一条。
+- **搬走六条**（步骤名逐字节保留，仍是各自命名、各自计数的门禁步）：`engine zero-network import`、`package cleanup is never presented as rollback`、`ledger device identity stays a column`、`ledger hash column located by header name`、`tests never write to the real audit directory`、`no package exports what nothing outside it names`。`scripts/verify.ps1` 里对应六段 PS 正则与 `Get-ExportedDecls` 助手共约 200 行删除；新增一步 `Go source checks build` 负责 `go build ./cmd/gatecheck` 并 `-list`，再按注册表逐条生成 `Assert-Step`。
+- **类型检查立刻还债**：新检查找出 11 个 P6 的正则**结构性看不到**的死导出——块式 `const (...)` 里的枚举值（`Family*`、`OrderLess`/`OrderGreater`）与只经同包 `errors.As` 以 `error` 面消费的错误类型（`ContractDriftError`/`InterfaceGateError`/`HTTPStatusError`）。旧扫描把方法接收者算作「另一个声明提到了 T」，于是每个带导出方法的类型都被豁免；新检查刻意不把接收者算进去（"to call x.M() nobody spells the type's name"）。11 个 + 类型 `installerFamily` 一并收为未导出，从此跨包误用是**编译错误**。
+- **保留旧步的刻意语义**，不因为「新检查更聪明」而放宽：包清理只匹配**恰好等于**参数向量的字符串字面量（旧的 `-SimpleMatch '"/delete-driver"'` 只匹配带引号的实参，不匹配「不要用 pnputil /delete-driver」这类指导散文）；账本哈希步只扫生产文件（`history_test.go` 有一处 `rows[1][len(historyColumns)]` 是断言磁盘列序的正当测试）；零网络步保留五个包的允许名单。
+- **针串自匹配**：检查自己扫源码，就不能在检查文件里写出被禁的字面量。`checks.go` 里 `deleteDriverArg = "/delete-" + "driver"`、`deviceAssign = "device" + "="` 等都靠拼接构造。
+- **耦合点同步**：`one comparison primitive decides every version question` 步的标识符名单改为实际的 `OrderUndecided`/`orderLess`/`OrderEqual`/`orderGreater`；`the invariants spec carries every rule the code enforces` 步原本只认「本文件里字面存在 `Assert-Step '<名字>'`」，现在同时认 `gatecheck -list` 的注册表，否则搬进 Go 的规则会静默掉出审计；`docs/spec/invariants.md` §1 顺势点名步骤并注明检查体在 `internal/gate`，§6 那句「`RemoveDriverPackage` 仅作为包清理原语保留」在 P1 删除该原语后已失真，改为描述现状 + 点名钉住它的门禁步。
+- `internal/gate` 加入覆盖率地板 70%（当前 85.4%）：一条规则的红灯测试被删掉后，它会开始静默放行一切——这是本门禁里唯一不留任何痕迹的失效形式。
+
+### Testing
+
+- [实测] 六条搬移检查逐条端到端红灯（改动真实仓库 → 门禁 `FAIL <步骤名>` 且步骤名前就是 gatecheck 报出的 `文件:行 (原因)`）：`internal/compare` 加 `net/url` → 零网络步 FAIL；`internal/install` 加 `"/delete-driver"` 字面量 → 包清理步 FAIL；`internal/plan` 加 `"device=..."` → 设备身份步 FAIL；`internal/app` 加 `historyColumns[len(historyColumns)]` → 哈希按名步 FAIL；新增 `_test.go` 里直接调 `New(...)` → 测试构造器步 FAIL；`internal/compare` 加无人使用的导出函数 → 导出面步 FAIL。六次均复原后转绿。
+- [实测] 解析容错：注入一个不可解析的 `.go`（未闭合字符串）→ 门禁仍是 **44 步**（此前会是 38 步、六条规则整批消失），六条各自 FAIL 并报出解析错误位置，没有一条静默通过。
+- [实测] `go build ./...`、`go build -tags legacyps ./...`、`go vet ./...`、`go test ./...` 全绿；`go test -cover ./internal/gate/...` = 85.4%，六条检查的单测（含五条合成模块红灯）全过。
+- [实测] 双宿主全量门禁 **44/44 VERIFY_OK**（`powershell.exe` 5.1 与 `pwsh` 7）。
+- [实测] 门禁耗时仍在秒级：pwsh 7 约 17s，5.1 约 24s（六次 `gatecheck -check` 共约 5s）。
+
+### Status
+
+[OK] **Completed**（合并 PR #2 仍是你的决定；CI 只在仓库公开后触发）

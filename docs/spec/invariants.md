@@ -9,7 +9,7 @@
 ## 1. 确定性
 
 - 约束：CLI 引擎零遥测、无隐藏联网、无后台服务。
-- 强制点：`scripts/verify.ps1` 的“零网络导入”检查——`internal/install`、`internal/compare`、`internal/inventory`、`internal/plan`、`internal/audit` 不得 import `net/http` / `net/url`，只有 `download` / `api` 能碰网络。运行时只派生到原生 Windows API 与联想官方接口，从不派生 PowerShell。
+- 强制点：门禁步骤 `engine zero-network import (local side-effect packages)`——`internal/install`、`internal/compare`、`internal/inventory`、`internal/plan`、`internal/audit` 不得 import `net/http` / `net/url`，只有 `download` / `api` 能碰网络。运行时只派生到原生 Windows API 与联想官方接口，从不派生 PowerShell。该步骤的检查体在 `internal/gate`（由 `cmd/gatecheck` 驱动、`scripts/verify.ps1` 逐条调用），用 AST 判定导入而不是匹配源码文本。
 
 ## 2. 证据优先
 
@@ -65,4 +65,4 @@
 ## 6. 回退语义
 
 - 约束：设备回退是设备级操作（回退驱动程序或重装旧 INF）；`pnputil /delete-driver` 是包清理不是回退，不得作为自动回退动作。
-- 强制点：回退优先 `DiRollbackDriver`（设备管理器“回退驱动程序”同一原语），无备份时用 `UpdateDriverForPlugAndPlayDevicesW` + `INSTALLFLAG_FORCE` 强制绑回旧 INF；`RemoveDriverPackage` 仅作为包清理原语保留，注释明确“不是回退”。回退成功判据 = 问题码恢复 **且** 驱动版本已变，不是 API 返回值。
+- 强制点：回退优先 `DiRollbackDriver`（设备管理器“回退驱动程序”同一原语），无备份时用 `UpdateDriverForPlugAndPlayDevicesW` + `INSTALLFLAG_FORCE` 强制绑回旧 INF；回退成功判据 = 问题码恢复 **且** 驱动版本已变，不是 API 返回值。包清理原语（携带 `/delete-driver` 参数向量的 `RemoveDriverPackage`）已从代码中删除，并由门禁步骤 `package cleanup is never presented as rollback` 钉住其缺席：`internal/` 全仓（含测试）不得出现该参数向量，同时断言设备级回退入口 `DiRollbackDriver` 仍在——拒绝包清理只有在真回退路径存在时才有意义。

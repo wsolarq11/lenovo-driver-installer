@@ -72,18 +72,18 @@ type VersionOrder int
 
 const (
 	OrderUndecided VersionOrder = iota
-	OrderLess
+	orderLess
 	OrderEqual
-	OrderGreater
+	orderGreater
 )
 
 func (o VersionOrder) String() string {
 	switch o {
-	case OrderLess:
+	case orderLess:
 		return "<"
 	case OrderEqual:
 		return "="
-	case OrderGreater:
+	case orderGreater:
 		return ">"
 	default:
 		return "undecided"
@@ -99,11 +99,11 @@ func Order(a, b *Version) VersionOrder {
 	}
 	switch a.Compare(b) {
 	case -1:
-		return OrderLess
+		return orderLess
 	case 0:
 		return OrderEqual
 	default:
-		return OrderGreater
+		return orderGreater
 	}
 }
 

@@ -36,9 +36,9 @@ func TestHashCompanionRoundTrip(t *testing.T) {
 }
 
 func TestHTTPStatusError(t *testing.T) {
-	httpErr := &HTTPStatusError{Status: 403, URL: "https://example.invalid/driver.exe"}
+	httpErr := &httpStatusError{Status: 403, URL: "https://example.invalid/driver.exe"}
 	if !IsHTTPStatus(httpErr, 403) {
-		t.Fatal("403 HTTPStatusError should be recognized")
+		t.Fatal("403 httpStatusError should be recognized")
 	}
 	if IsHTTPStatus(errors.New("download returned HTTP 403"), 403) {
 		t.Fatal("plain error should not be recognized")

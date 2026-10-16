@@ -37,17 +37,20 @@ WPF 只是表现壳：渲染 JSON 导出、启动后台 Go 进程、回传 `Driv
 
 - **确定性包**（`api`、`compare`、`audit`、`plan`、`model`）：不碰网络、注册表、PnP、控制台、进程或文件 API。同输入同输出。
 - **副作用包**（`app`、`download`、`install`、`inventory`）：系统副作用集中于此，是“确定性”与“外部世界”之间的唯一接口。
+- **门禁包**（`gate`）：只读源码分析，只用 Go 标准库，绝不开进程。它需要的外部信息（依赖包的导出数据）由 `cmd/gatecheck` 这唯一的进程边界取得——把规则放在 `internal/gate` 而不是 PowerShell 里，是为了让每条规则由 `go/parser` + `go/types` 判定（名字解析到它真正指代的对象），而不是由正则匹配源码文本。
 - 运行时只派生到原生 Windows API 与联想官方接口，从不派生 PowerShell。
 
 ## 3. 仓库布局
 
 ```text
 cmd/lenovo-driver            CLI 入口
+cmd/gatecheck                门禁的 Go 源码检查入口（把 internal/gate 的规则接成 verify.ps1 的命名步骤）
 internal/api                 Lenovo API 客户端与响应归一化
 internal/app                 编排、CLI、GUI 导出、账本、提示
 internal/audit               setupapi 解析与来源证据审计
 internal/compare             版本解析、匹配、选择、格式化
 internal/download            HTTP 下载、重试、SHA-256 伴生文件
+internal/gate                门禁规则本体：go/parser + go/types 的只读源码分析（只用标准库、不开进程）
 internal/install             安装器分发与 EXE 回退；原生 INF 安装（pnputil 回退）
 internal/inventory           Windows 机器/OS/PnP/应用快照（原生 SetupAPI/CfgMgr32/注册表）
 internal/model               共享纯数据类型

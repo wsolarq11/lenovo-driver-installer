@@ -33,34 +33,34 @@ import (
 // authorise an unattended run. This file owns the recognition table; nothing
 // else may invent an installer family.
 
-// InstallerFamily is the installer kind proven by a marker inside the package.
+// installerFamily is the installer kind proven by a marker inside the package.
 // It is recognised for the audit trail; recognition alone never authorises an
 // unattended run.
-type InstallerFamily int
+type installerFamily int
 
 const (
-	FamilyUnproven InstallerFamily = iota
-	FamilyInnoPayload
-	FamilyNSIS
-	FamilySevenZipSFX
-	FamilyInstallShield
-	FamilyWiXBurn
+	familyUnproven installerFamily = iota
+	familyInnoPayload
+	familyNSIS
+	familySevenZipSFX
+	familyInstallShield
+	familyWiXBurn
 )
 
 // String names the family for the audit trail. The name is written into the
 // history record so a refusal can be traced to the marker that caused it, which
 // is the difference between a diagnosis and a mystery.
-func (f InstallerFamily) String() string {
+func (f installerFamily) String() string {
 	switch f {
-	case FamilyInnoPayload:
+	case familyInnoPayload:
 		return "Inno Setup"
-	case FamilyNSIS:
+	case familyNSIS:
 		return "NSIS"
-	case FamilySevenZipSFX:
+	case familySevenZipSFX:
 		return "7-Zip SFX"
-	case FamilyInstallShield:
+	case familyInstallShield:
 		return "InstallShield"
-	case FamilyWiXBurn:
+	case familyWiXBurn:
 		return "WiX Burn"
 	default:
 		return "unproven"
@@ -73,37 +73,37 @@ func (f InstallerFamily) String() string {
 // one binary and the first hit in this list wins. The wrapper markers come
 // before the payload markers because the wrapper is what actually runs.
 var familyMarkers = []struct {
-	family InstallerFamily
+	family installerFamily
 	ascii  string
 }{
 	// The wrapper's own configuration block, present only when the archive is
 	// driven by a 7-Zip SFX stub.
-	{FamilySevenZipSFX, "!@Install@!UTF-8!"},
+	{familySevenZipSFX, "!@Install@!UTF-8!"},
 	// NSIS stores this magic in the firstheader of its own archive.
-	{FamilyNSIS, "NullsoftInst"},
+	{familyNSIS, "NullsoftInst"},
 	// Inno writes this exact phrase as the header of its embedded setup data.
-	{FamilyInnoPayload, "Inno Setup Setup Data"},
+	{familyInnoPayload, "Inno Setup Setup Data"},
 	// A WiX Burn stub carries a PE section named .wixburn.
-	{FamilyWiXBurn, ".wixburn"},
+	{familyWiXBurn, ".wixburn"},
 	// The weakest signal, so it is consulted last: a Lenovo wrapper can quote
 	// the word while carrying an entirely different payload.
-	{FamilyInstallShield, "InstallShield"},
+	{familyInstallShield, "InstallShield"},
 }
 
 // detectInstallerFamily reads the package and returns the family its own bytes
-// prove. It returns FamilyUnproven rather than a default, because a default
+// prove. It returns familyUnproven rather than a default, because a default
 // would be an assumption wearing the costume of a measurement.
-func detectInstallerFamily(path string) InstallerFamily {
+func detectInstallerFamily(path string) installerFamily {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return FamilyUnproven
+		return familyUnproven
 	}
 	return familyFromBytes(data)
 }
 
 // familyFromBytes is the pure half, so the table can be tested against recorded
 // bytes instead of only against packages that happen to be on disk.
-func familyFromBytes(data []byte) InstallerFamily {
+func familyFromBytes(data []byte) installerFamily {
 	ascii := string(data)
 	// Windows PE files carry their strings in both single-byte and UTF-16LE
 	// form. Searching only the single-byte form would miss markers that live in
@@ -114,7 +114,7 @@ func familyFromBytes(data []byte) InstallerFamily {
 			return marker.family
 		}
 	}
-	return FamilyUnproven
+	return familyUnproven
 }
 
 // utf16LEToString decodes the UTF-16LE runs an ASCII scan would otherwise miss.
@@ -134,7 +134,7 @@ func utf16LEToString(data []byte) string {
 // evidence the decision rests on. There is no args/ok pair because no family's
 // switch is verified, so no .exe is ever launched with invented flags.
 type silentPlan struct {
-	family   InstallerFamily
+	family   installerFamily
 	evidence string
 }
 
@@ -144,7 +144,7 @@ type silentPlan struct {
 // and refused it" rather than just "refused".
 func planSilentInstall(filePath string, driver *model.Driver, logPath string) silentPlan {
 	family := detectInstallerFamily(filePath)
-	if family == FamilyUnproven {
+	if family == familyUnproven {
 		return silentPlan{family: family, evidence: "no installer marker in the package; interactive"}
 	}
 	return silentPlan{family: family, evidence: family.String() + " marker, but its silent switch has no verified end-to-end run; interactive"}

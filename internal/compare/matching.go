@@ -292,7 +292,7 @@ func CompareDriverStatus(remote, local, vendor string) model.CompareStatus {
 	switch Order(localVersion, remoteVersion) {
 	case OrderUndecided:
 		return model.StatusUnknown
-	case OrderGreater:
+	case orderGreater:
 		return model.StatusLocalNewer
 	case OrderEqual:
 		return model.StatusUpToDate

@@ -99,6 +99,10 @@ Assert-Step 'Go test + coverage floor (side-effect packages)' {
         'lenovo-driver/internal/download'  = 35
         'lenovo-driver/internal/plan'      = 65
         'lenovo-driver/internal/api'       = 55
+        # The gate's own rules are checked code, not unchecked prose. A rule whose
+        # red-light test is deleted starts passing everything silently — the one
+        # failure mode that leaves no trace anywhere else in this gate.
+        'lenovo-driver/internal/gate'      = 70
     }
     $below = @()
     foreach ($line in @($coverageOutput)) {
@@ -241,6 +245,32 @@ Assert-Step 'CLI help' {
     if ($LASTEXITCODE -ne 0) { throw "Help exited $LASTEXITCODE" }
 }
 
+# ── Go source checks ─────────────────────────────────────────────────────────
+# Six rules used to be PowerShell regexes over Go source text. Text matching
+# cannot tell a package qualifier from a local variable that happens to share
+# its name, cannot see a block-form `const (...)` declaration at all, and reads
+# guidance prose ("do not run pnputil /delete-driver") as a violation. Those
+# rules now live in internal/gate, driven by go/parser + go/types, which resolve
+# every name to the object it actually names and let the compiler own what it
+# can express. cmd/gatecheck is the entry point; its registry is the single list
+# of checks. Each name becomes its own gate step, so the FAIL line and the
+# summary count keep pointing at one rule.
+Assert-Step 'Go source checks build' {
+    $script:GateCheckExe = Join-Path $script:SmokeDir 'gatecheck.exe'
+    & $GoExe build -o $script:GateCheckExe ./cmd/gatecheck
+    if ($LASTEXITCODE -ne 0) { throw "go build gatecheck exited $LASTEXITCODE" }
+    $script:SourceCheckNames = @(& $script:GateCheckExe -list -root $repoRoot)
+    if ($LASTEXITCODE -ne 0) { throw "gatecheck -list exited $LASTEXITCODE" }
+    if ($script:SourceCheckNames.Count -eq 0) { throw 'gatecheck -list returned no checks; the registry is empty' }
+}
+
+foreach ($sourceCheck in $script:SourceCheckNames) {
+    Assert-Step $sourceCheck {
+        & $script:GateCheckExe -check $sourceCheck -root $repoRoot -go $GoExe
+        if ($LASTEXITCODE -ne 0) { throw 'the source check reported a violation (see the detail above)' }
+    }
+}
+
 Assert-Step 'CLI exit codes match docs contract' {
     # Single source of truth: internal/app/help.go helpText. docs/spec/contracts.md
     # must carry the same numeric codes; drift fails the gate.
@@ -364,55 +394,6 @@ for ($i = 0; $i -lt $invalidCombinations.Count; $i++) {
         # default code page.
         $stdout = if (Test-Path -LiteralPath $stdoutPath) { Read-GateText $stdoutPath } else { '' }
         if ($stdout -match 'Error:') { throw "CLI error text leaked to stdout: $stdout" }
-    }
-}
-
-Assert-Step 'ledger device identity stays a column (not free text)' {
-    # The ledger's Devices column is the single machine-readable source for
-    # "which device this row acted on". Re-embedding a device id into the
-    # free-text Message would let two sources of device identity drift apart and
-    # force downstream parsing, so the pattern is gated in production code.
-    $hits = Get-ChildItem -Path 'internal' -Recurse -Filter *.go |
-        Where-Object { $_.FullName -notmatch '_test\.go$' } |
-        Select-String -Pattern '"device "\s*\+|"devices="|"device="'
-    if ($hits) {
-        $files = ($hits | ForEach-Object { "$($_.Path):$($_.LineNumber)" }) -join ', '
-        throw "device identity must ride in the ledger Devices column, not in free-text messages: $files"
-    }
-}
-
-Assert-Step 'ledger hash column located by header name' {
-    # Chain verification must find the hash column by name in the on-disk
-    # header. A positional lookup (len(historyColumns)) silently verifies the
-    # wrong cells once a column is added, so tampering stops being detectable
-    # without any error surfacing.
-    $src = Read-GateText (Join-Path $repoRoot 'internal\app\history.go')
-    if ($src -notmatch 'func\s+resolveHashIndex') {
-        throw 'history.go must expose resolveHashIndex (header-name lookup)'
-    }
-    if ($src -match 'row\[len\(historyColumns\)\]') {
-        throw 'history.go indexes the ledger positionally by column count; the hash column must be located by header name'
-    }
-}
-
-Assert-Step 'tests never write to the real audit directory' {
-    # New() points LogPath/PlanPath/HistoryPath at the real per-user audit
-    # directory, which is the authoritative evidence store on a live machine.
-    # A test calling New() directly appends fixture lines there, where they
-    # become indistinguishable from a real operation. newTestApp redirects every
-    # artifact into t.TempDir(); it is the only sanctioned test constructor.
-    $hits = Get-ChildItem -Path 'internal' -Recurse -Filter *_test.go |
-        Where-Object { $_.Name -ne 'testapp_test.go' } |
-        Select-String -Pattern '=\s*New\(' -CaseSensitive
-    if ($hits) {
-        $files = ($hits | ForEach-Object { "$($_.Path):$($_.LineNumber)" }) -join ', '
-        throw "tests must construct via newTestApp(t) so audit artifacts stay in t.TempDir(): $files"
-    }
-    $helper = Read-GateText (Join-Path $repoRoot 'internal\app\testapp_test.go')
-    foreach ($artifact in @('LogPath', 'PlanPath', 'HistoryPath', 'driverListCacheDir')) {
-        if ($helper -notmatch "\.$artifact\s*=") {
-            throw "newTestApp must redirect $artifact into t.TempDir()"
-        }
     }
 }
 
@@ -573,10 +554,19 @@ Assert-Step 'the invariants spec carries every rule the code enforces' {
     # The citations above name gate steps by title; a citation to a step that no
     # longer exists is the silent drift this whole gate family exists to catch.
     # Verify both directions: the spec names the step, and the step is declared.
-    foreach ($gateName in @('silent install dispatches on the package, not on the vendor column',
+    # Step names come from two places now — the literal Assert-Step lines in this
+    # file, and the Go registry internal/gate exposes through cmd/gatecheck -list.
+    # Both are consulted, so a rule that moved from a PowerShell regex into Go
+    # keeps its citation resolvable instead of silently dropping out of the audit.
+    $declared = @([regex]::Matches($selfText, "Assert-Step '([^']+)'") | ForEach-Object { $_.Groups[1].Value })
+    if ($script:GateCheckExe -and (Test-Path -LiteralPath $script:GateCheckExe)) {
+        $declared += @(& $script:GateCheckExe -list -root $repoRoot)
+    }
+    foreach ($gateName in @('engine zero-network import (local side-effect packages)',
+                            'silent install dispatches on the package, not on the vendor column',
                             'one comparison primitive decides every version question')) {
-        if ($selfText -notmatch [regex]::Escape("Assert-Step '$gateName'")) {
-            throw "invariants.md cites the gate step '$gateName' but this file no longer declares it"
+        if ($declared -notcontains $gateName) {
+            throw "a doc cites the gate step '$gateName' but neither this file nor the Go registry declares it"
         }
     }
     # A sub-section may be added, but the six top-level invariants are what the
@@ -630,7 +620,7 @@ Assert-Step 'one comparison primitive decides every version question' {
     if ($version -notmatch 'type\s+VersionOrder\s+int') {
         throw 'VersionOrder is gone; the undecided outcome is lost again'
     }
-    foreach ($v in @('OrderUndecided', 'OrderLess', 'OrderEqual', 'OrderGreater')) {
+    foreach ($v in @('OrderUndecided', 'orderLess', 'OrderEqual', 'orderGreater')) {
         if ($version -notmatch ("\b$v\b")) {
             throw "VersionOrder lost the $v outcome"
         }
@@ -819,28 +809,6 @@ Assert-Step 'the automatic install set is backed by measurements only' {
     }
 }
 
-Assert-Step 'package cleanup is never presented as rollback' {
-    # Invariant 6: rollback is device-level — DiRollbackDriver, or reinstalling
-    # the previous INF. Deleting the published package by INF does not put a
-    # device back on its previous driver and can leave it with none until PnP
-    # re-enumerates, so no code may carry that argument vector. The dead
-    # primitive that held it was removed; this step keeps it gone rather than
-    # trusting that nobody re-adds it. Tests are scanned too: a test that pins
-    # the vector is exactly how the primitive comes back.
-    $hits = Get-ChildItem -Path 'internal' -Recurse -Filter *.go |
-        Select-String -Pattern '"/delete-driver"' -SimpleMatch
-    if ($hits) {
-        $files = ($hits | ForEach-Object { "$($_.Path):$($_.LineNumber)" }) -join ', '
-        throw "engine code carries the driver-package delete vector ($files); package cleanup is not rollback and must not exist as an action"
-    }
-    # Refusing package cleanup is only meaningful while a real device-level
-    # rollback path exists, so pin that side too.
-    $native = Read-GateText (Join-Path $repoRoot 'internal\install\rollback_native_windows.go')
-    if ($native -notmatch 'DiRollbackDriver') {
-        throw 'the device-level rollback call is gone; refusing package cleanup guards nothing'
-    }
-}
-
 Assert-Step 'software-versioned compare falls back to the measured device version' {
     # Not installed is the only status the automatic set acts on, so what
     # produces it has to rest on measurement. A software-versioned driver whose
@@ -969,111 +937,9 @@ Assert-Step 'every text type the repo carries has an explicit line ending' {
     }
 }
 
-Assert-Step 'no package exports what nothing outside it names' {
-    # An exported name nothing outside its package spells is a false API
-    # promise: it invites a consumer the package never meant to serve, and it
-    # rots into a second surface nobody maintains. Each package's export set
-    # must equal what its consumers use, so this step fails on any name that
-    # only its own package mentions and asks for it to be unexported.
-    #
-    # Deliberately out of scope: methods are never spelled pkg.Name, so this
-    # scan cannot tell whether a *method* has a consumer - judging one here
-    # would fail on every method of an exported type. But an exported method is
-    # still a declaration callers use, so its signature does count when asking
-    # whether some other declaration needs a type's name (see Get-ExportedDecls
-    # below, which includes methods for exactly that reason).
-    # Types another exported declaration mentions must stay exported too, or
-    # that declaration returns something callers cannot name.
-    # Consumers include tests: an in-package test uses bare names, so only a
-    # test in another package counts, and that is a real consumer.
-    $goFiles = Get-ChildItem -Path $repoRoot -Recurse -File -Filter '*.go' |
-        Where-Object { $_.FullName -notmatch '\\\.' }
-    $texts = @{}
-    foreach ($f in $goFiles) { $texts[$f.FullName] = Read-GateText $f.FullName }
-
-    # Exported declarations of one source file, with the struct body attached
-    # when the declaration is a struct, because an exported struct's fields are
-    # where a type gets named by another exported declaration.
-    #
-    # Returned as a list of name/body pairs rather than a map keyed by name: two
-    # types in one package can each have an Error method, and keying by name
-    # would keep only the last one, silently reporting the other type as unused.
-    function Get-ExportedDecls {
-        param([string]$Source)
-        $decls = @()
-        $lines = $Source -split "`n"
-        for ($i = 0; $i -lt $lines.Count; $i++) {
-            $name = $null
-            if ($lines[$i] -cmatch '^func\s+([A-Z][A-Za-z0-9_]*)\s*[\(\[]') { $name = $Matches[1] }
-            elseif ($lines[$i] -cmatch '^func\s+\([^)]*\)\s+([A-Z][A-Za-z0-9_]*)\s*[\(\[]') { $name = $Matches[1] }
-            elseif ($lines[$i] -cmatch '^type\s+([A-Z][A-Za-z0-9_]*)\s') { $name = $Matches[1] }
-            if (-not $name) { continue }
-            $body = $lines[$i]
-            if ($lines[$i] -cmatch '^type\s+[A-Z][A-Za-z0-9_]*\s+struct\s*\{') {
-                for ($j = $i + 1; $j -lt $lines.Count -and $lines[$j] -notmatch '^\}'; $j++) { $body += "`n" + $lines[$j] }
-            }
-            $decls += , @($name, $body)
-        }
-        return $decls
-    }
-
-    $offenders = @()
-    foreach ($dir in (Get-ChildItem -Path (Join-Path $repoRoot 'internal') -Recurse -Directory)) {
-        $prod = @(Get-ChildItem -Path $dir.FullName -File -Filter '*.go' -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -notlike '*_test.go' })
-        if ($prod.Count -eq 0) { continue }
-        $kind = @{}
-        $decls = @()
-        foreach ($f in $prod) {
-            foreach ($line in ($texts[$f.FullName] -split "`n")) {
-                if ($line -cmatch '^func\s+([A-Z][A-Za-z0-9_]*)\s*[\(\[]') { $kind[$Matches[1]] = 'func' }
-                elseif ($line -cmatch '^type\s+([A-Z][A-Za-z0-9_]*)\s') { $kind[$Matches[1]] = 'type' }
-                elseif ($line -cmatch '^(var|const)\s+([A-Z][A-Za-z0-9_]*)\s') { $kind[$Matches[2]] = 'var' }
-            }
-            $decls += Get-ExportedDecls -Source $texts[$f.FullName]
-        }
-        foreach ($name in ($kind.Keys | Sort-Object)) {
-            $qualified = [regex]::Escape("$($dir.Name).$name")
-            $consumed = $false
-            foreach ($f in $goFiles) {
-                if ($f.Directory.FullName -eq $dir.FullName) { continue }
-                if ($texts[$f.FullName] -cmatch "(?m)(^|[^A-Za-z0-9_.])$qualified([^A-Za-z0-9_]|$)") { $consumed = $true; break }
-            }
-            if ($consumed) { continue }
-            if ($kind[$name] -eq 'type') {
-                $named = $false
-                foreach ($pair in $decls) {
-                    if ($pair[0] -eq $name) { continue }
-                    if ($pair[1] -cmatch "(^|[^A-Za-z0-9_])$([regex]::Escape($name))([^A-Za-z0-9_]|$)") { $named = $true; break }
-                }
-                if ($named) { continue }
-            }
-            $offenders += "internal/$($dir.Name): $name ($($kind[$name]))"
-        }
-    }
-    if ($offenders.Count -gt 0) {
-        throw ("nothing outside its package names these exported identifiers, so they are an API that is not an API - unexport them:`n  " +
-            ($offenders -join "`n  "))
-    }
-}
-
 Assert-Step 'git diff check' {
     $diff = git diff --check
     if ($LASTEXITCODE -ne 0) { throw "git diff --check failed`n$diff" }
-}
-
-Assert-Step 'engine zero-network import (local side-effect packages)' {
-    # Determinism invariant: only download/api may touch the network. Local
-    # side-effect packages must not import net/http or net/url, otherwise a
-    # hidden network call could slip in silently.
-    $localPkgs = 'internal\install', 'internal\compare', 'internal\inventory', 'internal\plan', 'internal\audit'
-    $hits = Get-ChildItem -Path $localPkgs -Recurse -Filter *.go |
-        Where-Object { $_.FullName -notmatch '_test\.go$' } |
-        Select-String -Pattern '"net/http"|"net/url"'
-    if ($hits) {
-        $files = ($hits | ForEach-Object { "$($_.Path):$($_.LineNumber)" }) -join ', '
-        throw "local side-effect packages must not import net/http or net/url: $files"
-    }
 }
 
 Assert-Step 'untracked artifact hygiene' {

@@ -74,9 +74,9 @@ func TestFetchQuickFixReportsContractDrift(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))}
 	})}
 	_, err := client.fetchQuickFix(context.Background(), "cat", "248")
-	var drift *ContractDriftError
+	var drift *contractDriftError
 	if !errors.As(err, &drift) {
-		t.Fatalf("expected ContractDriftError, got %v", err)
+		t.Fatalf("expected contractDriftError, got %v", err)
 	}
 	if drift.Source != "QuickFix" || drift.RowCount != 1 {
 		t.Fatalf("drift = %#v", drift)
@@ -92,9 +92,9 @@ func TestFetchWebReportsContractDrift(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))}
 	})}
 	_, err := client.fetchWeb(context.Background(), "cat", "248")
-	var drift *ContractDriftError
+	var drift *contractDriftError
 	if !errors.As(err, &drift) {
-		t.Fatalf("expected ContractDriftError, got %v", err)
+		t.Fatalf("expected contractDriftError, got %v", err)
 	}
 	if drift.Source != "Web" || drift.RowCount != 1 {
 		t.Fatalf("drift = %#v", drift)
@@ -109,7 +109,7 @@ func TestFetchQuickFixEmptyListIsNotDrift(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))}
 	})}
 	_, err := client.fetchQuickFix(context.Background(), "cat", "248")
-	var drift *ContractDriftError
+	var drift *contractDriftError
 	if errors.As(err, &drift) {
 		t.Fatalf("empty list must not be reported as drift: %v", err)
 	}
@@ -150,9 +150,9 @@ func TestFetchQuickFixReportsInterfaceGateOnHTTPStatus(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusUnauthorized, Body: io.NopCloser(bytes.NewReader([]byte(`{}`)))}
 	})}
 	_, err := client.fetchQuickFix(context.Background(), "cat", "248")
-	var gate *InterfaceGateError
+	var gate *interfaceGateError
 	if !errors.As(err, &gate) {
-		t.Fatalf("expected InterfaceGateError, got %v", err)
+		t.Fatalf("expected interfaceGateError, got %v", err)
 	}
 	if gate.Source != "QuickFix" || !strings.Contains(gate.Reason, "401") {
 		t.Fatalf("gate = %#v", gate)
@@ -165,9 +165,9 @@ func TestFetchQuickFixNonJSONIsGate(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader([]byte(`<html>login</html>`)))}
 	})}
 	_, err := client.fetchQuickFix(context.Background(), "cat", "248")
-	var gate *InterfaceGateError
+	var gate *interfaceGateError
 	if !errors.As(err, &gate) {
-		t.Fatalf("expected InterfaceGateError, got %v", err)
+		t.Fatalf("expected interfaceGateError, got %v", err)
 	}
 }
 
@@ -178,9 +178,9 @@ func TestFetchQuickFixUnrelatedJSONShapeIsGate(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader([]byte(`{"code":401,"message":"unauthorized"}`)))}
 	})}
 	_, err := client.fetchQuickFix(context.Background(), "cat", "248")
-	var gate *InterfaceGateError
+	var gate *interfaceGateError
 	if !errors.As(err, &gate) {
-		t.Fatalf("expected InterfaceGateError, got %v", err)
+		t.Fatalf("expected interfaceGateError, got %v", err)
 	}
 }
 
@@ -190,9 +190,9 @@ func TestFetchWebUnrelatedJSONShapeIsGate(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader([]byte(`{"code":401,"message":"unauthorized"}`)))}
 	})}
 	_, err := client.fetchWeb(context.Background(), "cat", "248")
-	var gate *InterfaceGateError
+	var gate *interfaceGateError
 	if !errors.As(err, &gate) {
-		t.Fatalf("expected InterfaceGateError, got %v", err)
+		t.Fatalf("expected interfaceGateError, got %v", err)
 	}
 	if gate.Source != "Web" {
 		t.Fatalf("gate = %#v", gate)

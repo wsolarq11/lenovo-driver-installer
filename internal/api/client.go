@@ -47,32 +47,32 @@ type SourceDrivers struct {
 	DriftWarning string
 }
 
-// ContractDriftError reports that a Lenovo API returned a non-empty driver list
+// contractDriftError reports that a Lenovo API returned a non-empty driver list
 // whose shape no longer matches the parser contract: every row was dropped
 // because required fields (FileName/FilePath) were absent. It is distinct from
 // an empty response so the caller can tell "the interface changed" apart from
 // "there are genuinely no drivers", instead of silently degrading one to the
 // other.
-type ContractDriftError struct {
+type contractDriftError struct {
 	Source   string
 	RowCount int
 }
 
-func (e *ContractDriftError) Error() string {
+func (e *contractDriftError) Error() string {
 	return fmt.Sprintf("%s driver list shape drifted: %d rows present but none parsed (required fields missing)", e.Source, e.RowCount)
 }
 
-// InterfaceGateError reports that a Lenovo endpoint responded in a way that
+// interfaceGateError reports that a Lenovo endpoint responded in a way that
 // suggests the private interface is now gated or blocked (authentication, rate
 // limiting, blocking, or a wholesale response rewrite), rather than a mere
 // field-shape drift. It is surfaced distinctly so the user knows the data
 // source changed hands instead of concluding "no drivers".
-type InterfaceGateError struct {
+type interfaceGateError struct {
 	Source string
 	Reason string
 }
 
-func (e *InterfaceGateError) Error() string {
+func (e *interfaceGateError) Error() string {
 	return fmt.Sprintf("%s interface may be gated or blocked: %s", e.Source, e.Reason)
 }
 
@@ -89,7 +89,7 @@ func (c *Client) invokeLenovo(ctx context.Context, relativeURL string) ([]byte, 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, &InterfaceGateError{Source: "Web", Reason: fmt.Sprintf("HTTP %d", resp.StatusCode)}
+		return nil, &interfaceGateError{Source: "Web", Reason: fmt.Sprintf("HTTP %d", resp.StatusCode)}
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -118,7 +118,7 @@ func (c *Client) invokeQuickFix(ctx context.Context, searchKey, osID string) ([]
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, &InterfaceGateError{Source: "QuickFix", Reason: fmt.Sprintf("HTTP %d", resp.StatusCode)}
+		return nil, &interfaceGateError{Source: "QuickFix", Reason: fmt.Sprintf("HTTP %d", resp.StatusCode)}
 	}
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -148,11 +148,11 @@ func (c *Client) GetDriverObjects(ctx context.Context, categoryID, osID, preferr
 		}
 		if err != nil {
 			lastErr = err
-			var drift *ContractDriftError
+			var drift *contractDriftError
 			if errors.As(err, &drift) {
 				driftWarning = drift.Error()
 			}
-			var gate *InterfaceGateError
+			var gate *interfaceGateError
 			if errors.As(err, &gate) {
 				driftWarning = gate.Error()
 			}
@@ -170,10 +170,10 @@ func (c *Client) fetchQuickFix(ctx context.Context, searchKey, osID string) ([]*
 	}
 	var resp QuickFixResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
-		return nil, &InterfaceGateError{Source: "QuickFix", Reason: "response is not the expected JSON"}
+		return nil, &interfaceGateError{Source: "QuickFix", Reason: "response is not the expected JSON"}
 	}
 	if resp.StatusCode == "" && len(resp.Data.DriverList) == 0 && len(resp.Data.OSList) == 0 && len(resp.Data.PartList) == 0 {
-		return nil, &InterfaceGateError{Source: "QuickFix", Reason: "response missing expected fields (StatusCode/Data)"}
+		return nil, &interfaceGateError{Source: "QuickFix", Reason: "response missing expected fields (StatusCode/Data)"}
 	}
 	code := strings.TrimSpace(resp.StatusCode)
 	if code != "200" && code != "300" {
@@ -184,7 +184,7 @@ func (c *Client) fetchQuickFix(ctx context.Context, searchKey, osID string) ([]*
 	}
 	drivers := ParseQuickFix(&resp, osID)
 	if len(drivers) == 0 {
-		return nil, &ContractDriftError{Source: "QuickFix", RowCount: len(resp.Data.DriverList)}
+		return nil, &contractDriftError{Source: "QuickFix", RowCount: len(resp.Data.DriverList)}
 	}
 	return drivers, nil
 }
@@ -197,7 +197,7 @@ func (c *Client) fetchWeb(ctx context.Context, categoryID, osID string) ([]*mode
 	}
 	var resp webResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
-		return nil, &InterfaceGateError{Source: "Web", Reason: "response is not the expected JSON"}
+		return nil, &interfaceGateError{Source: "Web", Reason: "response is not the expected JSON"}
 	}
 	if code := strings.TrimSpace(resp.StatusCode); code != "" && code != "200" {
 		return nil, fmt.Errorf("Lenovo API returned %s for %s : %s", code, query, resp.Message)
@@ -207,12 +207,12 @@ func (c *Client) fetchWeb(ctx context.Context, categoryID, osID string) ([]*mode
 		rawCount += len(part.Drivelist)
 	}
 	if resp.StatusCode == "" && rawCount == 0 && len(resp.Data.OSList) == 0 {
-		return nil, &InterfaceGateError{Source: "Web", Reason: "response missing expected fields (statusCode/data)"}
+		return nil, &interfaceGateError{Source: "Web", Reason: "response missing expected fields (statusCode/data)"}
 	}
 	drivers := parseWeb(&resp, osID)
 	if len(drivers) == 0 {
 		if rawCount > 0 {
-			return nil, &ContractDriftError{Source: "Web", RowCount: rawCount}
+			return nil, &contractDriftError{Source: "Web", RowCount: rawCount}
 		}
 		return nil, fmt.Errorf("official driver list returned no rows")
 	}

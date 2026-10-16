@@ -21,19 +21,19 @@ type Downloader struct {
 	Client *http.Client
 }
 
-// HTTPStatusError reports a non-success response from a download request.
-type HTTPStatusError struct {
+// httpStatusError reports a non-success response from a download request.
+type httpStatusError struct {
 	Status int
 	URL    string
 }
 
-func (e *HTTPStatusError) Error() string {
+func (e *httpStatusError) Error() string {
 	return fmt.Sprintf("download returned HTTP %d for %s", e.Status, e.URL)
 }
 
-// IsHTTPStatus reports whether err is an HTTPStatusError with the given status.
+// IsHTTPStatus reports whether err is an httpStatusError with the given status.
 func IsHTTPStatus(err error, status int) bool {
-	var httpErr *HTTPStatusError
+	var httpErr *httpStatusError
 	if errors.As(err, &httpErr) {
 		return httpErr.Status == status
 	}
@@ -108,7 +108,7 @@ func (d *Downloader) downloadOnce(ctx context.Context, urlText, outFile string) 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return &HTTPStatusError{Status: resp.StatusCode, URL: urlText}
+		return &httpStatusError{Status: resp.StatusCode, URL: urlText}
 	}
 	f, err := os.Create(outFile)
 	if err != nil {
