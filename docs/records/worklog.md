@@ -1252,3 +1252,66 @@ installation side effects. Committed the four rounds of hardening work.
 注：`actionlint` 本身不进门禁（它是外部依赖，违反 stdlib-only 约定）；上述两条规则用文本判定即可覆盖，其余交给 actionlint 在本地按需跑。
 
 - [实测] 双宿主门禁 **58/58 VERIFY_OK**（`powershell.exe` 5.1 与 `pwsh` 7）。
+
+## 2026-10-17 覆盖率下限原来随编译器漂移：钉工具链而不是降数字
+
+**症状**：CI（PR #4）两个宿主都在同一步报红，且报的是同一个数：
+
+```
+FAIL Go test + coverage floor (side-effect packages): side-effect package coverage below floor: lenovo-driver/internal/trust=34.5% (floor 40%)
+```
+
+本机同一提交量到 **45.8%**。同一 OS、同一文件集、同一提交，差 11 个点。
+
+### 定位：不是测试少跑了，是分母变了
+
+第一步先排除「CI 少跑了测试」这个直觉答案。关键判据是**算术**：本机 profile 是 `33/72` 条语句 = 45.8%，而 `34.5%` 在这套分母下**不可能**出现（`25/72`=34.7%、`24/72`=33.3%）。既然这个数在 72 分母下取不到，被测量的语句集就一定不是同一个——去查测试跳过是白费力气。
+
+对照 CI 日志里的 `setup-go` 输出：CI 装的是 **1.27.2**（`go-version: 1.27.x` 浮上去的），本机是 **1.27.0**。用 `GOTOOLCHAIN=go1.27.2` 本地复现，精确得到 CI 的数：
+
+| 工具链 | `internal/trust` 覆盖率 | 语句数 |
+|---|---|---|
+| go1.27.0 | 45.8% | 33/72 |
+| go1.27.2 | 34.5% | 19/55 |
+
+**分母从 72 掉到 55**：Go 的语句插桩在补丁版本之间会变——`winTrustFileInfo` / `winTrustData` 两个结构体字面量在 1.27.0 上各记 7 条语句，在 1.27.2 上各记 1 条。一字未改，量出的覆盖率变了 11 个点。
+
+结论：**这个下限从来不是阈值，是随编译器漂移的数**。
+
+### 为什么「把下限调低」是错解
+
+量出腐化信号（删掉注入测试）后，这件事变成可证伪的：任何下限必须**高于腐化值、低于完好值**，而两个工具链给出的区间不相交：
+
+- 需要 `> max(38.9, 25.5) = 38.9`（腐化信号）
+- 且 `< min(45.8, 34.5) = 34.5`（完好值）
+
+**38.9 < x < 34.5 无解**。也就是说：只要本地与 CI 跑不同补丁版，任何数字都会在一台机器上假绿、在另一台上假红。调数字只是把问题从这里挪到那里。
+
+### 顺带发现真正的覆盖缺口
+
+查 profile 时发现 `verifyLenovoSigner` = **0.0%**——它正是执行「非 Lenovo 签名一律拒绝」这条白名单判定的函数，是这个包最重要的边界，却一行没测（外层 `VerifyFileSignature` 靠注入 seam 能测到 90%，但判定函数本身够不着）。
+
+补上 `signerSubjectFn` 注入 seam + 三条测试（接受 Lenovo subject / 拒绝第三方且错误信息点到白名单 / 传播读取失败），`trust` 在钉住的工具链上从 34.5% → **45.5%**，腐化信号 25.5%。
+
+### 落地
+
+1. **`go.mod` 钉 `toolchain go1.27.2`**（单一源）。注意 `toolchain` 指令语义是**下限**——实测本地更新的工具链仍会胜出，所以精确钉不能只靠指令本身。
+2. **门禁新增第 59 步 `the running Go toolchain is the one the module pins`**：`go mod edit -json` 读 `.Toolchain`，与 `go env GOVERSION` 比对，不等即 FAIL 并点名两者。缺 `toolchain` 指令也 FAIL（并给出修复命令）。
+3. **workflow 改为 `go-version-file: go.mod`**，删掉 `GOTOOLCHAIN=local`。原注释声称它「锁定与 go.mod 一致」——**这是错的**：`local` 只表示「不切换」，锁住的是 `setup-go` 装进来的那个版本（即 `1.27.x` 浮上来的 1.27.2），跟 go.mod 无关。既有的 `1.27.x` 也是同一处不精确。
+
+### 红灯验证（三条都点名）
+
+| 注入 | 结果 |
+|---|---|
+| `GOTOOLCHAIN=local`（本机装的 1.25.12） | `FAIL ... this gate ran on go1.25.12 but go.mod pins go1.27.2` |
+| `GOTOOLCHAIN=go1.27.0`（**满足** go.mod 下限、仅补丁号不同） | `FAIL ... ran on go1.27.0 but go.mod pins go1.27.2`；**且该次覆盖率步 PASS**（45.8%>40）——正是「旧门禁会假绿」的实证 |
+| 删掉 `toolchain` 指令 | `FAIL ... go.mod declares no toolchain directive ... Pin it with: go mod edit -toolchain=goX.Y.Z` |
+
+### 一个差点又埋进去的静默坑
+
+新步最初命名为 `the running Go toolchain is the one go.mod pins`。但 `the invariants spec carries every rule the code enforces` 抽引用时**刻意跳过含 `.` 的反引号片段**（避免把版本号、路径当步骤名），于是这个名字的引用会被**静默忽略**——规格里写了 `强制点`，却没有任何步骤真的在查它，正是本仓库最忌讳的「有副本没上锁」。改名为 `the running Go toolchain is the one the module pins`（51 字符、无 `.`、小写开头、含空格）后纳入抽取，并实测：把步骤改名让引用悬空 → `FAIL ... invariants.md cites the gate step ... but neither this file nor the Go registry declares it`。
+
+- [实测] 同一提交、同一文件：go1.27.0 `internal/trust` 45.8%（33/72 语句）/ go1.27.2 34.5%（19/55 语句）。
+- [实测] `toolchain` 指令语义是下限：本地 1.27.2 读 `toolchain go1.27.0` 仍用 1.27.2；`GOTOOLCHAIN=go1.27.0` 才精确降到 1.27.0。
+- [实测] 补测试后 `trust` 在钉住的工具链上 45.5%，腐化信号 25.5%，下限 40 落在缝中。
+- [实测] 双宿主门禁 **59/59 VERIFY_OK**（`powershell.exe` 5.1 与 `pwsh` 7）。

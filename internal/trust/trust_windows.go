@@ -83,12 +83,14 @@ type winTrustData struct {
 	pSignatureSettings  uintptr
 }
 
-// winVerifyTrustFn and verifyLenovoSignerFn are injectable seams so the
-// two-stage fallback decision is unit-testable without a real signed file or a
-// live CRL. Production never overrides them.
+// winVerifyTrustFn, verifyLenovoSignerFn and signerSubjectFn are injectable
+// seams so both decisions are unit-testable without a real signed file or a
+// live CRL: the two-stage revocation fallback, and the whitelist decision that
+// accepts or rejects a signer. Production never overrides them.
 var (
 	winVerifyTrustFn     = winVerifyTrust
 	verifyLenovoSignerFn = verifyLenovoSigner
+	signerSubjectFn      = signerSubject
 )
 
 // VerifyFileSignature validates the file with revocation checking first. When
@@ -154,7 +156,7 @@ func winVerifyTrust(path string, revocationChecks uint32) uint32 {
 // tolerates the multiple Lenovo legal entities seen across official packages
 // (e.g. "CN=Lenovo, O=Lenovo..." and "Lenovo (Beijing) Limited").
 func verifyLenovoSigner(path string) error {
-	subject, err := signerSubject(path)
+	subject, err := signerSubjectFn(path)
 	if err != nil {
 		return fmt.Errorf("could not read signer certificate: %w", err)
 	}

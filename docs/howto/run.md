@@ -77,7 +77,7 @@ WPF 窗口通过引擎加载官方驱动列表，显示相同的 `Update` / `Up 
 
 ## 干净检出复现
 
-1. 安装官方 Go 1.27（或更新）工具链。
+1. 安装官方 Go 1.27（或更新）工具链。跑门禁时版本要与 `go.mod` 的 `toolchain` 指令一致（`GOTOOLCHAIN=auto` 默认即会切到该版本，无需手工安装）。
 2. 克隆/复制仓库到 Windows 机器。
 3. 仓库根目录打开 PowerShell。
 4. `.\scripts\verify.ps1`。

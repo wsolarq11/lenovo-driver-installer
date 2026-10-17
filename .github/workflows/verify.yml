@@ -32,19 +32,27 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: 1.27.x
+          # Read the pin from go.mod rather than floating a version spec: the
+          # gate's coverage floors are measured off `go test -cover`, and Go's
+          # statement instrumenter changes between patch releases (internal/trust
+          # measured 45.8% on go1.27.0 and 34.5% on go1.27.2 with no source
+          # change). A floating spec would install a compiler whose verdict the
+          # downloaded floors were never measured against. setup-go takes the
+          # toolchain directive when go.mod has one.
+          go-version-file: go.mod
           cache: false
           # Stdlib-only module (go.mod has no requires, hence no go.sum).
           # setup-go defaults cache to true, which would emit a misleading
           # "go.sum not found" warning; disable it explicitly.
-      - name: Lock toolchain to go.mod
+      - name: Report Go and host versions
         shell: pwsh
+        # The gate has its own step asserting the running toolchain matches the
+        # pin; this only makes the run's environment readable from the log. The
+        # host is invoked as a child process because `shell:` cannot take a
+        # matrix expression.
         run: |
-          "GOTOOLCHAIN=local" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-      - name: Report host version
-        shell: pwsh
-        # Single quotes keep the expression literal for the child host.
-        run: '& ${{ matrix.host }} -NoProfile -Command $PSVersionTable.PSVersion.ToString()'
+          & go version
+          & ${{ matrix.host }} -NoProfile -Command $PSVersionTable.PSVersion.ToString()
       - name: Run offline verification
         shell: pwsh
         run: |

@@ -77,7 +77,7 @@ docs/                        本文档树
 ## 4. 前置条件
 
 - Windows 10 / Windows 11
-- Go 1.27 或更新（官方工具链）
+- Go 1.27 或更新（官方工具链）；**跑门禁**需要 `go.mod` 的 `toolchain` 指令所钉的那个补丁版本——覆盖率下限随插桩差异变化，门禁步骤 `the running Go toolchain is the one the module pins` 会拒绝其他编译器（`GOTOOLCHAIN=auto` 默认即会切到该版本）
 - Windows PowerShell 5.1（仅 WPF 层）
 - 驱动安装需要管理员权限
 - 需要访问联想官方 API 主机的网络

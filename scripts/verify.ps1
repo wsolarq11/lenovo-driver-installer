@@ -65,6 +65,34 @@ if (-not $resolvedGoExe) {
 }
 $GoExe = $resolvedGoExe
 
+# The toolchain is pinned because the coverage floors below are read off
+# `go test -cover`, and Go's statement instrumenter changes between patch
+# releases: moving internal/trust from go1.27.0 to go1.27.2 changed its
+# measured coverage from 45.8% (33/72 statements) to 34.5% (19/55) with no
+# source change. A floor is only a threshold if the compiler is fixed, so a run
+# on any other toolchain is reported as a failure here rather than silently
+# reinterpreting every floor in this file.
+Assert-Step 'the running Go toolchain is the one the module pins' {
+    $modJson = & $GoExe mod edit -json 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "go mod edit -json exited $LASTEXITCODE" }
+    $mod = $modJson | ConvertFrom-Json
+    $pinned = [string]$mod.Toolchain
+    if (-not $pinned) {
+        throw ('go.mod declares no toolchain directive, so every coverage floor in this ' +
+               'gate is measured against whichever patch release happens to be installed. ' +
+               'Pin it with: go mod edit -toolchain=goX.Y.Z')
+    }
+    $running = ([string](& $GoExe env GOVERSION)).Trim()
+    if ($LASTEXITCODE -ne 0) { throw "go env GOVERSION exited $LASTEXITCODE" }
+    if ($running -ne $pinned) {
+        throw ("this gate ran on $running but go.mod pins $pinned. Go's coverage " +
+               "instrumentation differs between patch releases, so the floors mean " +
+               "something different on each: run with GOTOOLCHAIN=$pinned (or let " +
+               "GOTOOLCHAIN=auto switch to it) instead of reporting a verdict measured " +
+               "by another compiler")
+    }
+}
+
 # -FixBom is an explicit local convenience: restore drifted BOM before the gate
 # runs. CI never passes this switch, so a BOM-less non-ASCII ps1 fails the gate
 # there instead of being silently auto-repaired into a green run.
@@ -103,6 +131,11 @@ Assert-Step 'Go test + coverage floor (side-effect packages)' {
         # downloaded package is Lenovo-signed and unrevoked, and its live smoke
         # tests are opt-in (they need a real downloaded package), so the offline
         # suite is the only thing standing between it and silent rot.
+        #
+        # Measured on the toolchain go.mod pins: 45.5% intact, 25.5% with the
+        # whitelist tests deleted. The gap is wide because the accept/reject
+        # decisions are tested through injectable seams while the WinVerifyTrust
+        # plumbing around them is not; the floor sits in that gap.
         'lenovo-driver/internal/trust'     = 40
         # The gate's own rules are checked code, not unchecked prose. A rule whose
         # red-light test is deleted starts passing everything silently — the one
