@@ -992,3 +992,39 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed**
+
+---
+
+## Session: 门禁性能回归修复（45 步，38.5s → 15.3s）
+
+**Branch**: `main`（`8d3e811` 之后的追加提交）
+
+### 问题
+
+上一轮把 19 条规则搬进 Go 后，双宿主门禁从 32.7 s 涨到 38.5 s。实测定位：`gatecheck -check NAME` 每被调用一次就重跑一遍 `go list -export -deps -test`（约 820 ms），而 `verify.ps1` 为每条规则各起一个进程 → 20 × 820 ms ≈ 16.4 s，正好等于实测的 15.8 s。
+
+更关键的是**这笔钱几乎全白花**：20 条检查里只有 2 条真的读导出数据（`tests never write to the real audit directory`、`no package exports what nothing outside it names`），其余 18 条只读 AST。`Load` 本身只占 29 ms（benchmark 实测），所以慢的完全是那个子进程。
+
+### 改法
+
+- `Context` 增加 `LoadExports func() (ExportData, error)`，`Exports` 保留为"调用方已有数据时直接塞"的入口。`types()` 改为**首次真正需要时才**调用它，并把结果缓存进 `c.Exports`；用 `tiDone` 区分"没跑过"与"跑过但失败"，否则一次失败会被后续调用当成未初始化而重跑。
+- 没有导出数据也没有加载器时返回明确错误，而不是静默给一个空 `ExportData`（空 map 会让类型检查报"no export data recorded for X"，把配置错误伪装成依赖问题）。
+- `cmd/gatecheck` 改为传 `LoadExports` 闭包，不再预取。
+- 测试侧 `loadFixture` / `TestChecksPassAgainstThisRepo` 同样改为闭包，与真实门禁走同一条接缝。
+
+### 防回流
+
+新增 `TestOnlyNameResolvingChecksLoadExports`：逐条运行检查，用探针闭包记录"这条检查是否触发了导出数据加载"，并断言只有已知那 2 条会触发。将来谁在纯 AST 检查里顺手调一次 `types()`，性能会静默退回，这个测试会点名是哪个检查。
+
+红灯实测：给 `checkZeroNetworkImport` 注入一行 `ctx.types()` → `FAIL: engine zero-network import (local side-effect packages) loaded export data it does not use`。复原转绿。
+
+### Testing
+
+- [实测] 20 条 Go 检查总耗时 **15800 ms → 3645 ms**（平均 197 ms/条；两条类型检查各约 950 ms，其余 18 条 100–155 ms）。
+- [实测] 双宿主全量门禁 **45/45 VERIFY_OK**：`pwsh` 7 **15.3 s**、`powershell.exe` 5.1 **20.7 s**。修复前分别为 38.5 s / 约 41 s，38 步基线为 32.7 s——**现在 45 步比 38 步还快**。
+- [实测] `go test ./internal/gate/` 4.6 s → 2.8 s（测试同样受益）；覆盖率 81.5%（地板 70%）。
+- [实测] `go build ./...`、`go build -tags legacyps ./...`、`go vet ./...`、`gofmt -l`（无输出）、`go test ./...` 全绿。
+
+### Status
+
+[OK] **Completed**

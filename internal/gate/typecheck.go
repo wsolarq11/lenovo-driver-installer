@@ -37,10 +37,27 @@ type typeInfo struct {
 }
 
 // types type-checks the repository once and returns the cached result, so the
-// checks that need resolved names share one pass.
+// checks that need resolved names share one pass. The export data is fetched
+// only here, on the first request: a check that never asks for types never
+// makes the gate run `go list`.
 func (c *Context) types() (*typeInfo, error) {
-	if c.ti == nil && c.tiErr == nil {
-		c.ti, c.tiErr = c.Repo.typeCheck(c.Exports)
+	if !c.tiDone {
+		c.tiDone = true
+		exports := c.Exports
+		if exports == nil && c.LoadExports != nil {
+			var err error
+			if exports, err = c.LoadExports(); err != nil {
+				c.tiErr = err
+				return nil, err
+			}
+			c.Exports = exports
+		}
+		if exports == nil {
+			c.tiErr = fmt.Errorf("this check needs type information but the context carries no " +
+				"export data and no way to load it")
+			return nil, c.tiErr
+		}
+		c.ti, c.tiErr = c.Repo.typeCheck(exports)
 	}
 	return c.ti, c.tiErr
 }

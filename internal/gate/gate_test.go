@@ -9,20 +9,22 @@ import (
 	"testing"
 )
 
-// loadFixture writes a synthetic module under t.TempDir(), asks the Go
-// toolchain for its dependency export data exactly as cmd/gatecheck does, and
-// returns the loaded repository and a context ready for any check. This is the
-// same seam the real gate uses, so a red-light here is a red-light in the gate.
+// loadFixture writes a synthetic module under t.TempDir() and returns the
+// loaded repository with a context ready for any check. Export data is loaded
+// on demand, exactly as cmd/gatecheck does it, so this exercises the same seam
+// the real gate uses: a red-light here is a red-light in the gate.
 func loadFixture(t *testing.T, module string, files map[string]string) *Context {
 	t.Helper()
 	root := t.TempDir()
 	writeTree(t, root, files)
-	exports := listExports(t, root)
 	repo, err := Load(root)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	return &Context{Repo: repo, Exports: exports}
+	return &Context{
+		Repo:        repo,
+		LoadExports: func() (ExportData, error) { return listExports(t, root), nil },
+	}
 }
 
 func writeTree(t *testing.T, root string, files map[string]string) {
@@ -78,12 +80,57 @@ func TestChecksPassAgainstThisRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	exports := listExports(t, root)
-	ctx := &Context{Repo: repo, Exports: exports}
+	ctx := &Context{
+		Repo:        repo,
+		LoadExports: func() (ExportData, error) { return listExports(t, root), nil },
+	}
 	for _, name := range Names() {
 		if err := Run(ctx, name); err != nil {
 			t.Errorf("%s failed against this repo: %v", name, err)
 		}
+	}
+}
+
+// Only the checks that resolve names may ask for type information. The export
+// data behind it costs about a second to produce, and -check runs one check per
+// process, so a check that asks for types it does not use makes the gate slower
+// for no verdict. Eighteen of twenty checks are in that category; this test
+// fails if one of them starts asking, or if a check that genuinely needs types
+// stops being counted here.
+func TestOnlyNameResolvingChecksLoadExports(t *testing.T) {
+	root := repoRoot(t)
+	repo, err := Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	needsTypes := map[string]bool{
+		"tests never write to the real audit directory":    true,
+		"no package exports what nothing outside it names": true,
+	}
+	exportsLoaded := false
+	ctx := &Context{
+		Repo: repo,
+		LoadExports: func() (ExportData, error) {
+			exportsLoaded = true
+			return listExports(t, root), nil
+		},
+	}
+	for _, name := range Names() {
+		exportsLoaded = false
+		if err := Run(ctx, name); err != nil {
+			t.Fatalf("%s failed against this repo: %v", name, err)
+		}
+		if !needsTypes[name] && exportsLoaded {
+			t.Errorf("%s loaded export data it does not use; it is not a name-resolving check, "+
+				"so it should read the AST and cost nothing", name)
+		}
+		// The context caches the first load, so reset it between checks to make
+		// the observation per-check rather than cumulative.
+		ctx.ti, ctx.tiErr, ctx.tiDone = nil, nil, false
+		ctx.Exports = nil
+	}
+	if len(needsTypes) != 2 {
+		t.Fatalf("the needs-types set has %d entries; this test's premise changed", len(needsTypes))
 	}
 }
 

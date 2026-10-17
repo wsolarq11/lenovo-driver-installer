@@ -207,11 +207,22 @@ func (r *Repo) positionAt(pos token.Pos) string {
 type Context struct {
 	Repo *Repo
 	// Exports maps an import path outside this module to the export data file
-	// `go list -export` produced for it. Only checks that need types read it.
+	// `go list -export` produced for it. Set it directly when the caller already
+	// has the data; leave it nil and set LoadExports to have it fetched on
+	// demand. Only the checks that type-check read either field.
 	Exports ExportData
+	// LoadExports produces the export data the first time a check needs it.
+	//
+	// It is a function rather than a value because obtaining it means running
+	// `go list -export -deps -test`, which costs about as much as everything
+	// else the gate does put together. Eighteen of the twenty checks never
+	// touch types, so paying for it in every one of them made the gate ~16s
+	// slower for no verdict. A check that does need it pays once.
+	LoadExports func() (ExportData, error)
 
-	ti    *typeInfo
-	tiErr error
+	ti     *typeInfo
+	tiErr  error
+	tiDone bool
 }
 
 // check is one named assertion. The name is the gate step name: the failure a

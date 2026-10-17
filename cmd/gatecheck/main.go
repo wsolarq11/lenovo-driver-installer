@@ -62,12 +62,16 @@ func main() {
 		fatal(err)
 	}
 
-	exports, err := loadExports(*root, *goExe)
-	if err != nil {
-		fatal(err)
+	// The export data is loaded lazily: `go list -export -deps -test` costs
+	// about as much as every other check combined, and only the two checks that
+	// type-check the module read it. -check runs one check per process, so
+	// loading it eagerly would charge all twenty for those two.
+	ctx := &gate.Context{
+		Repo: repo,
+		LoadExports: func() (gate.ExportData, error) {
+			return loadExports(*root, *goExe)
+		},
 	}
-
-	ctx := &gate.Context{Repo: repo, Exports: exports}
 	if err := gate.Run(ctx, *check); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
