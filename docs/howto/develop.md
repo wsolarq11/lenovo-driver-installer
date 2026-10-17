@@ -58,7 +58,7 @@ $env:LENOVO_TRUST_SMOKE=1; go test ./internal/trust/ -run TestVerifyLenovoPackag
 
 ## CI
 
-`.github/workflows/verify.yml` 在 `windows-latest`（Go 1.27.x，`GOTOOLCHAIN=local` 锁定与 `go.mod` 一致）跑 `scripts/verify.ps1`，**两个 PowerShell 宿主各一个 job**（`pwsh` 7 与 `powershell.exe` 5.1）：这个门禁从设计上就是双宿主的——`Read-GateText` 与「读取点必须声明编码」步存在的唯一理由就是 5.1 按 ANSI 码页解码 BOM-less UTF-8 而 7 默认 UTF-8，只跑单宿主会让这类结论在 CI 里无人验证。`push` 只在 `main` 上触发（PR 已覆盖其余分支，否则同一提交跑两遍）。CI 只跑离线门禁——依赖硬件的 native/WPF smoke 按设计本地驱动，WPF 一步例外：`-SelfTest` 不需要交互桌面，已纳入门禁（构造真实窗口、渲染位图、校验非空）。门禁结论与宿主无关，任何一侧能翻转的结论都由宿主无关读取步阻断。
+`.github/workflows/verify.yml` 在 `windows-latest`（Go 1.27.x，`GOTOOLCHAIN=local` 锁定与 `go.mod` 一致）跑 `scripts/verify.ps1`。注意 `shell:` 关键字不接受任何上下文表达式：写成 `shell: ${{ matrix.host }}` 会让整个工作流文件失效，GitHub 的表现为「0 个 job、耗时 0 秒、无日志、结论 failure」——看起来像基础设施故障，实际是文件没通过校验。门禁有专步钉住这条（连同 `matrix.*` 必须有 `matrix:` 块），**两个 PowerShell 宿主各一个 job**（`pwsh` 7 与 `powershell.exe` 5.1）：这个门禁从设计上就是双宿主的——`Read-GateText` 与「读取点必须声明编码」步存在的唯一理由就是 5.1 按 ANSI 码页解码 BOM-less UTF-8 而 7 默认 UTF-8，只跑单宿主会让这类结论在 CI 里无人验证。`push` 只在 `main` 上触发（PR 已覆盖其余分支，否则同一提交跑两遍）。CI 只跑离线门禁——依赖硬件的 native/WPF smoke 按设计本地驱动，WPF 一步例外：`-SelfTest` 不需要交互桌面，已纳入门禁（构造真实窗口、渲染位图、校验非空）。门禁结论与宿主无关，任何一侧能翻转的结论都由宿主无关读取步阻断。
 
 ## 约定
 

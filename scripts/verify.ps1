@@ -559,6 +559,45 @@ Assert-Step 'the CI trigger is public' {
     }
 }
 
+Assert-Step 'the workflow files are usable by GitHub' {
+    # A workflow GitHub cannot parse does not fail loudly: it produces a run
+    # with zero jobs that finishes in under a second and reports "failure", so
+    # the API, the logs and the annotations are all empty and the run points at
+    # nothing. That is a silent red with the worst possible signature - it looks
+    # like infrastructure, so the reflex is to re-run rather than to read.
+    #
+    # The instance that happened here: `shell: ${{ matrix.shell }}`. GitHub
+    # allows no context in the shell keyword, so the whole file was invalid.
+    # There is no YAML parser available offline (and the module is stdlib-only),
+    # so this pins the rules that are both real and checkable as text. It is
+    # deliberately not a general YAML validator, and it says so rather than
+    # implying more coverage than it has.
+    $workflows = Join-Path $repoRoot '.github\workflows'
+    if (-not (Test-Path -LiteralPath $workflows)) {
+        return
+    }
+    foreach ($wf in Get-ChildItem -LiteralPath $workflows -Filter '*.yml') {
+        $lines = (Read-GateText $wf.FullName) -split "\r?\n"
+        foreach ($line in $lines) {
+            if ($line -match '^\s*#') { continue }
+            # GitHub's context-availability table allows no expression in the
+            # shell keyword; one there invalidates the entire file.
+            if ($line -match '^\s*shell\s*:' -and $line -match '\$\{\{') {
+                throw ("$($wf.Name): the shell keyword cannot take a context expression " +
+                       "($($line.Trim())). GitHub rejects the whole file and runs zero jobs, so the run " +
+                       "reports a failure with no logs. Use a literal shell and dispatch the host inside " +
+                       "the step instead.")
+            }
+        }
+        # Every matrix.* reference must have a matrix to resolve against. A typo
+        # in the key yields an empty string rather than an error.
+        $text = Read-GateText $wf.FullName
+        if ($text -match 'matrix\.[A-Za-z_]' -and $text -notmatch '(?m)^\s*matrix\s*:') {
+            throw "$($wf.Name) references matrix.* without declaring a matrix block"
+        }
+    }
+}
+
 Assert-Step 'recorded fixtures carry no live credentials or device serials' {
     # These fixtures are committed, so a download token or a machine serial in
     # one is a leak that no test would catch. The token is refreshed per fetch
