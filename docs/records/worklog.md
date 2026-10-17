@@ -1228,3 +1228,27 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed**
+
+### 追加：CI 自己的一次静默红（0 job、0 秒、无日志）
+
+推送后 CI 报 `failure`：**0 个 job、耗时 0 秒、无日志、无 annotation**，`run.name` 显示的是文件路径而非 `verify`。这是「GitHub 无法解析工作流文件」的签名，不是测试失败。
+
+用 actionlint 定到确切原因：
+
+```
+.github/workflows/verify.yml:39:20: context "matrix" is not allowed here [expression]
+   39 |         shell: ${{ matrix.shell }}
+```
+
+`shell:` 关键字按 GitHub 的上下文可用性表**不接受任何表达式**；写在那里让整个文件失效，于是 0 job。已改为字面量 `shell: pwsh`，由矩阵把宿主名当**子进程**调用（`& ${{ matrix.host }} ... -File ./scripts/verify.ps1`），本机模拟该命令形态实测通过。
+
+**这个坑值得单独立一条门禁**，因为它属于本仓库最忌讳的那类：**看起来像基础设施问题、实际是文件没通过校验**——直觉反应是「重跑一次」而不是「去读日志」，而日志根本不存在。新增第 58 步 `the workflow files are usable by GitHub`，钉住两条真实且可离线判定的规则：
+
+1. `shell:` 行不得含 `${{ }}`（上下文表不允许）；
+2. 出现 `matrix.*` 就必须有 `matrix:` 块（键名拼错会解析成空串而不报错）。
+
+该步在注释里**明说它不是通用 YAML 校验器**，只覆盖这两条——不夸大覆盖面。红灯实测：把表达式写回 `shell:` → `FAIL ... the shell keyword cannot take a context expression`。actionlint 对改后文件零告警。
+
+注：`actionlint` 本身不进门禁（它是外部依赖，违反 stdlib-only 约定）；上述两条规则用文本判定即可覆盖，其余交给 actionlint 在本地按需跑。
+
+- [实测] 双宿主门禁 **58/58 VERIFY_OK**（`powershell.exe` 5.1 与 `pwsh` 7）。
