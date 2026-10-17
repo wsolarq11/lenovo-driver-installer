@@ -24,7 +24,7 @@
 
 - Go build/test/vet/gofmt；`legacyps` tag 的 build/vet。
 - 生产 Go 文件 ≤ 500 行。
-- 覆盖率下限（`inventory` 8 / `app` 22 / `install` 45 / `compare` 50 / `audit` 50 / `download` 35 / `plan` 65 / `api` 55 / `gate` 70）。
+- 覆盖率下限（`inventory` 8 / `app` 22 / `install` 45 / `compare` 50 / `audit` 50 / `download` 35 / `plan` 65 / `api` 55 / `trust` 40 / `gate` 70）。`trust` 是签名边界（判定下载包是否为 Lenovo 签名且未被吊销），其联网 smoke 按设计 opt-in，故离线下限是它唯一的防退化闸门。
 - 含非 ASCII 的 `.ps1` 必须 UTF-8 BOM（Windows PowerShell 5.1 要求）；`verify.ps1` 检测即失败（CI 阻断）、`-FixBom` 显式修复，语法解析覆盖全部 `.ps1`。
 - 宿主无关读取：仓库内每个 `.ps1` 的 `Get-Content` 必须显式 `-Encoding`（门禁自身统一走 `Read-GateText`）。5.1 用 ANSI 代码页解码无 BOM 的 UTF-8，负向断言会在错宿主下**静默放过**——该步审计的是读取方而不是文件，注入一个裸 `Get-Content -Raw` 即红。
 - WPF 参数引用共享 golden（`internal/app/testdata/windows_argument_quoting.json`）。
@@ -58,7 +58,7 @@ $env:LENOVO_TRUST_SMOKE=1; go test ./internal/trust/ -run TestVerifyLenovoPackag
 
 ## CI
 
-`.github/workflows/verify.yml` 在 `windows-latest`（Go 1.27.x，`GOTOOLCHAIN=local` 锁定与 `go.mod` 一致）对每次 push/PR 跑 `scripts/verify.ps1`。CI 只跑离线门禁——依赖硬件的 native/WPF smoke 按设计本地驱动。门禁结论与宿主无关：CI 的 `shell: pwsh`（PS 7）与本地 `powershell.exe`（5.1）跑同一脚本必须给出同一判定，任何一侧能翻转的结论都由上节的宿主无关读取步阻断。
+`.github/workflows/verify.yml` 在 `windows-latest`（Go 1.27.x，`GOTOOLCHAIN=local` 锁定与 `go.mod` 一致）跑 `scripts/verify.ps1`，**两个 PowerShell 宿主各一个 job**（`pwsh` 7 与 `powershell.exe` 5.1）：这个门禁从设计上就是双宿主的——`Read-GateText` 与「读取点必须声明编码」步存在的唯一理由就是 5.1 按 ANSI 码页解码 BOM-less UTF-8 而 7 默认 UTF-8，只跑单宿主会让这类结论在 CI 里无人验证。`push` 只在 `main` 上触发（PR 已覆盖其余分支，否则同一提交跑两遍）。CI 只跑离线门禁——依赖硬件的 native/WPF smoke 按设计本地驱动，WPF 一步例外：`-SelfTest` 不需要交互桌面，已纳入门禁（构造真实窗口、渲染位图、校验非空）。门禁结论与宿主无关，任何一侧能翻转的结论都由宿主无关读取步阻断。
 
 ## 约定
 

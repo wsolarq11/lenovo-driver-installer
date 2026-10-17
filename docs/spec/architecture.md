@@ -52,6 +52,8 @@ internal/audit               setupapi 解析与来源证据审计
 internal/compare             版本解析、匹配、选择、格式化
 internal/download            HTTP 下载、重试、SHA-256 伴生文件
 internal/gate                门禁规则本体：go/parser + go/types 的只读源码分析（只用标准库、不开进程）
+                             checks_docs.go=契约文档比对；checks_behavior.go=行为规范比对；
+                             checks_rules.go=不变量规则；checks_install.go=安装/账本规则
 internal/install             安装器分发与 EXE 回退；原生 INF 安装（pnputil 回退）
 internal/inventory           Windows 机器/OS/PnP/应用快照（原生 SetupAPI/CfgMgr32/注册表）
 internal/model               共享纯数据类型

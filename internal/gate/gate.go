@@ -254,6 +254,7 @@ func checks() []check {
 		{"CLI artifact paths match docs contract", checkCLIArtifactPathsMatchDocs},
 		{"the documented JSON contracts match the engine", checkJSONContractsMatchDocs},
 		{"the architecture doc names the network boundary the imports show", checkArchitectureNetworkBoundary},
+		{"the behavior doc names the flags and statuses the engine has", checkBehaviorDocMatchesEngine},
 		{"evidence chain runs on real fixtures", checkEvidenceChainRunsOnFixtures},
 		{"the API contract fixtures are recorded responses", checkAPIFixturesAreRecorded},
 		{"plan blocks carry the reason the console states", checkPlanBlocksCarryRowReasons},

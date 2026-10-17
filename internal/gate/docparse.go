@@ -13,6 +13,8 @@ import (
 var (
 	reJSONKey   = regexp.MustCompile(`"([A-Za-z0-9_]+)"\s*:`)
 	reTableCode = regexp.MustCompile("(?m)^[|]\\s*\\x60([0-9])\\x60\\s*[|]")
+	// reDocFlag matches the -Flag spellings the spec writes in backticks.
+	reDocFlag = regexp.MustCompile("\\x60-([A-Z][A-Za-z0-9]*)\\x60")
 )
 
 func fencedBlocks(doc, lang string) []string {

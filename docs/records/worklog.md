@@ -1185,3 +1185,46 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed**
+
+---
+
+## 2026-10-17 — 门禁收敛：CI 双宿主、race、行为规范与 WPF 层
+
+**触发**：评审「CI 是否够极端」。结论：门禁本身很极端，CI 只把它在**单宿主**上跑了一遍，比本地的双宿主弱一档。逐条实测后补缺口。
+
+### 缺口（实测，非推断）
+
+| 缺口 | 实测证据 |
+| --- | --- |
+| CI 单宿主 | workflow 只有 `shell: pwsh`；门禁的 `Read-GateText` 与「读取点声明编码」步正是为 5.1/7 解码差异存在 |
+| 无 race | 生产代码有两条并发路径：`loadDriverListsForOSIDs` 每 OSID 一个 goroutine、安装路径 goroutine 排空子进程 stdout |
+| `behavior.md` 无门禁 | 被门禁读的只有 `architecture.md`/`contracts.md`/`invariants.md`；`behavior.md` 自称单一权威却无人读 |
+| `internal/trust` 无覆盖率下限 | 9 包有下限，安全边界 `trust`（45.8%）不在名单 |
+| `!windows` 桩从不编译 | `native_other.go` 注入语法错误：`GOOS=linux` 立刻报错，Windows 构建无感 |
+| WPF 层只有静态检查 | 门禁从未构造过真实窗口；控件名经 `$script:Ui['X']` 运行时解析，改名后静默变 `$null` |
+| 每次 push 跑两遍 | `on: push` 无分支过滤 + `on: pull_request`，同一提交两个 run |
+
+### 改动
+
+- **CI**：`strategy.matrix` 两个宿主（`pwsh` 7 / `powershell.exe` 5.1），`fail-fast: false`；`push` 限 `branches: [main]`。
+- **门禁新增 5 步**（52 → 57）：`Go test (race detector)`、`non-Windows build and vet`、`every WPF control the scripts reach exists in the XAML`、`the WPF window builds and renders headless`、Go 侧 `the behavior doc names the flags and statuses the engine has`。
+- **`internal/trust` 覆盖率下限 40**。
+- **文档**：`develop.md` 的 CI 与覆盖率段、`architecture.md` 的文件地图（新增 `checks_behavior.go`）。
+
+### 设计取舍（写下来免得下次又被当成缺口）
+
+- **`behavior.md` 的 flag 断言是单向的**：只查「文档点名的 flag 必须存在」，不查「文档必须点名所有 flag」。后者是 `help.go` 的职责（已有 `CLI artifact paths`/`Exit codes` 比对）。第一版写成双向，实测立刻误报 6 个 flag——`behavior.md` 记的是运行时语义，本来就不该列全参数表。
+- **`CompareStatus` 断言是全覆盖的**：新增状态正是读者会来查 `behavior.md` 的运行时行为，漏掉即缺陷。
+- **不纳入 CI 的**：`TestNativePSEquivalenceSmoke`、`TestVerifyLenovoPackageSmoke`、`rollback_behavior_test.ps1`（VM 销毁式演练）依赖真机/真网络/真桌面，跳过是被文档化的设计。往 CI 塞这类测试会违反不变量 1 与 `distribution-frozen.md`。
+
+### Testing
+
+- [实测] 红灯五连（真实仓库注入 → 点名 FAIL → 复原转绿）：goroutine 写共享切片 → `WARNING: DATA RACE` + `FAIL Go test (race detector)`；`native_other.go` 注入未定义符号 → `FAIL non-Windows build and vet: GOOS=linux go build exited 1`；XAML 改名 `InstallApplicableButton` → `FAIL ... InstallApplicableButton (ui.ps1)`；`behavior.md` 删 4 个状态 → 点名 `Not installed`；写入不存在的 `-RemovedFlag` → `FAIL ... flags the engine does not accept: RemovedFlag`。
+- [实测] `checks_docs.go` 因本轮新增涨到 588 行越过 500 行门禁——拆出 `checks_behavior.go`（161 行），`checks_docs.go` 回落 441 行。门禁自己抓到了这次违规。
+- [实测] WPF SelfTest 无头稳定 3/3，渲染 PNG 51665 字节。
+- [实测] race 未缓存 22s；门禁单宿主 22s → 含 race 后约 45s。
+- [实测] 双宿主门禁 **57/57 VERIFY_OK**（`powershell.exe` 5.1 与 `pwsh` 7）。
+
+### Status
+
+[OK] **Completed**

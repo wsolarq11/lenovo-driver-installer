@@ -99,6 +99,11 @@ Assert-Step 'Go test + coverage floor (side-effect packages)' {
         'lenovo-driver/internal/download'  = 35
         'lenovo-driver/internal/plan'      = 65
         'lenovo-driver/internal/api'       = 55
+        # The signature boundary. It is the one package that decides whether a
+        # downloaded package is Lenovo-signed and unrevoked, and its live smoke
+        # tests are opt-in (they need a real downloaded package), so the offline
+        # suite is the only thing standing between it and silent rot.
+        'lenovo-driver/internal/trust'     = 40
         # The gate's own rules are checked code, not unchecked prose. A rule whose
         # red-light test is deleted starts passing everything silently — the one
         # failure mode that leaves no trace anywhere else in this gate.
@@ -139,6 +144,50 @@ Assert-Step 'Go build (legacyps)' {
 Assert-Step 'Go vet (legacyps)' {
     & $GoExe vet -tags legacyps ./...
     if ($LASTEXITCODE -ne 0) { throw "go vet -tags legacyps exited $LASTEXITCODE" }
+}
+
+Assert-Step 'Go test (race detector)' {
+    # The engine runs two concurrent paths: loadDriverListsForOSIDs fans out one
+    # goroutine per alternate OSID (reachable only under -LatestAcrossOS), and
+    # the install path drains a child process's stdout in a goroutine. Neither
+    # is exercised by the default build, and the race detector is the one tool
+    # that can see a data race in them. -race needs cgo, which needs a C
+    # toolchain; a missing one is a hard failure rather than a silent skip,
+    # because a race step that skips itself reads exactly like a clean run.
+    $raceOutput = (& $GoExe test -race -count=1 ./... 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        $raceOutput | ForEach-Object { Write-Host $_ }
+        throw "go test -race exited $LASTEXITCODE"
+    }
+    $races = @($raceOutput | Where-Object { $_ -match 'DATA RACE' })
+    if ($races.Count -gt 0) {
+        $races | ForEach-Object { Write-Host $_ }
+        throw "the race detector reported $($races.Count) data race(s)"
+    }
+}
+
+Assert-Step 'non-Windows build and vet' {
+    # internal/app, internal/install and internal/inventory each carry a
+    # //go:build !windows file holding the stubs for every native entry point.
+    # The Windows build excludes them by build tag, so nothing on the normal
+    # path ever compiles them: a syntax error or signature drift there would sit
+    # unnoticed until someone built elsewhere. Cross-compiling is cheap (the
+    # module is stdlib-only) and covers all three at once.
+    $prevGoos = $env:GOOS
+    $prevCgo = $env:CGO_ENABLED
+    try {
+        $env:GOOS = 'linux'
+        # No cross C toolchain exists here; the stub files under test are pure
+        # Go, so disabling cgo changes nothing about what gets compiled.
+        $env:CGO_ENABLED = '0'
+        & $GoExe build ./...
+        if ($LASTEXITCODE -ne 0) { throw "GOOS=linux go build exited $LASTEXITCODE" }
+        & $GoExe vet ./...
+        if ($LASTEXITCODE -ne 0) { throw "GOOS=linux go vet exited $LASTEXITCODE" }
+    } finally {
+        $env:GOOS = $prevGoos
+        $env:CGO_ENABLED = $prevCgo
+    }
 }
 
 Assert-Step 'Go source file size (prod <= 500)' {
@@ -229,6 +278,82 @@ Assert-Step 'Legacy PowerShell files removed' {
             throw "legacy file remains: $file"
         }
     }
+}
+
+Assert-Step 'every WPF control the scripts reach exists in the XAML' {
+    # wpf/ui.ps1, wpf/worker.ps1 and the entry point address controls through a
+    # hashtable lookup that resolves at runtime: a renamed x:Name in window.xaml
+    # yields $null and the code either throws far from the cause or silently
+    # skips its update. The set of names each side spells is small and exact, so
+    # the two are compared as sets rather than trusted to match.
+    $xaml = Read-GateText (Join-Path $repoRoot 'wpf\window.xaml')
+    $declared = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($m in [regex]::Matches($xaml, 'x:Name="([^"]+)"')) {
+        [void]$declared.Add($m.Groups[1].Value)
+    }
+    if ($declared.Count -lt 10) {
+        throw "window.xaml declares only $($declared.Count) named controls; the parse or the file is wrong"
+    }
+    # The gate's own file is in the same glob, and this step quotes the lookup
+    # form in its comment above; strip comment lines so the check cannot match
+    # its own prose. The needle is assembled from halves so the literal here is
+    # not itself a hit.
+    $needle = "\`$script" + ":Ui\['([^']+)'\]"
+    $used = @{}
+    foreach ($f in (Get-ProjectPs1Files -RepoRoot $repoRoot)) {
+        $src = Read-GateText $f.FullName
+        foreach ($line in ($src -split "\r?\n")) {
+            if ($line -match '^\s*#') { continue }
+            foreach ($m in [regex]::Matches($line, $needle)) {
+                $name = $m.Groups[1].Value
+                if (-not $used.ContainsKey($name)) { $used[$name] = @() }
+                $used[$name] += $f.Name
+            }
+        }
+    }
+    if ($used.Count -lt 10) {
+        throw "only $($used.Count) control names were found in the PowerShell layer; the parse is wrong"
+    }
+    $missing = @()
+    foreach ($name in $used.Keys) {
+        if (-not $declared.Contains($name)) {
+            $missing += ("{0} ({1})" -f $name, (($used[$name] | Sort-Object -Unique) -join ', '))
+        }
+    }
+    if ($missing.Count -gt 0) {
+        throw "these controls are addressed but not declared in window.xaml: $($missing -join ', ')"
+    }
+}
+
+Assert-Step 'the WPF window builds and renders headless' {
+    # The PowerShell parse step proves the scripts are syntactically valid; it
+    # cannot catch a control name that parses but does not exist, a converter
+    # that throws when the window is constructed, or a XAML resource that fails
+    # to load. -SelfTest constructs the real window, binds rows, renders it to a
+    # bitmap and writes a PNG, which exercises all three without a desktop
+    # session. It needs no network and touches no driver.
+    # The self test writes a fixed path, so the gate reads that one rather than
+    # asking the entry point for a location it does not accept.
+    $shot = Join-Path $env:TEMP 'lenovo_driver_wpf_smoke.png'
+    if (Test-Path -LiteralPath $shot) { Remove-Item -LiteralPath $shot -Force }
+    # -STA is required: WPF cannot construct a window on an MTA thread, and the
+    # host the gate itself runs on may be either. Launching a child host pinned
+    # to STA keeps this step independent of which PowerShell started the gate.
+    & powershell.exe -NoProfile -STA -ExecutionPolicy Bypass `
+        -File (Join-Path $repoRoot 'lenovo_driver_wpf.ps1') -SelfTest -NoElevation 2>&1 |
+        ForEach-Object { Write-Host $_ }
+    if ($LASTEXITCODE -ne 0) {
+        throw "the WPF self test exited $LASTEXITCODE"
+    }
+    if (-not (Test-Path -LiteralPath $shot)) {
+        throw "the WPF self test did not render a screenshot"
+    }
+    $size = (Get-Item -LiteralPath $shot).Length
+    Remove-Item -LiteralPath $shot -Force
+    if ($size -lt 4096) {
+        throw "the WPF screenshot is $size bytes; the window rendered empty"
+    }
+    Write-Host "      WPF window rendered ($size bytes)"
 }
 
 Assert-Step 'CLI build to temp' {

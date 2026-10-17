@@ -109,6 +109,27 @@ func callsBare(n ast.Node, name string) bool {
 	return anyCall(n, func(fun ast.Expr) bool { return qualifiedName(fun) == name })
 }
 
+// callsTo returns every call in the node whose callee is the named method,
+// such as flag.FlagSet.Var. Unlike callsOn it does not pin the receiver, which
+// is what a rule about an API (rather than about one value) needs.
+func callsTo(n ast.Node, method string) []*ast.CallExpr {
+	var out []*ast.CallExpr
+	if n == nil {
+		return nil
+	}
+	ast.Inspect(n, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == method {
+			out = append(out, call)
+		}
+		return true
+	})
+	return out
+}
+
 // anyCall reports whether some call in the node has a callee the predicate
 // accepts.
 func anyCall(n ast.Node, match func(ast.Expr) bool) bool {
