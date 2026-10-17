@@ -627,3 +627,92 @@ func TestLocalNewerRejectsWarnLevel(t *testing.T) {
 		t.Fatal("a WARN-level source label was not rejected")
 	}
 }
+
+func TestBehaviorDocRejectsStaleFlag(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/app/app.go": "package app\n\nimport \"flag\"\n\n" +
+			"func parseOptions(args []string) {\n" +
+			"\tfs := flag.NewFlagSet(\"x\", flag.ContinueOnError)\n" +
+			"\tfs.BoolVar(nil, \"DryRun\", false, \"\")\n" +
+			"\tfs.BoolVar(nil, \"IncludeBios\", false, \"\")\n" +
+			"\tfs.BoolVar(nil, \"TargetOS\", false, \"\")\n" +
+			"\tfs.BoolVar(nil, \"CurrentOSOnly\", false, \"\")\n" +
+			"\tfs.BoolVar(nil, \"LatestAcrossOS\", false, \"\")\n" +
+			"\tfs.BoolVar(nil, \"RemovedFlag\", false, \"\")\n" +
+			"\tfs.BoolVar(nil, \"SkipHashCheck\", false, \"\")\n" +
+			"\tfs.BoolVar(nil, \"SkipSignatureCheck\", false, \"\")\n" +
+			"\tfs.BoolVar(nil, \"GuiExportPath\", false, \"\")\n" +
+			"\tfs.BoolVar(nil, \"GuiInstallCodes\", false, \"\")\n" +
+			"\tfs.BoolVar(nil, \"Rollback\", false, \"\")\n" +
+			"\t_ = args\n}\n",
+		"internal/model/model.go": "package model\n\ntype CompareStatus string\n\nconst (\n" +
+			"\tStatusUpdate CompareStatus = \"Update\"\n\tStatusUpToDate CompareStatus = \"Up to date\"\n" +
+			"\tStatusNotInstalled CompareStatus = \"Not installed\"\n\tStatusLocalNewer CompareStatus = \"Local newer\"\n" +
+			"\tStatusUnknown CompareStatus = \"Unknown\"\n\tStatusNotApplicable CompareStatus = \"Not applicable\"\n)\n",
+		"docs/spec/behavior.md": "`Update` `Up to date` `Not installed` `Local newer` `Unknown` `Not applicable`\n" +
+			"`-DryRun` `-IncludeBios` `-TargetOS` `-CurrentOSOnly` `-LatestAcrossOS` `-Gone`\n",
+	})
+	err := checkErr(t, ctx, "the behavior doc names the flags and statuses the engine has")
+	if err == nil {
+		t.Fatal("a doc naming a flag the engine does not accept was not rejected")
+	}
+	if !strings.Contains(err.Error(), "Gone") {
+		t.Fatalf("the failure did not name the stale flag: %v", err)
+	}
+}
+
+func TestBehaviorDocRejectsOmittedStatus(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", exampleBehaviorFixture(map[string]string{
+		"docs/spec/behavior.md": "`Update` `Up to date` `Not installed` `Local newer` `Unknown`\n" +
+			"`-DryRun` `-IncludeBios` `-TargetOS` `-CurrentOSOnly` `-LatestAcrossOS`\n",
+	}))
+	err := checkErr(t, ctx, "the behavior doc names the flags and statuses the engine has")
+	if err == nil {
+		t.Fatal("a doc omitting a CompareStatus the engine defines was not rejected")
+	}
+	if !strings.Contains(err.Error(), "Not applicable") {
+		t.Fatalf("the failure did not name the omitted status: %v", err)
+	}
+}
+
+// TestBehaviorDocAllowsPartialFlagCoverage pins the direction of the flag
+// assertion: the doc documents runtime semantics, so naming a subset of flags is
+// correct. Only a flag the binary does not accept is a defect.
+func TestBehaviorDocAllowsPartialFlagCoverage(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", exampleBehaviorFixture(map[string]string{
+		"docs/spec/behavior.md": "`Update` `Up to date` `Not installed` `Local newer` `Unknown` `Not applicable`\n" +
+			"`-DryRun` `-IncludeBios` `-TargetOS` `-CurrentOSOnly` `-LatestAcrossOS`\n",
+	}))
+	if err := checkErr(t, ctx, "the behavior doc names the flags and statuses the engine has"); err != nil {
+		t.Fatalf("a doc naming a subset of the real flags must pass: %v", err)
+	}
+}
+
+func exampleBehaviorFixture(extra map[string]string) map[string]string {
+	files := map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/app/app.go": "package app\n\nimport \"flag\"\n\n" +
+			"func parseOptions(args []string) {\n" +
+			"\tfs := flag.NewFlagSet(\"x\", flag.ContinueOnError)\n" +
+			"\tfs.BoolVar(nil, \"DryRun\", false, \"\")\n" +
+			"\tfs.BoolVar(nil, \"IncludeBios\", false, \"\")\n" +
+			"\tfs.BoolVar(nil, \"TargetOS\", false, \"\")\n" +
+			"\tfs.BoolVar(nil, \"CurrentOSOnly\", false, \"\")\n" +
+			"\tfs.BoolVar(nil, \"LatestAcrossOS\", false, \"\")\n" +
+			"\tfs.BoolVar(nil, \"SkipHashCheck\", false, \"\")\n" +
+			"\tfs.BoolVar(nil, \"SkipSignatureCheck\", false, \"\")\n" +
+			"\tfs.BoolVar(nil, \"GuiExportPath\", false, \"\")\n" +
+			"\tfs.BoolVar(nil, \"GuiInstallCodes\", false, \"\")\n" +
+			"\tfs.BoolVar(nil, \"Rollback\", false, \"\")\n" +
+			"\t_ = args\n}\n",
+		"internal/model/model.go": "package model\n\ntype CompareStatus string\n\nconst (\n" +
+			"\tStatusUpdate CompareStatus = \"Update\"\n\tStatusUpToDate CompareStatus = \"Up to date\"\n" +
+			"\tStatusNotInstalled CompareStatus = \"Not installed\"\n\tStatusLocalNewer CompareStatus = \"Local newer\"\n" +
+			"\tStatusUnknown CompareStatus = \"Unknown\"\n\tStatusNotApplicable CompareStatus = \"Not applicable\"\n)\n",
+	}
+	for k, v := range extra {
+		files[k] = v
+	}
+	return files
+}

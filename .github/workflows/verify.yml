@@ -2,11 +2,32 @@ name: verify
 
 on:
   push:
+    # A pull_request run already covers every branch that has a PR, so an
+    # unfiltered push trigger ran the identical commit twice. Keep push for the
+    # integration branch only: that is the run that checks main after a merge.
+    branches: [main]
   pull_request:
 
 jobs:
   verify:
+    # Both PowerShell hosts run the same gate. The gate is built for that: its
+    # Read-GateText helper and the "file read names its encoding" step exist
+    # because Windows PowerShell 5.1 decodes BOM-less UTF-8 with the ANSI code
+    # page while pwsh 7 defaults to UTF-8, so a negative assertion can pass on
+    # one host and fail on the other. Running only pwsh left that blind spot
+    # uncovered in CI while every local run exercised both.
+    #
+    # The shell keyword accepts no matrix context (an expression there makes the
+    # whole file invalid and the run silently does nothing), so each step keeps a
+    # literal shell and the matrix names the host to invoke as a child process.
+    # The gate still runs under the host the matrix names; only the wrapper that
+    # launches it is fixed.
+    name: verify (${{ matrix.host }})
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        host: [pwsh, powershell]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -19,7 +40,13 @@ jobs:
       - name: Lock toolchain to go.mod
         shell: pwsh
         run: |
-          echo "GOTOOLCHAIN=local" >> $env:GITHUB_ENV
+          "GOTOOLCHAIN=local" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Report host version
+        shell: pwsh
+        # Single quotes keep the expression literal for the child host.
+        run: '& ${{ matrix.host }} -NoProfile -Command $PSVersionTable.PSVersion.ToString()'
       - name: Run offline verification
         shell: pwsh
-        run: ./scripts/verify.ps1
+        run: |
+          & ${{ matrix.host }} -NoProfile -ExecutionPolicy Bypass -File ./scripts/verify.ps1
+          exit $LASTEXITCODE
