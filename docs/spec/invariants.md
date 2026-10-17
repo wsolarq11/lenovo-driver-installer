@@ -29,7 +29,9 @@
 ## 4. 事实分级
 
 - 约束：计划、控制台、交互提示、GUI 导出统一输出 fact / inference / undetermined。
-- 强制点：四级（实测 fact / 推断 inference / 待定 undetermined）贯穿所有输出通道，任何通道不得把推断或待定渲染成事实。
+- 分级是**三档**：实测 fact / 推断 inference / 待定 undetermined。当前状态集上 `inference` 无成员——`StatusEvidenceBasis` 只返回 `fact` 与 `undetermined`（`NotInstalled`/`LocalNewer` 的依据是硬件 ID 命中与实测版本算术比较，两者都是测量；见 `docs/records/evidence-82jq.md` 2026-09-30 条）。任何通道不得把推断或待定渲染成事实；也不得向读者解释一个代码已不产出的等级。
+- 强制点（门禁步骤 `summary notes only describe reachable statuses`）：计划汇总不得再出现 `multi-vendor`（PS 时代的复合版本解析失败路径，`ResolveComparableVersion` 加固后已不产生）一揽子归因，也不得再打印 `inference = ...` 一览（`StatusEvidenceBasis` 无该级）；`Unknown` 逐行注真实原因（Provisioned 占位符 / 官方行无版本 / 版本不可比）。
+- 强制点（门禁步骤 `plan blocks carry the reason the console states`）：持久化的 `lenovo_driver_plan.txt` 必须与瞬态通道（控制台汇总、GUI 导出）承载同等的逐行理由——`BuildPlanText` 输出 `NonMatchReason`/`Unknown` 原因。最耐久的产物证据最少的旧形态违反证据优先。
 
 ### 2.1 静默安装：开关派发只由端到端验证决定
 

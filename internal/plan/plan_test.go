@@ -31,6 +31,75 @@ func TestBuildPlanText(t *testing.T) {
 			t.Fatalf("plan missing %q:\n%s", expected, text)
 		}
 	}
+	// A version-comparison status carries its own evidence on the Remote and
+	// Local lines; only statuses whose inputs do not settle them get a Reason.
+	if strings.Contains(text, "Reason :") {
+		t.Fatalf("a plain version comparison grew a reason line:\n%s", text)
+	}
+}
+
+// The plan file is the durable artifact: a Not applicable row whose reason
+// lives only in the GUI export or the console leaves the artifact unable to
+// answer "why wasn't this installed". The field's own doc comment claims the
+// plan surfaces it, so the assertion pins that claim.
+func TestBuildPlanTextCarriesRowReason(t *testing.T) {
+	notApplicable := &model.AssessedDriver{
+		Driver: &model.Driver{DriverName: "Cardreader Driver", OSID: "42"},
+		DriverAssessment: model.DriverAssessment{
+			CompareStatus:  "Not applicable",
+			NonMatchReason: "hardware ids 05E3_0746 matched no local PnP/device ID",
+		},
+	}
+	provisioned := &model.AssessedDriver{
+		Driver: &model.Driver{DriverName: "AMD Power Processor", Version: "6.0.0.9", OSID: "42"},
+		DriverAssessment: model.DriverAssessment{
+			LocalVersion:  model.LocalVersionProvisioned,
+			CompareStatus: "Unknown",
+		},
+	}
+	text := strings.Join(BuildPlanText([]*model.AssessedDriver{notApplicable, provisioned}, "2026-01-01 00:00:00"), "\n")
+	if !strings.Contains(text, "Reason : hardware ids 05E3_0746 matched no local PnP/device ID") {
+		t.Fatalf("plan block dropped the non-match reason:\n%s", text)
+	}
+	if !strings.Contains(text, "Reason : local version is the Windows provisioning placeholder") {
+		t.Fatalf("plan block said nothing about the provisioned placeholder:\n%s", text)
+	}
+}
+
+// TestFormatStatusSummaryStatusNotes pins the summary notes on the statuses
+// the code can actually reach. Unknown has three distinct causes; the per-row
+// note names the real one, and the removed "inference" legend explained a
+// category StatusEvidenceBasis is gate-forbidden from ever emitting.
+func TestFormatStatusSummaryStatusNotes(t *testing.T) {
+	drivers := []*model.AssessedDriver{
+		{
+			Driver: &model.Driver{DriverName: "AMD Power Processor", Version: "6.0.0.9"},
+			DriverAssessment: model.DriverAssessment{
+				LocalVersion:  model.LocalVersionProvisioned,
+				CompareStatus: "Unknown",
+			},
+		},
+		{
+			Driver: &model.Driver{DriverName: "Camera Driver"},
+			DriverAssessment: model.DriverAssessment{
+				CompareStatus:  "Not applicable",
+				NonMatchReason: "hardware ids 0408_2010 matched no local PnP/device ID",
+			},
+		},
+	}
+	text := strings.Join(FormatStatusSummaryLines(drivers), "\n")
+	if strings.Contains(text, "multi-vendor") {
+		t.Fatalf("summary still attributes Unknown to multi-vendor packages:\n%s", text)
+	}
+	if strings.Contains(text, "inference =") {
+		t.Fatalf("summary still explains the unreachable inference category:\n%s", text)
+	}
+	if !strings.Contains(text, "AMD Power Processor: local version is the Windows provisioning placeholder") {
+		t.Fatalf("Unknown note does not name the actual cause:\n%s", text)
+	}
+	if !strings.Contains(text, "Camera Driver: hardware ids 0408_2010 matched no local PnP/device ID") {
+		t.Fatalf("Not applicable note does not name the actual cause:\n%s", text)
+	}
 }
 
 func TestFormatDriverTableLines(t *testing.T) {

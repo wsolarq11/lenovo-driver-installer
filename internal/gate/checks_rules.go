@@ -250,3 +250,118 @@ func checkAutomaticSetBackedByMeasurements(ctx *Context) error {
 	}
 	return nil
 }
+
+// checkInteractiveHintGuarded holds the run-log contract for the OS-switch
+// hint: "press t" names the interactive selection menu, and only three run
+// shapes show that menu. Export, dry-run, and GUI-code runs never do - the
+// WPF switches OS with a dropdown - and a hint that names a key that cannot
+// do anything sends the reader looking for a prompt that will not appear.
+// The guard lives in the same if statement as the log call, so the check
+// insists the guard names every non-interactive run shape.
+func checkInteractiveHintGuarded(ctx *Context) error {
+	// resolveListOS is a method, so it cannot be located by fileDeclaring
+	// (which deliberately matches receiver-less decls only); search by name.
+	var fn *ast.FuncDecl
+	for _, f := range ctx.Repo.dirProd("internal/app") {
+		if fn = funcDeclByName(f.ast, "resolveListOS"); fn != nil {
+			break
+		}
+	}
+	if fn == nil {
+		return fmt.Errorf("resolveListOS is gone from internal/app")
+	}
+	hintFound := false
+	for _, lit := range stringLiteralValues(fn.Body) {
+		if strings.Contains(lit, "press t") {
+			hintFound = true
+		}
+	}
+	if !hintFound {
+		return fmt.Errorf("the OS-switch hint is gone from resolveListOS; the default current-OS run no " +
+			"longer tells the operator how to look at other supported lists")
+	}
+	ids := identsIn(fn.Body)
+	for _, required := range []string{"DryRun", "GuiExportPath", "GuiInstallCodes"} {
+		if !ids[required] {
+			return fmt.Errorf("the OS-switch hint guard no longer names %s; the hint would be printed to a "+
+				"run that has no interactive menu", required)
+		}
+	}
+	return nil
+}
+
+// checkSkippedRowsReported holds the evidence-first rule that the presentation
+// filter cannot swallow rows silently. The list the plan shows must be
+// reconcilable with the list the API sent: every dropped row is reported with
+// its code, file and reason. The thin filterDriverRows wrapper exists for
+// older callers and tests, so it must delegate rather than grow a second copy
+// of the filter that drifts away from the one that reports.
+func checkSkippedRowsReported(ctx *Context) error {
+	f, err := ctx.Repo.fileAt("internal/app/view.go")
+	if err != nil {
+		return err
+	}
+	// Both functions are methods-or-not by circumstance; find them by name so
+	// one becoming a method cannot silence the check.
+	fn := funcDeclByName(f.ast, "CompareOSDriverView")
+	if fn == nil {
+		return fmt.Errorf("CompareOSDriverView is gone from view.go")
+	}
+	if !identsIn(fn.Body)["filterDriverRowsWithSkips"] {
+		return fmt.Errorf("CompareOSDriverView filters rows without asking for the skip report; dropped " +
+			"rows would vanish between the official list and the plan")
+	}
+	wrapper := funcDeclByName(f.ast, "filterDriverRows")
+	if wrapper == nil {
+		return fmt.Errorf("filterDriverRows is gone; rename it or update this check deliberately")
+	}
+	if !identsIn(wrapper.Body)["filterDriverRowsWithSkips"] {
+		return fmt.Errorf("filterDriverRows no longer delegates to filterDriverRowsWithSkips; a second " +
+			"copy of the filter would drift away from the one that reports")
+	}
+	return nil
+}
+
+// checkLocalNewerNotWarn holds the fact standard's rule 2: Local newer is a
+// measured state - "this machine runs a driver from another official list" -
+// not an anomaly. Ten of those on a clean machine at WARN trains the reader
+// to skip every WARN, including the ones about degradations that matter.
+func checkLocalNewerNotWarn(ctx *Context) error {
+	f, err := ctx.Repo.fileAt("internal/app/view.go")
+	if err != nil {
+		return err
+	}
+	fn := funcDeclByName(f.ast, "assessSelectedDrivers")
+	if fn == nil {
+		return fmt.Errorf("assessSelectedDrivers is gone from view.go")
+	}
+	found := false
+	var offenders []string
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Log" || len(call.Args) != 3 {
+			return true
+		}
+		if !identsIn(call.Args[1])["CompareSource"] {
+			return true
+		}
+		found = true
+		if lit, ok := call.Args[2].(*ast.BasicLit); !ok || lit.Value != `"INFO"` {
+			offenders = append(offenders, ctx.Repo.position(call))
+		}
+		return true
+	})
+	if !found {
+		return fmt.Errorf("the CompareSource source label is no longer logged; a Local newer row would not " +
+			"say where its version comes from")
+	}
+	if len(offenders) > 0 {
+		return failf("the Local newer source label is logged above INFO; fact-standard rule 2 says it is "+
+			"not an anomaly", offenders)
+	}
+	return nil
+}

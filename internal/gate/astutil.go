@@ -333,6 +333,23 @@ func topLevelFunc(f *ast.File, name string) *ast.FuncDecl {
 	return decls[0]
 }
 
+// funcDeclByName returns the declaration of the named function, whether it is
+// top-level or a method. topLevelFunc deliberately rejects methods - a method
+// is reached through a receiver, so a name-pinning rule that accepted both
+// would silently move targets - but some rules genuinely pin the method, and
+// they say so by asking here instead.
+func funcDeclByName(f *ast.File, name string) *ast.FuncDecl {
+	var out *ast.FuncDecl
+	ast.Inspect(f, func(n ast.Node) bool {
+		if fd, ok := n.(*ast.FuncDecl); ok && fd.Name.Name == name {
+			out = fd
+			return false
+		}
+		return true
+	})
+	return out
+}
+
 // fileDeclaring returns the parsed file in dir that declares the named
 // top-level function. A rule pinned to a function rather than to a filename
 // keeps holding when the function moves to a sibling file, which is how this

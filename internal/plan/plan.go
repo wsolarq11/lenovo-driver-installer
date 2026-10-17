@@ -43,6 +43,16 @@ func BuildPlanText(drivers []*model.AssessedDriver, generatedAt string) []string
 				lines = append(lines, "    - "+evidenceLine)
 			}
 		}
+		switch d.CompareStatus {
+		case model.StatusNotApplicable:
+			reason := d.NonMatchReason
+			if reason == "" {
+				reason = "no local device match"
+			}
+			lines = append(lines, "  Reason : "+reason)
+		case model.StatusUnknown:
+			lines = append(lines, "  Reason : "+unknownReason(d))
+		}
 		lines = append(lines,
 			"  OS     : "+d.OSName+" (OSID "+d.OSID+")",
 			"  Source : "+d.SourceAPI,
@@ -59,6 +69,43 @@ func BuildPlanText(drivers []*model.AssessedDriver, generatedAt string) []string
 		)
 	}
 	return lines
+}
+
+// driverLabel is how summary notes name a row of theirs. The driver code is
+// the identity the ledger and the GUI speak in, so it backs up the display
+// name rather than sitting next to it.
+func driverLabel(d *model.AssessedDriver) string {
+	if d == nil || d.Driver == nil {
+		return "driver"
+	}
+	if d.DriverName != "" {
+		return d.DriverName
+	}
+	if d.DriverCode != "" {
+		return d.DriverCode
+	}
+	return "driver"
+}
+
+// Reason lines in BuildPlanText: every status is a version comparison whose
+// inputs are already printed on the Remote and Local lines - except Not
+// applicable and Unknown, whose decision rests on evidence the block does not
+// otherwise show. Those two get a Reason line so the durable artifact carries
+// the same explanation the console and the GUI export show.
+
+// unknownReason names the actual cause of an Unknown. The status has three
+// distinct origins - an official row with no version, a provisioned-package
+// placeholder, and versions that refuse to parse - and one blanket sentence
+// guesses at the cause, where a wrong guess reads as fact.
+func unknownReason(d *model.AssessedDriver) string {
+	if d.LocalVersion == model.LocalVersionProvisioned {
+		return "local version is the Windows provisioning placeholder; the package is on the machine " +
+			"but no installed component matched, so neither presence nor absence is measured"
+	}
+	if d.Version == "" {
+		return "the official row carries no version to compare against"
+	}
+	return "neither version could be parsed into comparable numeric parts"
 }
 
 // FormatDriverTableLines mirrors Format-DriverTableLines.
@@ -134,14 +181,27 @@ func FormatStatusSummaryLines(drivers []*model.AssessedDriver) []string {
 		}
 	}
 	lines = append(lines, fmt.Sprintf("  Evidence basis : fact=%d inference=%d undetermined=%d", factCount, inferenceCount, undeterminedCount))
-	if inferenceCount > 0 || undeterminedCount > 0 {
-		lines = append(lines, "  Note: inference = source audit or absence-based; undetermined = no confident decision.")
+	if undeterminedCount > 0 {
+		lines = append(lines, "  Note: undetermined = the evidence cannot settle the driver's state; each plan block's Reason line names what was checked.")
 	}
+	// Unknown names three distinct causes (no official version, a provisioned
+	// placeholder, unparseable versions). The per-row reason says which one
+	// actually applies instead of one blanket sentence guessing for all.
 	if counts[model.StatusUnknown] > 0 {
-		lines = append(lines, "  Note: Unknown = multi-vendor package, no matching local component found.")
+		shown := 0
+		for _, d := range drivers {
+			if d == nil || d.Driver == nil || d.CompareStatus != model.StatusUnknown {
+				continue
+			}
+			if shown >= 5 {
+				break
+			}
+			lines = append(lines, "  Note: "+driverLabel(d)+": "+unknownReason(d))
+			shown++
+		}
 	}
 	if counts[model.StatusNotApplicable] > 0 {
-		lines = append(lines, "  Note: Not applicable = hardware not detected on this machine.")
+		lines = append(lines, "  Note: Not applicable = no local device matched the driver's hardware ids or name rules.")
 		shown := 0
 		for _, d := range drivers {
 			if d == nil || d.Driver == nil || d.CompareStatus != model.StatusNotApplicable {
@@ -154,14 +214,7 @@ func FormatStatusSummaryLines(drivers []*model.AssessedDriver) []string {
 			if reason == "" {
 				reason = "no local device match"
 			}
-			label := d.DriverName
-			if label == "" {
-				label = d.DriverCode
-			}
-			if label == "" {
-				label = "driver"
-			}
-			lines = append(lines, "  Note: "+label+": "+reason)
+			lines = append(lines, "  Note: "+driverLabel(d)+": "+reason)
 			shown++
 		}
 	}
@@ -178,7 +231,7 @@ func FormatStatusSummaryLines(drivers []*model.AssessedDriver) []string {
 			if note == "" {
 				note = "Local newer (source unknown)"
 			}
-			lines = append(lines, "  Note: "+d.DriverName+": "+note)
+			lines = append(lines, "  Note: "+driverLabel(d)+": "+note)
 			shown++
 		}
 	}

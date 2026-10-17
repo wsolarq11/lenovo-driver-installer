@@ -543,3 +543,87 @@ func TestAPIFixtureRejectsMissingEnvelope(t *testing.T) {
 		t.Fatalf("error should name the missing key, got: %v", err)
 	}
 }
+
+func TestPlanBlockReasonRejectsSilentPlan(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/plan/plan.go": "package plan\n\nimport \"example.com/m/internal/model\"\n\n" +
+			"func BuildPlanText(drivers []*model.AssessedDriver, generatedAt string) []string {\n" +
+			"\tvar lines []string\n\tfor _, d := range drivers {\n" +
+			"\t\tif d.CompareStatus == model.StatusUnknown {\n\t\t\tlines = append(lines, \"Reason: unknown\")\n\t\t}\n\t}\n" +
+			"\treturn lines\n}\n",
+	})
+	if err := checkErr(t, ctx, "plan blocks carry the reason the console states"); err == nil {
+		t.Fatal("a plan builder that drops the non-match reason was not rejected")
+	}
+}
+
+func TestSummaryNotesRejectLegacyCauseLabels(t *testing.T) {
+	for name, lit := range map[string]string{
+		"multi-vendor": "\"  Note: Unknown = multi-vendor package.\"",
+		"inference":    "\"  Note: inference = source audit or absence-based.\"",
+	} {
+		ctx := loadFixture(t, "example.com/m", map[string]string{
+			"go.mod": "module example.com/m\n\ngo 1.27\n",
+			"internal/plan/plan.go": "package plan\n\nfunc Notes() []string {\n" +
+				"\tvar lines []string\n\tlines = append(lines, " + lit + ")\n\treturn lines\n}\n",
+		})
+		err := checkErr(t, ctx, "summary notes only describe reachable statuses")
+		if err != nil && strings.Contains(err.Error(), "no such check") {
+			t.Fatalf("%s case ran without its fixture check: %v", name, err)
+		}
+		if err == nil {
+			t.Fatalf("the %s note literal was not rejected", name)
+		}
+	}
+}
+
+func TestSummaryNotesAllowCountLineAndCase(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/plan/plan.go": "package plan\n\nfunc Counts(v string) string {\n" +
+			"\tswitch v {\n\tcase \"inference\":\n\t\treturn \"inference=%d\"\n\t}\n" +
+			"\treturn \"fact=%d inference=%d undetermined=%d\"\n}\n",
+	})
+	if err := checkErr(t, ctx, "summary notes only describe reachable statuses"); err != nil {
+		t.Fatalf("the schema-complete count line and switch case must stay legal: %v", err)
+	}
+}
+
+func TestInteractiveHintRejectsUnguardedCall(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/app/app.go": "package app\n\ntype Options struct{ LatestAcrossOS bool }\n" +
+			"func resolveListOS(o *Options) {\n" +
+			"\tif !o.LatestAcrossOS {\n\t\tprintln(\"In the interactive menu, press t to switch supported OS lists.\")\n\t}\n}\n",
+	})
+	if err := checkErr(t, ctx, "the OS-switch hint only speaks where a menu exists"); err == nil {
+		t.Fatal("an unguarded OS-switch hint was not rejected")
+	}
+}
+
+func TestSkippedRowsRejectSilentFilter(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/app/view.go": "package app\n\ntype view struct{}\n" +
+			"func (a *appFor) CompareOSDriverView() {\n\tv := filterDriverRows(v, false)\n}\n" +
+			"func filterDriverRows(rows []int, b bool) []int { return rows }\n" +
+			"func filterDriverRowsWithSkips(rows []int, b bool) ([]int, []int) { return rows, nil }\n" +
+			"type appFor struct{}\n",
+	})
+	if err := checkErr(t, ctx, "rows dropped before selection are reported"); err == nil {
+		t.Fatal("a silently filtering view was not rejected")
+	}
+}
+
+func TestLocalNewerRejectsWarnLevel(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/app/view.go": "package app\n\ntype App struct{ S sink }\ntype sink interface{ Log(msg, level string) }\n" +
+			"func (a *App) assessSelectedDrivers(source string) {\n\ta.S.Log(source, \"WARN\")\n}\n" +
+			"func (a *App) other(source string) {\n\ta.S.Log(source, \"WARN\")\n}\n",
+	})
+	if err := checkErr(t, ctx, "local newer is not logged as an anomaly"); err == nil {
+		t.Fatal("a WARN-level source label was not rejected")
+	}
+}
