@@ -198,6 +198,13 @@ func (a *App) downloadVerified(
 ) (int64, error) {
 	opts := vc.Opts
 	driver := ad.Driver
+	// An empty OfficialMD5 silently skips the vendor-hash comparison below. That
+	// is correct for the webpage source, which never sends one, but it must not
+	// look like a verified download: say which evidence is actually left.
+	if driver.OfficialMD5 == "" && !opts.SkipHashCheck {
+		a.Log(ctx, "["+driver.DriverCode+"] No official MD5 in the "+driver.SourceAPI+
+			" row; integrity rests on the local SHA-256 companion and the Authenticode signature.", "WARN")
+	}
 	// Record revocation-check degradation per download using this run's context;
 	// the fallback itself happens inside trust.VerifyFileSignature.
 	trust.RevocationFallback = func(path string) {

@@ -1028,3 +1028,53 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed**
+
+---
+
+## Session: 读驱动路径评审到底——网页源从未工作过
+
+**Branch**: `main`
+
+### 根因
+
+对 `internal/api` 做完整评审时用反射式契约测试直接打了线上响应，发现网页源的响应信封根本解不开：
+
+- 线上 `GET /drive/drive_listnew` 的 `statusCode` 是 **JSON 数字 `200`**，`data.localOSID` 是 **数字 `42`**；而 `webResponse` 把它们都声明成 `string`。
+- `encoding/json` 遇到类型不匹配返回错误，`ResolveOSEntry` 要求 `jsonErr == nil` 才用网页列表 → 网页分支**自存在以来从未成功过**。
+- 失败被 `app.go` 的日志写成 `webpage OS list unavailable`：把解析失败报成了网络不可用。`GetDriverObjects` 的 Web 回退因此是死代码。
+- 为什么测试没抓到：`internal/api/testdata/web_contract_golden.json` 是**手写**的，里面 `"statusCode": "200"`、`"localOSID": "248"` 都带引号。测试与结构体一致，结构体与服务器不一致。这正是「手写夹具冒充真实抓包」的代价。
+
+顺带确认的第二个缺陷：`webPart` 没有 `PartName` 字段，`parseWeb` 硬编码 `partMap[part.PartID] = ""`，而线上 15/15 个 part 全部带 `PartName`（行上 0/17 带），即网页源的驱动行**永远没有部件名**。
+
+### 改法
+
+- **先抓包，再改代码。** 线上响应脱敏后落成 `internal/api/testdata/web_real_82jq_os42.json`（17 行、15 个 part、33 KB）：`?token=...` 全部替换为 `?token=REDACTED`（token 每次请求都变，不属契约），`CreateBy`/`UpdateBy` 清空；确认无序列号、无真实设备实例 id。删掉手写的 `web_contract_golden.json`。
+- `webResponse.StatusCode` / `Data.LocalOSID` 改为 `json.Number`：数字与带引号的数字都接受。服务器将来改回字符串也不会再让整条源失效。
+- `webPart` 补 `PartName`，`parseWeb` 正常填充 `partMap`。
+- `ResolveOSEntry` 重写：网页列表 → 名称匹配 → `localOSID` 回退；失败再走 QuickFix。删除写死的 `[]string{"42", "248"}`，改用 probe `osid:"0"`（该值实测返回 `StatusCode:"204"` + 完整 `osList` + 空 `driverList`）。
+- `OSResolution` 增加 `WebFailure`，由解析器携带真实原因（transport / decode / 无匹配项），日志改由 `logOSResolution` 输出，不再把解析失败写成「不可用」。
+- 下载校验处：`OfficialMD5 == ""` 时显式 WARN 说明完整性只由本地 SHA-256 伴生与 Authenticode 承担。网页源本来就没有 MD5（17/17 行无该字段），原来这一跳是静默的。
+
+### 防回流
+
+新增门禁步骤 `the API contract fixtures are recorded responses`（第 46 步，检查体在 `internal/gate`）：
+
+- 网页夹具必须存在，且携带真实信封 `statusCode`/`localOSID`/`osList`/`partList`/`drivelist`；
+- `statusCode`/`localOSID` **不得**是带引号的字符串——那正是隐藏类型不匹配的写法；
+- 必须 ≥ 4 KB 且带 `PartName`；
+- QuickFix golden 必须继续演练 `Parameter` 拼写；
+- `contracts.md` 必须仍点名 `drive_listnew`。
+
+红灯实测（两次，均先注入后复原）：把 `"statusCode": 200` 改回 `"200"` → `FAIL ... records "statusCode" as a quoted string`；把 `PartName` 改掉 → `FAIL ... carries no PartName`。另有 `TestAPIFixtureRejectsQuotedStatus` / `TestAPIFixtureRejectsMissingEnvelope` 两条夹具级红灯。
+
+### Testing
+
+- [实测] 线上端到端（82JQ / `PF2SBWJA`）：`ResolveOSEntry` 现在返回 `source=Web`（此前永远 QuickFix），`WebFailure` 为空。
+- [实测] 同一台机器：`Web` 源 **17 行、0 行缺 PartName、17 行无 MD5**；`QuickFix` 源 **24 行、0 行缺 PartName、0 行无 MD5**。网页源是 QuickFix 的真子集，主源保持 QuickFix 不变。
+- [实测] 一次完整读取的网络请求 **4 → 3**（`drive_query` → `drive_listnew`(OS 列表) → `SearchForXbb`(驱动列表)），耗时 2.18 s。原第 4 个请求是重复的 QuickFix 探测，且原来的网页 OS 列表请求必然解析失败。
+- [实测] `go build ./...`、`go build -tags legacyps ./...`、`go vet ./...`、`gofmt -l internal cmd`（无输出）、`go test ./...` 全绿；覆盖率 `api` 75.9%（地板 55）、`app` 42.6%（22）、`gate` 81.3%（70）。
+- [实测] 双宿主门禁 **46/46 VERIFY_OK**：`pwsh` 7 与 `powershell.exe` 5.1 均全绿。
+
+### Status
+
+[OK] **Completed**

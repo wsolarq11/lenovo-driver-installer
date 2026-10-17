@@ -199,14 +199,14 @@ func (c *Client) fetchWeb(ctx context.Context, categoryID, osID string) ([]*mode
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, &interfaceGateError{Source: "Web", Reason: "response is not the expected JSON"}
 	}
-	if code := strings.TrimSpace(resp.StatusCode); code != "" && code != "200" {
+	if code := strings.TrimSpace(resp.StatusCode.String()); code != "" && code != "200" {
 		return nil, fmt.Errorf("Lenovo API returned %s for %s : %s", code, query, resp.Message)
 	}
 	rawCount := 0
 	for _, part := range resp.Data.PartList {
 		rawCount += len(part.Drivelist)
 	}
-	if resp.StatusCode == "" && rawCount == 0 && len(resp.Data.OSList) == 0 {
+	if resp.StatusCode.String() == "" && rawCount == 0 && len(resp.Data.OSList) == 0 {
 		return nil, &interfaceGateError{Source: "Web", Reason: "response missing expected fields (statusCode/data)"}
 	}
 	drivers := parseWeb(&resp, osID)
@@ -260,42 +260,106 @@ type OSResolution struct {
 	OSEntry model.OSListEntry
 	OSList  []model.OSListEntry
 	Source  string
+	// WebFailure explains why the webpage OS list could not be used when Source
+	// is QuickFix. It carries the actual cause (transport, decode, or no entry
+	// for this OS) so the log does not blame the network for a parse failure.
+	WebFailure string
 }
 
-// ResolveOSEntry mirrors Resolve-LenovoOsEntry.
+// osIDProbe is the osid sent when only the OS list is wanted. The endpoint
+// answers a request for an OS it ships no drivers for with the machine's full
+// OS list and an empty driver list, so the list is readable before the machine's
+// own OSID is known. Probing this way replaces a hardcoded []string{"42","248"}:
+// the resolver no longer has to know which Windows versions Lenovo currently
+// lists, and a newly supported OS appears in the list without a code change.
+const osIDProbe = "0"
+
+// ResolveOSEntry resolves the machine's OS name to a Lenovo OS entry. The
+// webpage endpoint is asked first because one request returns the complete list
+// for this machine; QuickFix is the fallback.
 func (c *Client) ResolveOSEntry(ctx context.Context, categoryID, osName, osKind string) (*OSResolution, error) {
-	webData, err := c.invokeLenovo(ctx, "/drive/drive_listnew?searchKey="+url.QueryEscape(categoryID))
-	if err == nil {
-		var resp webResponse
-		if jsonErr := json.Unmarshal(webData, &resp); jsonErr == nil && len(resp.Data.OSList) > 0 {
-			if entry, ok := findOSEntry(resp.Data.OSList, osName, osKind); ok {
-				return &OSResolution{OSEntry: entry, OSList: resp.Data.OSList, Source: "Web"}, nil
-			}
-			for _, candidate := range resp.Data.OSList {
-				if candidate.OSID == resp.Data.LocalOSID {
-					return &OSResolution{OSEntry: candidate, OSList: resp.Data.OSList, Source: "Web"}, nil
-				}
-			}
+	webList, webLocal, webErr := c.fetchWebOSList(ctx, categoryID)
+	if webErr == nil {
+		if res := resolveFromOSList(webList, webLocal, osName, osKind, "Web"); res != nil {
+			return res, nil
 		}
+		webErr = fmt.Errorf("the webpage OS list has no entry matching %s", describeOSMatch(osName, osKind))
 	}
 
-	for _, candidateID := range []string{"42", "248"} {
-		data, qfErr := c.invokeQuickFix(ctx, categoryID, candidateID)
-		if qfErr != nil {
-			continue
+	qfList, qfErr := c.fetchQuickFixOSList(ctx, categoryID)
+	if qfErr == nil {
+		if res := resolveFromOSList(qfList, "", osName, osKind, "QuickFix"); res != nil {
+			res.WebFailure = webErr.Error()
+			return res, nil
 		}
-		var resp QuickFixResponse
-		if jsonErr := json.Unmarshal(data, &resp); jsonErr != nil {
-			continue
-		}
-		if len(resp.Data.OSList) == 0 {
-			continue
-		}
-		if entry, ok := findOSEntry(resp.Data.OSList, osName, osKind); ok {
-			return &OSResolution{OSEntry: entry, OSList: resp.Data.OSList, Source: "QuickFix"}, nil
+		qfErr = fmt.Errorf("the QuickFix OS list has no entry matching %s", describeOSMatch(osName, osKind))
+	}
+
+	return nil, fmt.Errorf("could not resolve the current OS entry from Lenovo: webpage: %v; QuickFix: %v",
+		webErr, qfErr)
+}
+
+// fetchWebOSList reads the OS list the official webpage endpoint returns for a
+// machine, plus the endpoint's own idea of the local OSID. It sends no sysid:
+// the list is machine-scoped, not OS-scoped.
+func (c *Client) fetchWebOSList(ctx context.Context, categoryID string) ([]model.OSListEntry, string, error) {
+	data, err := c.invokeLenovo(ctx, "/drive/drive_listnew?searchKey="+url.QueryEscape(categoryID))
+	if err != nil {
+		return nil, "", err
+	}
+	var resp webResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, "", &interfaceGateError{Source: "Web", Reason: "OS list response is not the expected JSON"}
+	}
+	if len(resp.Data.OSList) == 0 {
+		return nil, "", &interfaceGateError{Source: "Web", Reason: "OS list response carries no osList"}
+	}
+	return resp.Data.OSList, resp.Data.LocalOSID.String(), nil
+}
+
+// fetchQuickFixOSList reads the OS list through the QuickFix endpoint. The probe
+// osid yields no drivers, which is expected: only the list is wanted here.
+func (c *Client) fetchQuickFixOSList(ctx context.Context, categoryID string) ([]model.OSListEntry, error) {
+	data, err := c.invokeQuickFix(ctx, categoryID, osIDProbe)
+	if err != nil {
+		return nil, err
+	}
+	var resp QuickFixResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, &interfaceGateError{Source: "QuickFix", Reason: "OS list response is not the expected JSON"}
+	}
+	if len(resp.Data.OSList) == 0 {
+		return nil, &interfaceGateError{Source: "QuickFix", Reason: "OS list response carries no osList"}
+	}
+	return resp.Data.OSList, nil
+}
+
+// resolveFromOSList picks the entry matching the machine's OS, falling back to
+// the endpoint's own idea of the local OS when no name matches. It returns nil
+// when neither yields an entry, so the caller can try the other source.
+func resolveFromOSList(osList []model.OSListEntry, localOSID, osName, osKind, source string) *OSResolution {
+	if entry, ok := findOSEntry(osList, osName, osKind); ok {
+		return &OSResolution{OSEntry: entry, OSList: osList, Source: source}
+	}
+	if localOSID != "" {
+		for _, candidate := range osList {
+			if candidate.OSID == localOSID {
+				return &OSResolution{OSEntry: candidate, OSList: osList, Source: source}
+			}
 		}
 	}
-	return nil, fmt.Errorf("could not resolve current OS entry from Lenovo")
+	return nil
+}
+
+func describeOSMatch(osName, osKind string) string {
+	switch {
+	case osName != "":
+		return fmt.Sprintf("%q", osName)
+	case osKind != "":
+		return fmt.Sprintf("%q", osKind)
+	default:
+		return "the current OS"
+	}
 }
 
 func findOSEntry(osList []model.OSListEntry, osName, osKind string) (model.OSListEntry, bool) {

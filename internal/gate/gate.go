@@ -255,6 +255,7 @@ func checks() []check {
 		{"the documented JSON contracts match the engine", checkJSONContractsMatchDocs},
 		{"the architecture doc names the network boundary the imports show", checkArchitectureNetworkBoundary},
 		{"evidence chain runs on real fixtures", checkEvidenceChainRunsOnFixtures},
+		{"the API contract fixtures are recorded responses", checkAPIFixturesAreRecorded},
 	}
 }
 

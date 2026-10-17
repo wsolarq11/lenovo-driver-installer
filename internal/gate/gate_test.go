@@ -94,9 +94,9 @@ func TestChecksPassAgainstThisRepo(t *testing.T) {
 // Only the checks that resolve names may ask for type information. The export
 // data behind it costs about a second to produce, and -check runs one check per
 // process, so a check that asks for types it does not use makes the gate slower
-// for no verdict. Eighteen of twenty checks are in that category; this test
-// fails if one of them starts asking, or if a check that genuinely needs types
-// stops being counted here.
+// for no verdict. Every check but the two in needsTypes is in that category;
+// this test fails if one of them starts asking, or if a check that genuinely
+// needs types stops being counted here.
 func TestOnlyNameResolvingChecksLoadExports(t *testing.T) {
 	root := repoRoot(t)
 	repo, err := Load(root)
@@ -501,5 +501,45 @@ func TestArchitectureNetworkBoundaryRejectsStaleGrant(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "model") {
 		t.Fatalf("error should name the stale grant, got: %v", err)
+	}
+}
+
+// The webpage contract fixture is the only thing standing between a
+// type-mismatched struct and a green suite, because the struct's own tests use
+// whatever the fixture says. A quoted statusCode in the fixture re-creates the
+// exact bug: the test agrees with the struct, the server disagrees with both.
+func TestAPIFixtureRejectsQuotedStatus(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/api/testdata/web_real_82jq_os42.json": `{"statusCode": "200", "localOSID": 42,` +
+			`"osList": [], "partList": [{"PartName": "x", "drivelist": []}]}` + strings.Repeat(" ", 4096),
+		"internal/api/testdata/quickfix_contract_golden.json": `{"Parameter": "x"}`,
+		"docs/spec/contracts.md":                              "drive_listnew\n",
+	})
+	err := checkErr(t, ctx, "the API contract fixtures are recorded responses")
+	if err == nil {
+		t.Fatal("a quoted statusCode was accepted; it hides the type mismatch it exists to catch")
+	}
+	if !strings.Contains(err.Error(), "statusCode") {
+		t.Fatalf("error should name the field, got: %v", err)
+	}
+}
+
+// A fixture without the real envelope is a hand-written sample wearing a
+// recording's name. The check refuses it rather than certifying it.
+func TestAPIFixtureRejectsMissingEnvelope(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/api/testdata/web_real_82jq_os42.json": `{"statusCode": 200, "localOSID": 42,` +
+			`"osList": [], "partList": []}` + strings.Repeat(" ", 4096),
+		"internal/api/testdata/quickfix_contract_golden.json": `{"Parameter": "x"}`,
+		"docs/spec/contracts.md":                              "drive_listnew\n",
+	})
+	err := checkErr(t, ctx, "the API contract fixtures are recorded responses")
+	if err == nil {
+		t.Fatal("a response without the drivelist envelope was accepted as a recording")
+	}
+	if !strings.Contains(err.Error(), "drivelist") {
+		t.Fatalf("error should name the missing key, got: %v", err)
 	}
 }

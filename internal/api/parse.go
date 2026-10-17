@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"regexp"
 	"strconv"
 	"strings"
@@ -27,18 +28,28 @@ type quickFixPart struct {
 }
 
 // webResponse is the official webpage API response shape.
+//
+// StatusCode and LocalOSID are json.Number, not string: the live endpoint sends
+// both as bare JSON numbers (`"statusCode": 200`, `"localOSID": 42`), while the
+// QuickFix endpoint sends its StatusCode as a quoted string. Modeling them as
+// string made every webpage response fail to decode, which silently disabled the
+// whole web source; a hand-written fixture that quoted the numbers hid it.
+// json.Number accepts either spelling, so a future flip back does not break it.
 type webResponse struct {
-	StatusCode string `json:"statusCode"`
-	Message    string `json:"message"`
+	StatusCode json.Number `json:"statusCode"`
+	Message    string      `json:"message"`
 	Data       struct {
-		LocalOSID string              `json:"localOSID"`
+		LocalOSID json.Number         `json:"localOSID"`
 		PartList  []webPart           `json:"partList"`
 		OSList    []model.OSListEntry `json:"osList"`
 	} `json:"data"`
 }
 
+// webPart carries the part name on the part, not on its driver rows: the live
+// webpage response sends PartName only here (0 of 17 rows carry one).
 type webPart struct {
 	PartID    string      `json:"PartID"`
+	PartName  string      `json:"PartName"`
 	Drivelist []driverRow `json:"drivelist"`
 }
 
@@ -98,7 +109,7 @@ func parseWeb(resp *webResponse, osID string) []*model.Driver {
 	partMap := map[string]string{}
 	var rows []driverRow
 	for _, part := range resp.Data.PartList {
-		partMap[part.PartID] = ""
+		partMap[part.PartID] = part.PartName
 		rows = append(rows, part.Drivelist...)
 	}
 	osName := findOSName(resp.Data.OSList, osID)

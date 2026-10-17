@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"lenovo-driver/internal/model"
 )
 
 func quickFixPayload() []byte {
@@ -60,12 +62,15 @@ func TestParseQuickFix(t *testing.T) {
 }
 
 func TestParseWeb(t *testing.T) {
+	// The live endpoint sends statusCode and localOSID as bare JSON numbers.
+	// Quoting them here is what let the string-typed struct stay green while
+	// every real response failed to decode.
 	payload := []byte(`{
-  "statusCode": "200",
+  "statusCode": 200,
   "data": {
-    "localOSID": "42",
+    "localOSID": 42,
     "osList": [{"OSID": "42", "OSName": "Windows 10 64-bit"}],
-    "partList": [{"PartID": "p1", "drivelist": [{
+    "partList": [{"PartID": "p1", "PartName": "Audio", "drivelist": [{
       "PartID": "p1",
       "DriverName": "AMD VGA",
       "DriverCode": "d2",
@@ -94,6 +99,27 @@ func TestParseWeb(t *testing.T) {
 	}
 	if drivers[0].SourceAPI != "Web" || drivers[0].OfficialMD5 != "" {
 		t.Fatalf("web normalization failed: %#v", drivers[0])
+	}
+	if drivers[0].PartName != "Audio" {
+		t.Fatalf("part name must come from the partList entry: %#v", drivers[0])
+	}
+}
+
+// TestWebResponseAcceptsBothStatusSpellings pins the tolerance that makes the
+// fix durable: the live endpoint uses numbers today, but a server-side flip to
+// a quoted string must not disable the source again.
+func TestWebResponseAcceptsBothStatusSpellings(t *testing.T) {
+	for _, payload := range []string{
+		`{"statusCode":200,"data":{"localOSID":42}}`,
+		`{"statusCode":"200","data":{"localOSID":"42"}}`,
+	} {
+		var resp webResponse
+		if err := decodeJSON([]byte(payload), &resp); err != nil {
+			t.Fatalf("%s: %v", payload, err)
+		}
+		if resp.StatusCode.String() != "200" || resp.Data.LocalOSID.String() != "42" {
+			t.Fatalf("%s: decoded as %q/%q", payload, resp.StatusCode, resp.Data.LocalOSID)
+		}
 	}
 }
 
@@ -140,36 +166,60 @@ func TestParseQuickFixContractGolden(t *testing.T) {
 	}
 }
 
-// TestParseWebContractGolden locks the webpage API field names and their
-// divergences from QuickFix: DriverEditionId spelling, InstallCode (not
-// Parameter), DriverIssuedDateTime, and no official MD5.
+// TestParseWebContractGolden locks the webpage API contract against a response
+// recorded from the live endpoint (82JQ, OSID 42) with per-fetch download
+// tokens redacted. It is a capture, not a hand-written sample: the previous
+// golden quoted statusCode and localOSID, which made a struct that could not
+// decode any real response look correct.
+//
+// The shape pinned here is the one the parser depends on: numbers at the top
+// level, PartName on the part (never on the row), DriverEdtionId (typo and
+// all), InstallCode, DriverIssuedDateTime, and no MD5 anywhere.
 func TestParseWebContractGolden(t *testing.T) {
-	data, err := os.ReadFile("testdata/web_contract_golden.json")
+	data, err := os.ReadFile("testdata/web_real_82jq_os42.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var resp webResponse
 	if err := decodeJSON(data, &resp); err != nil {
-		t.Fatal(err)
+		t.Fatalf("the recorded webpage response no longer decodes: %v", err)
 	}
-	drivers := parseWeb(&resp, "248")
-	if len(drivers) != 1 {
-		t.Fatalf("expected 1 driver, got %d", len(drivers))
+	if resp.StatusCode.String() != "200" || resp.Data.LocalOSID.String() != "42" {
+		t.Fatalf("recorded status/localOSID drifted: %q/%q", resp.StatusCode, resp.Data.LocalOSID)
 	}
-	driver := drivers[0]
-	if driver.SourceAPI != "Web" || driver.OfficialMD5 != "" {
-		t.Fatalf("web source should have no MD5: %#v", driver)
+	drivers := parseWeb(&resp, "42")
+	if len(drivers) != 17 {
+		t.Fatalf("expected the 17 recorded rows to parse, got %d", len(drivers))
 	}
-	if driver.InstallCode != "/VERYSILENT" {
-		t.Fatalf("InstallCode should be preserved: %q", driver.InstallCode)
+	byCode := map[string]*model.Driver{}
+	for _, d := range drivers {
+		byCode[d.DriverCode] = d
 	}
-	if driver.DriverEditionID != 1722 {
-		t.Fatalf("DriverEditionId should map to edition: %d", driver.DriverEditionID)
+	audio := byCode["DRV202102040011"]
+	if audio == nil {
+		t.Fatal("recorded audio row DRV202102040011 is missing from the parse result")
 	}
-	if driver.FileName != "audio-2GY507AFZLL741C0.exe" {
-		t.Fatalf("FileName should keep basename: %q", driver.FileName)
+	if audio.PartName != "声卡" || audio.PartID != "32" {
+		t.Fatalf("part name must be joined from partList: %#v", audio)
 	}
-	if driver.IssuedDate.IsZero() {
+	if audio.Version != "6.0.9088.1" || audio.FileName != "Audio-2GY503AFZLL741C0.exe" {
+		t.Fatalf("recorded row fields drifted: %#v", audio)
+	}
+	if audio.DriverEditionID != 82116 {
+		t.Fatalf("DriverEdtionId (typo spelling) should map to edition: %d", audio.DriverEditionID)
+	}
+	if audio.InstallCode != "/add-driver *.inf /install /subdirs" {
+		t.Fatalf("InstallCode should be preserved: %q", audio.InstallCode)
+	}
+	if audio.IssuedDate.IsZero() {
 		t.Fatal("DriverIssuedDateTime should be parsed into IssuedDate")
+	}
+	if audio.SourceAPI != "Web" {
+		t.Fatalf("source should be Web: %q", audio.SourceAPI)
+	}
+	for _, d := range drivers {
+		if d.OfficialMD5 != "" {
+			t.Fatalf("%s: the webpage source carries no MD5, got %q", d.DriverCode, d.OfficialMD5)
+		}
 	}
 }

@@ -3,8 +3,10 @@ package app
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -655,5 +657,104 @@ func TestManualRollbackGuidance(t *testing.T) {
 	}
 	if got := manualRollbackGuidance(""); !strings.Contains(got, "unknown") {
 		t.Fatalf("guidance should mark unknown previous INF: %q", got)
+	}
+}
+
+// TestDownloadWithoutOfficialMD5IsAnnounced: an empty OfficialMD5 silently skips
+// the vendor-hash comparison, which is right for the webpage source (it never
+// sends one) but must not read as a verified download. The run log has to say
+// which evidence is left.
+func TestDownloadWithoutOfficialMD5IsAnnounced(t *testing.T) {
+	content := []byte("driver-bytes")
+	client := &http.Client{Transport: appRoundTripFunc(func(req *http.Request) *http.Response {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(content))}
+	})}
+	app := newTestApp(t)
+	app.Downloader = download.NewDownloader()
+	app.Downloader.Client = client
+	outFile := filepath.Join(t.TempDir(), "d1_driver.exe")
+	driver := &model.Driver{
+		DriverCode:  "d1",
+		FileName:    "driver.exe",
+		FilePath:    "https://newdriverdl.lenovo.com.cn/driver.exe",
+		FileSize:    "12 B",
+		SourceAPI:   "Web",
+		OfficialMD5: "",
+	}
+	vc := &ViewContext{Opts: Options{SkipSignatureCheck: true}}
+	if _, err := app.downloadVerified(context.Background(), vc, &model.AssessedDriver{Driver: driver},
+		outFile, 12, "42", "Web"); err != nil {
+		t.Fatal(err)
+	}
+	logged := app.Stdout.(*bytes.Buffer).String()
+	if !strings.Contains(logged, "No official MD5") || !strings.Contains(logged, "Web") {
+		t.Fatalf("a download with no official hash must say so, log was:\n%s", logged)
+	}
+}
+
+// TestDownloadWithOfficialMD5SaysNothingExtra keeps the warning meaningful: a
+// QuickFix row carries an MD5, so the notice must not fire on the normal path.
+func TestDownloadWithOfficialMD5SaysNothingExtra(t *testing.T) {
+	content := []byte("driver-bytes")
+	client := &http.Client{Transport: appRoundTripFunc(func(req *http.Request) *http.Response {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(content))}
+	})}
+	app := newTestApp(t)
+	app.Downloader = download.NewDownloader()
+	app.Downloader.Client = client
+	outFile := filepath.Join(t.TempDir(), "d1_driver.exe")
+	driver := &model.Driver{
+		DriverCode:  "d1",
+		FileName:    "driver.exe",
+		FilePath:    "https://newdriverdl.lenovo.com.cn/driver.exe",
+		FileSize:    "12 B",
+		SourceAPI:   "QuickFix",
+		OfficialMD5: fmt.Sprintf("%x", md5.Sum(content)),
+	}
+	vc := &ViewContext{Opts: Options{SkipSignatureCheck: true}}
+	if _, err := app.downloadVerified(context.Background(), vc, &model.AssessedDriver{Driver: driver},
+		outFile, 12, "42", "QuickFix"); err != nil {
+		t.Fatal(err)
+	}
+	if logged := app.Stdout.(*bytes.Buffer).String(); strings.Contains(logged, "No official MD5") {
+		t.Fatalf("the notice fired for a row that carries an MD5:\n%s", logged)
+	}
+}
+
+// TestOSListSourceWarningNamesTheCause: the old line said "webpage OS list
+// unavailable" for every fallback, including a decode failure that had nothing
+// to do with availability. A parse error reported as a network condition is a
+// false diagnosis in the one artifact the operator reads afterwards.
+func TestOSListSourceWarningNamesTheCause(t *testing.T) {
+	var out bytes.Buffer
+	app := newTestApp(t)
+	app.Stdout = &out
+	res := &api.OSResolution{
+		OSEntry:    model.OSListEntry{OSID: "42", OSName: "Windows 10 64-bit"},
+		Source:     "QuickFix",
+		WebFailure: "Web interface may be gated or blocked: OS list response is not the expected JSON",
+	}
+	app.logOSResolution(context.Background(), res)
+	logged := out.String()
+	if !strings.Contains(logged, "QuickFix") || !strings.Contains(logged, "JSON") {
+		t.Fatalf("the warning must name the source and the real cause:\n%s", logged)
+	}
+	if strings.Contains(logged, "unavailable") {
+		t.Fatalf("the warning still blames availability:\n%s", logged)
+	}
+}
+
+// A clean webpage resolution must not warn at all.
+func TestOSListSourceWarningSilentOnWeb(t *testing.T) {
+	var out bytes.Buffer
+	app := newTestApp(t)
+	app.Stdout = &out
+	res := &api.OSResolution{
+		OSEntry: model.OSListEntry{OSID: "42", OSName: "Windows 10 64-bit"},
+		Source:  "Web",
+	}
+	app.logOSResolution(context.Background(), res)
+	if strings.Contains(out.String(), "WARN") {
+		t.Fatalf("a clean webpage resolution warned:\n%s", out.String())
 	}
 }

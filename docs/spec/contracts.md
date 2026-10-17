@@ -26,15 +26,17 @@ Content-Type: application/json
 Body: {"searchKey":"<category-id>","osid":"<osid>"}
 ```
 
-返回 `defaultOS`、`osList`、`partList`、`driverList`；每个驱动条目含 `DriverCode`、`DriverName`、`Version`、`HardwareId`、`Parameter`、`PubTime`、`UpdateTime`、`FileName`、`FilePath`、`FileSize`、`FileType`、`MD5`、`Bootfile` 等。
+返回 `defaultOS`、`osList`、`partList`、`driverList`；每个驱动条目含 `DriverCode`、`DriverName`、`Version`、`HardwareId`、`Parameter`、`PubTime`、`UpdateTime`、`FileName`、`FilePath`、`FileSize`、`FileType`、`MD5`、`Bootfile` 等。`StatusCode` 是**字符串** `"200"`；OS 列表不随 `osid` 变化，传一个无驱动的 `osid`（代码用 `"0"`）即可只取列表（返回 `StatusCode:"204"` 与空 `driverList`），因此 OS 解析不需要猜哪个 OSID 存在。
 
 备用数据源：
 
 ```text
-GET https://newsupport.lenovo.com.cn/api/drive/drive_listnew?searchKey=<category-id>&sysid=<osid>
+GET https://newsupport.lenovo.com.cn/api/drive/drive_listnew?searchKey=<category-id>[&sysid=<osid>]
 ```
 
-返回 `InstallCode`、`DriverIssuedDateTime` 等，但**没有官方 `MD5`**。OS 列表从同一 API 家族解析；网页 API 可通过 source hint `Web` 优先。
+返回 `InstallCode`、`DriverIssuedDateTime` 等，但**没有官方 `MD5`**。信封是 `statusCode`（**JSON 数字** `200`）、`message`、`data`；`data` 内含 `localOSID`（**JSON 数字**）、`osList`、`partList`，每个 part 带 `PartID`/`PartName`/`OrderNum` 与 `drivelist`。不带 `sysid` 时同样返回整机 OS 列表；`localOSID` 是该接口自己判定的本机 OSID，作为名称匹配失败时的回退。网页 API 可通过 source hint `Web` 优先。
+
+**类型是契约的一部分**：`statusCode` 与 `localOSID` 曾被声明为 `string` 而线上是数字，网页源因此整条链路解析失败且长期无人发现——手写夹具把数字写成了带引号的字符串，测试与结构体一致、与服务器不一致。现在两者都用 `json.Number`（数字与带引号的数字都接受），并由门禁步骤 `the API contract fixtures are recorded responses` 要求 `internal/api/testdata/web_real_82jq_os42.json` 必须是真实抓包：保留真实信封、两个字段未加引号、带 `PartName`，手写样例无法冒充。
 
 其它官方接口（工具二进制内嵌，同域）：`ConfigurationQuery/getHardWareInfoBySn`、`ConfigurationQuery/getMachineSequenceInfo`、`Driver/getDriverList`、`driver/QueryForWeb`、`driver/Search`、`tool/version`、`tool/urlList`。
 

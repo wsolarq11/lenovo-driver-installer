@@ -337,9 +337,7 @@ func (a *App) resolveRuntime(ctx context.Context, opts *Options) (*ViewContext, 
 	}
 	sysID := osResolution.OSEntry.OSID
 	a.Log(ctx, "Matched OS entry : "+osResolution.OSEntry.OSName+" (OSID "+sysID+")", "INFO")
-	if osResolution.Source == "QuickFix" {
-		a.Log(ctx, "OS list source : QuickFix (webpage OS list unavailable)", "WARN")
-	}
+	a.logOSResolution(ctx, osResolution)
 
 	localDevices, err := inventory.GetLocalDeviceSnapshot(ctx)
 	if err != nil {
@@ -369,6 +367,18 @@ func (a *App) resolveRuntime(ctx context.Context, opts *Options) (*ViewContext, 
 		Machine:           machine,
 		OSInfo:            osInfo,
 	}, 0
+}
+
+// logOSResolution records which source supplied the OS list, and why the
+// webpage list was not used when it was not. The cause is carried by the
+// resolver rather than inferred here: "unavailable" was once printed for a
+// decode failure, which sent the reader looking for a network problem that did
+// not exist.
+func (a *App) logOSResolution(ctx context.Context, res *api.OSResolution) {
+	if res.Source == "Web" {
+		return
+	}
+	a.Log(ctx, "OS list source : "+res.Source+"; webpage OS list not used: "+res.WebFailure, "WARN")
 }
 
 // resolveListOS resolves the OS identifier whose driver list will be compared

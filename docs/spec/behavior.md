@@ -21,7 +21,7 @@
 
 1. 缓存文件大小对照官方大小。
 2. 校验本地 SHA-256 伴生文件。
-3. 数据源提供时校验官方 `MD5`（缓存复用前同样校验）。
+3. 数据源提供时校验官方 `MD5`（缓存复用前同样校验）。网页源不提供 `MD5`，此时运行日志显式记一条 WARN，说明完整性只由本地 SHA-256 伴生与 Authenticode 签名承担——缺少官方哈希不能读作“已校验”。
 4. 校验失败即删缓存重下。
 5. 下载后计算本地 SHA-256 写 `<file>.sha256`。
 6. Authenticode 校验（WinVerifyTrust）：签名链有效 + 撤销检查开启（`WTD_REVOKE_WHOLECHAIN`）+ 签名者组织必须为 Lenovo（`CertEnumCertificatesInStore` + `CertGetNameStringW`，组织级匹配兼容 `Lenovo (Beijing) Limited` 等多个主体）。有效但来自无关发布者的签名被拒。撤销离线（`CRYPT_E_REVOCATION_OFFLINE`）降级为“链验证 + 签发者白名单”并记 WARN，不拒死；被吊销证书（`CRYPT_E_REVOKED`）仍拒绝。
