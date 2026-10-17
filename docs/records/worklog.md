@@ -1078,3 +1078,56 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed**
+
+---
+
+## Session: 陈旧二进制冒充最新源码
+
+**Branch**: `main`
+
+### 现象
+
+真机跑 `install_lenovo_drivers.bat` 的输出里仍出现 `OS list source : QuickFix (webpage OS list unavailable)`，而该措辞在当天的提交里已被删除；`Applicable candidates : 11` 也与不变量 3 记录的「修复后为 1」矛盾。
+
+### 根因
+
+`bin\lenovo-driver.exe` 的时间戳是 **2026-09-21 22:33**，而 HEAD 是 2026-10-17 11:42，中间跨了 **75 个提交**（含静默派发、比较原语、自动集白名单）。
+
+两个启动器都不检查新鲜度：
+
+- `install_lenovo_drivers.bat` 用 `if not exist "bin\lenovo-driver.exe"` 包住 `go build`——文件在就永远不编译。
+- `install_lenovo_drivers_wpf.bat` 里根本没有构建步骤；`wpf\worker.ps1` 只在引擎缺失时报错。
+
+`/bin/` 在 `.gitignore` 里，所以这个产物既不在版本控制里，也不被任何门禁看见：CI 能保证源码正确，却保证不了启动器交出去的是这份源码。
+
+### 改法
+
+新增 `scripts/lib/ensure-engine.bat`，两个启动器都 `call` 它，规则只有一份：
+
+- 新鲜度判定用 `xcopy /L /D`（只列出比目标新的源文件，不复制）。试过 `dir /b /s /o-d`：它只在单个目录内排序，跨参数不全局排序，给出过错误结论。
+- 源集合 = `cmd\*.go` + `internal\*.go` + `go.mod`。
+- 陈旧且找得到 Go → 重建；陈旧但无 Go → 打印两行 WARNING 说明本次跑的是旧产物并给出重建命令，**不阻断运行**（保持无 Go 机器可用的既有设计）。
+- 新鲜 → 完全静默。
+
+### 防回流
+
+门禁第 47 步 `the launchers rebuild a stale engine`：
+
+- 两个启动器都必须 `call` 共享脚本；
+- 启动器里不得再出现 `if not exist "bin\lenovo-driver.exe"` 这种「只在缺失时编译」的旧形态；
+- 共享脚本必须同时保留 `xcopy /L /D`、`go build`、`no Go toolchain` 三个分支。
+
+红灯实测两次：把 CLI 启动器改回 `if not exist` 形态 → `FAIL ... does not call the shared engine-freshness script`；给 WPF 启动器重新塞入存在性判断 → `FAIL ... still builds only when the engine is missing, so a stale binary would run silently`。两次复原后均转绿。
+
+### Testing
+
+- [实测] 新鲜场景：`install_lenovo_drivers.bat -DryRun` 无任何构建输出，直接进入运行。
+- [实测] 陈旧场景：`touch cmd/lenovo-driver/main.go` 后 → `Building Go engine from source...`，重建后再次调用静默。
+- [实测] 无 Go 场景（清空 PATH 与 GOROOT）：输出两行 WARNING 并返回 0，不阻断运行。
+- [实测] WPF 两条 smoke 仍通过：`-SelfTest -NoElevation` 出图；`-WorkerSmoke -NoElevation` → `WORKER_SMOKE_OK rows=23 list=Windows 11 64-bit (248)`。
+- [实测] 双宿主门禁 **47/47 VERIFY_OK**（`pwsh` 7 与 `powershell.exe` 5.1）。
+- [实测] 用新引擎重跑同一台机器：`Applicable candidates : 11 → 0`；`AMD Power Processor` 由 `Up to date` 变 `Unknown`（本地值 `Provisioned` 是占位符，不构成「已最新」）；`Lenovo Energy Management` 由 `Not installed` 变 `Local newer`（本地 15.11.29.65 高于远端 15.11.29.13，装了即降级）。
+
+### Status
+
+[OK] **Completed**

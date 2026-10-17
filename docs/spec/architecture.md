@@ -65,6 +65,7 @@ wpf/actions.ps1              WPF 安装动作确认与分发
 scripts/verify.ps1           离线验收门禁
 scripts/dev.ps1              快速内循环
 scripts/lib/go-toolchain.ps1 go 工具链发现（单一源）
+scripts/lib/ensure-engine.bat 引擎新鲜度判定与重建（两个启动器共用）
 lenovo_driver_wpf.ps1        WPF 表现入口
 install_lenovo_drivers.bat   薄 CLI 启动器
 install_lenovo_drivers_wpf.bat 薄 WPF 启动器

@@ -16,7 +16,7 @@ gofmt -w cmd internal
 go build -o bin\lenovo-driver.exe .\cmd\lenovo-driver
 ```
 
-CLI 启动器在 `bin\lenovo-driver.exe` 缺失时自动构建。
+CLI 启动器在 `bin\lenovo-driver.exe` 缺失**或比源码旧**时自动重建（`scripts\lib\ensure-engine.bat`，两个启动器共用同一份判定）。没有 Go 工具链可重建时，启动器打印两行 WARNING 说明本次跑的是旧产物——不再静默使用陈旧二进制。
 
 ## 运行
 
