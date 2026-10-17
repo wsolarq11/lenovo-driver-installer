@@ -256,6 +256,11 @@ func checks() []check {
 		{"the architecture doc names the network boundary the imports show", checkArchitectureNetworkBoundary},
 		{"evidence chain runs on real fixtures", checkEvidenceChainRunsOnFixtures},
 		{"the API contract fixtures are recorded responses", checkAPIFixturesAreRecorded},
+		{"plan blocks carry the reason the console states", checkPlanBlocksCarryRowReasons},
+		{"summary notes only describe reachable statuses", checkSummaryNotesDescribeReachableStatuses},
+		{"the OS-switch hint only speaks where a menu exists", checkInteractiveHintGuarded},
+		{"rows dropped before selection are reported", checkSkippedRowsReported},
+		{"local newer is not logged as an anomaly", checkLocalNewerNotWarn},
 	}
 }
 

@@ -395,3 +395,47 @@ func checkAPIFixturesAreRecorded(ctx *Context) error {
 // --- helpers ---
 
 // fencedBlocks returns the bodies of the ```lang fenced blocks in a document.
+
+// checkPlanBlocksCarryRowReasons holds the durable-artifact half of the
+// evidence-first invariant. The console summary and the GUI export both name
+// why a driver was skipped, but both are transient; WritePlanFile renders only
+// BuildPlanText. BuildPlanText's field/doc comments claim the plan surfaces
+// NonMatchReason, so the check pins the claim: the plan artifact must be at
+// least as explanatory as the channels that evaporate with the run.
+func checkPlanBlocksCarryRowReasons(ctx *Context) error {
+	f, err := ctx.Repo.fileDeclaring("internal/plan", "BuildPlanText")
+	if err != nil {
+		return err
+	}
+	fn := topLevelFunc(f.ast, "BuildPlanText")
+	if !identsIn(fn.Body)["NonMatchReason"] {
+		return fmt.Errorf("BuildPlanText no longer prints the per-row reason; the persisted plan cannot " +
+			"answer why a row was assessed Not applicable, while the throwaway channels can")
+	}
+	return nil
+}
+
+// checkSummaryNotesDescribeReachableStatuses keeps the summary notes honest on
+// two axes. Unknown has three distinct causes (no official version, a
+// provisioned placeholder, unparseable versions), so a single-cause sentence
+// is a guess presented as a rule - the "multi-vendor" wording described a
+// legacy parse-failure path the hardened version resolver no longer takes.
+// And the "inference = ..." legend explained a category StatusEvidenceBasis is
+// gate-forbidden from emitting; the only legitimate "inference" literals left
+// are the switch case and the %d count line, both schema-complete scaffolding.
+func checkSummaryNotesDescribeReachableStatuses(ctx *Context) error {
+	var offenders []string
+	for _, f := range ctx.Repo.dirProd("internal/plan") {
+		for _, lit := range stringLiterals(f.ast) {
+			value := strings.ReplaceAll(lit.Value, `\n`, " ")
+			if strings.Contains(value, "multi-vendor") ||
+				(strings.Contains(value, "inference") && value != `"inference"` && !strings.Contains(value, "%d")) {
+				offenders = append(offenders, ctx.Repo.position(lit))
+			}
+		}
+	}
+	if len(offenders) > 0 {
+		return failf("plan summary notes attribute statuses to causes the code does not produce", offenders)
+	}
+	return nil
+}

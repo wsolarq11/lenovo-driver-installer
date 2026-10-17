@@ -244,7 +244,10 @@ func (a *App) CompareOSDriverView(ctx context.Context, vc *ViewContext, listOsID
 		}
 	}
 
-	viewDrivers = filterDriverRows(viewDrivers, vc.Opts.IncludeBios)
+	viewDrivers, skippedRows := filterDriverRowsWithSkips(viewDrivers, vc.Opts.IncludeBios)
+	for _, s := range skippedRows {
+		a.Log(ctx, "Official row skipped : "+s.driver.DriverCode+" "+s.driver.FileName+" ("+s.reason+")", "INFO")
+	}
 	selected := compare.SelectLatestDrivers(viewDrivers, listOsID)
 	a.Log(ctx, fmt.Sprintf("Drivers selected : %d", len(selected)), "INFO")
 	a.Log(ctx, "Comparing with locally installed versions...", "INFO")
@@ -354,7 +357,10 @@ func (a *App) assessSelectedDrivers(ctx context.Context, vc *ViewContext, select
 		ad.MatchedDeviceIDs = pnpIDsOf(matchedDevices)
 		if ad.CompareStatus == model.StatusLocalNewer {
 			ad.CompareSource = audit.ResolveDriverSourceLabel(ad, vc.History, alternateSourceMap, ad.SourceAudit)
-			a.Log(ctx, "["+driver.DriverCode+"] "+ad.CompareSource, "WARN")
+			// INFO, not WARN: the fact standard is explicit that a Local newer is
+			// a measured state, not an anomaly, and warning-level noise on a
+			// clean machine trains the reader to skip every WARN.
+			a.Log(ctx, "["+driver.DriverCode+"] "+ad.CompareSource, "INFO")
 		}
 	}
 	return out
@@ -379,28 +385,46 @@ func partitionViewDrivers(selected []*model.AssessedDriver) (applicable, updates
 	return applicable, updates
 }
 
+// skippedRow is one official row the package filter dropped, plus the reason.
+// A row that vanishes between the API response and the plan file is
+// indistinguishable from a list the vendor never sent, so every drop is
+// carried to the run log by name.
+type skippedRow struct {
+	driver *model.Driver
+	reason string
+}
+
 func filterDriverRows(rows []*model.Driver, includeBios bool) []*model.Driver {
+	out, _ := filterDriverRowsWithSkips(rows, includeBios)
+	return out
+}
+
+// filterDriverRowsWithSkips applies the presentation filter and reports every
+// row it drops. The counters used to be incremented and discarded, which left
+// a manually counted gap - 24 rows from the API, "23 selected" in the log,
+// nothing in between - that an evidence-first tool cannot afford.
+func filterDriverRowsWithSkips(rows []*model.Driver, includeBios bool) ([]*model.Driver, []skippedRow) {
 	var out []*model.Driver
-	firmwareSkipped := 0
-	extSkipped := 0
+	var skipped []skippedRow
 	for _, driver := range rows {
 		if driver == nil {
 			continue
 		}
 		if driver.Disabled() {
+			skipped = append(skipped, skippedRow{driver: driver, reason: "disabled by the vendor"})
 			continue
 		}
 		if !includeBios && reFirmware.MatchString(driver.DriverName) {
-			firmwareSkipped++
+			skipped = append(skipped, skippedRow{driver: driver, reason: "firmware package; -IncludeBios includes it"})
 			continue
 		}
-		if !installableExts[strings.ToLower(filepath.Ext(driver.FileName))] {
-			extSkipped++
+		if ext := strings.ToLower(filepath.Ext(driver.FileName)); !installableExts[ext] {
+			skipped = append(skipped, skippedRow{driver: driver, reason: "file type " + ext + " is not an installable package"})
 			continue
 		}
 		out = append(out, driver)
 	}
-	return out
+	return out, skipped
 }
 
 // otherOSIDs returns the OSIDs of every entry in osList except excludeID, in

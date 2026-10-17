@@ -395,7 +395,12 @@ func (a *App) resolveListOS(ctx context.Context, vc *ViewContext, opts *Options)
 		a.Log(ctx, "Target OS entry : "+target.OSName+" (OSID "+target.OSID+")", "INFO")
 		return target.OSID, 0
 	}
-	if !opts.LatestAcrossOS && !opts.CurrentOSOnly && len(vc.OsList) > 1 {
+	// The hint names a control only the interactive selection menu has. Export,
+	// dry-run, and GUI-code runs never show that menu (the WPF switches OS with
+	// a dropdown), so advertising "press t" there describes a key that cannot
+	// do anything.
+	if !opts.LatestAcrossOS && !opts.CurrentOSOnly && len(vc.OsList) > 1 &&
+		!opts.DryRun && opts.GuiExportPath == "" && opts.GuiInstallCodes == "" {
 		a.Log(ctx, "Current OS mode enabled (default). In the interactive menu, press t to switch supported OS lists.", "INFO")
 	}
 	return vc.CurrentSystemOsID, 0

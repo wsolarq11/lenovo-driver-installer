@@ -1131,3 +1131,57 @@ installation side effects. Committed the four rounds of hardening work.
 ### Status
 
 [OK] **Completed**
+
+---
+
+## 2026-10-17 — 计划证据落盘、汇总归因与静默丢行
+
+**触发**：评审 12:15 那次 GUI 导出运行。运行本身已正常（OS 列表走 Web、`Applicable candidates : 0`），但对照产物发现三类问题：最耐久的证据最少、汇总注释在描述代码产不出的状态、被过滤的行不可见。
+
+### 1. 持久化计划缺逐行理由（不变量 2 缺口）
+
+`BuildPlanText` 从不输出 `NonMatchReason`，实测计划文件 23 块、12 个 `Not applicable`、**0 行原因**；同一数据在控制台（被 `shown >= 5` 截断到 5 条）和 GUI 导出（12 条全有）里都有。而 `model.go:117` 的字段注释声称 plan 会输出它，`DiagnoseDriverNonMatch` 的注释也声称给计划读者看——注释承诺了实现没做的事。
+
+修复：`BuildPlanText` 对 `Not applicable` 输出 `NonMatchReason`，对 `Unknown` 输出真实原因（新增 `unknownReason`：Provisioned 占位符 / 官方行无版本 / 版本不可比）。实测计划文件 13 条 `Reason`（12 + 1）。
+
+### 2. 汇总注释与可达状态脱节
+
+- `Note: Unknown = multi-vendor package, ...` —— 逐字来自 PS 首版（`deb8e78:install_lenovo_drivers.ps1:594`），**当时是对的**：PS 版 `Provisioned` 直接返回 `Up to date`，Unknown 确实只来自空版本/复合版本。Go 版把 Provisioned 改判 Unknown、又把复合版本解析加固后，这条描述的是真机上已死的路径，而唯一的 Unknown 恰是它不描述的。
+- `Note: inference = source audit or absence-based; ...` —— 打印条件是 `inferenceCount > 0 || undeterminedCount > 0`，前半恒假（`StatusEvidenceBasis` 只返回 fact/undetermined，且门禁禁止其出现 `inference` 字面量）。它在解释一个被代码与门禁共同取消的等级。
+
+修复：`Unknown` 改为逐行注真实原因（上限 5 条），`Not applicable` 的一揽子句改为如实描述；删掉 inference 一览。`docs/spec/invariants.md` 不变量 4 的「四级（列了三级）」改为明确三档。
+
+### 3. 静默丢行
+
+`filterDriverRows` 的 `firmwareSkipped`/`extSkipped` 只自增、从不读出（4 处出现全是声明与自增）。代价：QuickFix 返回 24 行，`DRV200011235378 TouchPadReadme.txt` 被扩展名过滤静默丢弃，全链路只剩一句 `Drivers selected : 23`。
+
+修复：新增 `filterDriverRowsWithSkips` 返回 `(kept, []skippedRow{diver, reason})`，`filterDriverRows` 保留为薄包装供旧调用点/测试使用；生产路径逐行记 `Official row skipped : <code> <file> (<reason>)`。实测该行现在出现在日志里。
+
+### 4. 两处日志语义
+
+- 「按 `t` 切换 OS」的提示原条件只看 `!LatestAcrossOS && !CurrentOSOnly && len(OsList) > 1`，未排除 export/dry-run/GUI-codes。三种运行都没有交互菜单（WPF 用下拉框），提示在描述一个做不到的键。现加三条件守卫。实测：默认交互模式仍有提示，`-DryRun -CurrentOSOnly` 与 GUI 导出下均为 0 条。
+- `Local newer` 的来源备注由 `WARN` 降为 `INFO`。事实标准规则 2 明确它不是异常；善态机上 10 条 WARN 会稀释 WARN 语义（同级别还用于撤销离线、哈希缺失）。实测该次运行 WARN 数 10 → 0。
+
+### 门禁（5 条新步，52/52）
+
+| 步名 | 断言 |
+| --- | --- |
+| `plan blocks carry the reason the console states` | `BuildPlanText` 必须引用 `NonMatchReason` |
+| `summary notes only describe reachable statuses` | plan 包不得出现 `multi-vendor` 字面量，也不得出现非 `%d` 的 `inference` 文案（switch case 与计数行豁免） |
+| `the OS-switch hint only speaks where a menu exists` | 守卫必须点名 `DryRun`/`GuiExportPath`/`GuiInstallCodes` |
+| `rows dropped before selection are reported` | `CompareOSDriverView` 必须调用 `filterDriverRowsWithSkips`；薄包装必须委托而非复制 |
+| `local newer is not logged as an anomaly` | 带 `CompareSource` 的 Log 调用第三个实参必须是 `"INFO"` |
+
+新增 AST 助手 `funcDeclByName`（`fileDeclaring`/`topLevelFunc` 都刻意只匹配无接收者函数，而 `resolveListOS`/`assessSelectedDrivers`/`CompareOSDriverView` 都是方法）。**红灯过程抓到两次「检查因方法而静默跳过」**：红 4 首次注入 `exit=0`，根因正是 `topLevelFunc` 对方法返回 nil，使断言整条失效——已改为按名字查找并显式报缺失。
+
+### Testing
+
+- [实测] 逐条红灯（真实仓库注入 → 点名 FAIL → 复原转绿）：删 `NonMatchReason` 引用、重新塞入 multi-vendor 文案、去掉 `DryRun` 守卫、生产路径改回静默过滤、`INFO` 改回 `WARN`。全部点名失败，复原后全绿。
+- [实测] 新增 7 个 Go 测试（plan 3 个、app 2 个、gate 6 个 fixture），`go test ./...` 全绿。
+- [实测] 真机 `-DryRun -CurrentOSOnly`：计划文件 13 条 `Reason`、0 条 `multi-vendor`、0 条 `inference =`；日志 0 条 WARN；`Official row skipped : DRV200011235378 TouchPadReadme.txt (file type .txt is not an installable package)`；`Applicable candidates : 0` 不变。
+- [实测] 默认交互模式提示仍在，`?` 后 EOF 退出无安装动作。
+- [实测] 双宿主门禁 **52/52 VERIFY_OK**（`powershell.exe` 5.1 与 `pwsh` 7）。
+
+### Status
+
+[OK] **Completed**

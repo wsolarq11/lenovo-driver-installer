@@ -520,6 +520,73 @@ func TestFilterDriverRowsFirmwareWhitelist(t *testing.T) {
 	}
 }
 
+// A row the filter drops must not vanish: between the API response and the
+// plan there used to be a counted but unreported gap, so a row the vendor did
+// send was indistinguishable from a row that never existed.
+func TestFilterDriverRowsWithSkipsReportsReasons(t *testing.T) {
+	rows := []*model.Driver{
+		{DriverCode: "DRV_A", DriverName: "BIOS Update", FileName: "bios.exe"},
+		{DriverCode: "DRV_B", DriverName: "Touchpad readme", FileName: "TouchPadReadme.txt"},
+		{DriverCode: "DRV_C", DriverName: "Realtek Audio", FileName: "audio.exe"},
+	}
+	out, skipped := filterDriverRowsWithSkips(rows, false)
+	if len(out) != 1 || len(skipped) != 2 {
+		t.Fatalf("filter kept %d and skipped %d, want 1/2", len(out), len(skipped))
+	}
+	reasons := map[string]string{}
+	for _, s := range skipped {
+		reasons[s.driver.DriverCode] = s.reason
+	}
+	if !strings.Contains(reasons["DRV_A"], "firmware") {
+		t.Fatalf("firmware skip reason missing: %#v", reasons)
+	}
+	if !strings.Contains(reasons["DRV_B"], "file type .txt") {
+		t.Fatalf("file-type skip reason missing: %#v", reasons)
+	}
+	if includeBiosRows, _ := filterDriverRowsWithSkips(rows, true); len(includeBiosRows) == len(out) {
+		t.Fatalf("IncludeBios should keep firmware rows")
+	}
+}
+
+// The interactive hint names a control only the selection menu has. Export,
+// dry-run, and GUI-code runs never show that menu, so the hint must stay
+// silent there (the WPF switches OS with a dropdown, not the t key).
+func TestResolveListOSHidesInteractiveHintOutsideInteractiveRuns(t *testing.T) {
+	cases := []struct {
+		name     string
+		apply    func(*Options)
+		wantHint bool
+	}{
+		{"interactive default", func(o *Options) {}, true},
+		{"export run", func(o *Options) { o.GuiExportPath = "unused.json" }, false},
+		{"dry run", func(o *Options) { o.DryRun = true }, false},
+		{"gui install codes", func(o *Options) { o.GuiInstallCodes = "1,2" }, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			app := newTestApp(t)
+			app.Stdout = &out
+			opts := &Options{}
+			tc.apply(opts)
+			vc := &ViewContext{
+				CurrentSystemOsID: "42",
+				OsList: []model.OSListEntry{
+					{OSID: "42", OSName: "Windows 10 64-bit"},
+					{OSID: "248", OSName: "Windows 11 64-bit"},
+				},
+			}
+			osID, code := app.resolveListOS(context.Background(), vc, opts)
+			if code != 0 || osID != "42" {
+				t.Fatalf("resolveListOS = (%q, %d), want (42, 0)", osID, code)
+			}
+			if got := strings.Contains(out.String(), "press t"); got != tc.wantHint {
+				t.Fatalf("interactive hint present = %v, want %v:\n%s", got, tc.wantHint, out.String())
+			}
+		})
+	}
+}
+
 func TestParseOptionsSignatureFlag(t *testing.T) {
 	opts, err := parseOptions([]string{"-SkipSignatureCheck"})
 	if err != nil || !opts.SkipSignatureCheck {
