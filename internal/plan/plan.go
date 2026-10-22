@@ -29,7 +29,7 @@ func BuildPlanText(drivers []*model.AssessedDriver, generatedAt string) []string
 			"  Remote : "+d.Version,
 			"  Local  : "+local,
 			"  Status : "+string(d.CompareStatus),
-			"  Evidence : "+model.StatusEvidenceBasis(d.CompareStatus),
+			"  Evidence : "+model.StatusEvidenceBasis(d.CompareStatus).String(),
 		)
 		if d.DeviceProblem != "" {
 			lines = append(lines, "  Device health : "+d.DeviceProblem)
@@ -97,15 +97,43 @@ func driverLabel(d *model.AssessedDriver) string {
 // distinct origins - an official row with no version, a provisioned-package
 // placeholder, and versions that refuse to parse - and one blanket sentence
 // guesses at the cause, where a wrong guess reads as fact.
+// unknownReason names the actual cause of an Unknown. Each origin is a different
+// claim about the machine, and one blanket sentence guesses at the cause where a
+// wrong guess reads as fact. The conflicts case exists because the evidence kind
+// separates "two measured versions disagree" from "no version could be read":
+// the old string form rendered the first as "a, b", which then failed to parse
+// and was explained as the second.
 func unknownReason(d *model.AssessedDriver) string {
-	if d.LocalVersion == model.LocalVersionProvisioned {
+	switch d.LocalEvidence.Kind() {
+	case model.LocalEvidenceProvisioned:
 		return "local version is the Windows provisioning placeholder; the package is on the machine " +
 			"but no installed component matched, so neither presence nor absence is measured"
+	case model.LocalEvidenceConflicted:
+		return "matched devices report different driver versions (" + joinQuoted(d.LocalEvidence.ConflictingVersions()) +
+			"); the disagreement is measured, but no single version is authoritative for the comparison"
+	case model.LocalEvidenceUnobserved:
+		return "no local device matched this driver, so no local version was measured; absence of " +
+			"evidence is not evidence that the driver is missing"
 	}
 	if d.Version == "" {
 		return "the official row carries no version to compare against"
 	}
 	return "neither version could be parsed into comparable numeric parts"
+}
+
+// joinQuoted renders a version list for a sentence: two items read "a and b",
+// more read "a, b, and c".
+func joinQuoted(values []string) string {
+	switch len(values) {
+	case 0:
+		return ""
+	case 1:
+		return values[0]
+	case 2:
+		return values[0] + " and " + values[1]
+	default:
+		return strings.Join(values[:len(values)-1], ", ") + ", and " + values[len(values)-1]
+	}
 }
 
 // FormatDriverTableLines mirrors Format-DriverTableLines.
@@ -172,11 +200,11 @@ func FormatStatusSummaryLines(drivers []*model.AssessedDriver) []string {
 			continue
 		}
 		switch model.StatusEvidenceBasis(d.CompareStatus) {
-		case "fact":
+		case model.BasisFact:
 			factCount++
-		case "inference":
+		case model.BasisInference:
 			inferenceCount++
-		case "undetermined":
+		case model.BasisUndetermined:
 			undeterminedCount++
 		}
 	}
@@ -258,8 +286,8 @@ func FormatAttentionNotes(drivers []*model.AssessedDriver) []string {
 			problemShown++
 			continue
 		}
-		if model.StatusEvidenceBasis(d.CompareStatus) != "fact" && evidenceShown < 5 {
-			lines = append(lines, "  attention: "+d.DriverName+": "+string(d.CompareStatus)+" is "+model.StatusEvidenceBasis(d.CompareStatus))
+		if model.StatusEvidenceBasis(d.CompareStatus) != model.BasisFact && evidenceShown < 5 {
+			lines = append(lines, "  attention: "+d.DriverName+": "+string(d.CompareStatus)+" is "+model.StatusEvidenceBasis(d.CompareStatus).String())
 			evidenceShown++
 		}
 	}

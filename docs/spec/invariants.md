@@ -25,13 +25,14 @@
 - 自动安装集的成员资格是**显式白名单**，由 `model.InAutomaticInstallSet` 单点声明：只收 `Update` 与 `Not installed`。`Local newer`（装机即降级）与 `Up to date`（装了不起变化）被排除，`Not applicable`（硬件未检出）本就无关，`Unknown` 证据不足也不收。任何新增状态必须在这里表态，不许用宽松比较默认放行。
 - 排除只约束**无人值守的自动集**。处于这两类状态的驱动仍可被显式选中（交互 `s`、`-GuiInstallCodes`）——那是操作者的判断，不是工具的判断。
 - 强制点：`CM_Get_DevNode_Status` 问题码为 0 只表示未观察到问题，不证明功能正常；计划不把“无问题码”写成“正常”。来源审计的 provenance 归因是**推断**级（本机实测 `setupapi.*` 日志会轮转截断、历史导入行不可复现，无法事后对照 DriverStore ground truth），不得当事实展示。
-- 强制点（门禁步骤 `automatic install set excludes downgrade and no-op statuses`，检查体在 `internal/gate`）：`InAutomaticInstallSet` 必须是 `==` 白名单，函数体出现 `!=` 即门禁失败——按语法树判定，因此解释规则的注释不会误触；`view.go` 不得用宽松比较划分自动集；交互提示不得再宣称“all applicable”。真机证据：82JQ 修复前 `Applicable candidates: 11`，其中 9 个 `Local newer`（含 AMD VGA `30.0.14052.9003` → `27.20.15026.8004`、NVIDIA `31.0.15.4630` → `31.0.15.2799`），按 `a` 即降级；修复后为 `1`。
+- 强制点（门禁步骤 `automatic install set excludes downgrade and no-op statuses`，检查体在 `internal/gate`）：`InAutomaticInstallSet` 必须是 `==` 白名单，函数体出现 `!=` 即门禁失败——按语法树判定，因此解释规则的注释不会误触；划分自动集的函数不得用宽松比较（门禁按函数声明 `partitionViewDrivers` 定位，不按文件名，包内拆文件不会让规则失效）；交互提示不得再宣称“all applicable”。真机证据：82JQ 修复前 `Applicable candidates: 11`，其中 9 个 `Local newer`（含 AMD VGA `30.0.14052.9003` → `27.20.15026.8004`、NVIDIA `31.0.15.4630` → `31.0.15.2799`），按 `a` 即降级；修复后为 `1`。
 
 ## 4. 事实分级
 
 - 约束：计划、控制台、交互提示、GUI 导出统一输出 fact / inference / undetermined。
 - 分级是**三档**：实测 fact / 推断 inference / 待定 undetermined。当前状态集上 `inference` 无成员——`StatusEvidenceBasis` 只返回 `fact` 与 `undetermined`（`NotInstalled`/`LocalNewer` 的依据是硬件 ID 命中与实测版本算术比较，两者都是测量；见 `docs/records/evidence-82jq.md` 2026-09-30 条）。任何通道不得把推断或待定渲染成事实；也不得向读者解释一个代码已不产出的等级。
-- 强制点（门禁步骤 `summary notes only describe reachable statuses`）：计划汇总不得再出现 `multi-vendor`（PS 时代的复合版本解析失败路径，`ResolveComparableVersion` 加固后已不产生）一揽子归因，也不得再打印 `inference = ...` 一览（`StatusEvidenceBasis` 无该级）；`Unknown` 逐行注真实原因（Provisioned 占位符 / 官方行无版本 / 版本不可比）。
+- 强制点（门禁步骤 `summary notes only describe reachable statuses`）：计划汇总不得再出现 `multi-vendor`（PS 时代的复合版本解析失败路径，`ResolveComparableVersion` 加固后已不产生）一揽子归因，也不得再打印 `inference = ...` 一览（`StatusEvidenceBasis` 无该级）；`Unknown` 逐行注真实原因（见 §4.2 的五种证据状态）。
+- 本地版本的证据状态是**密封联合** `model.LocalEvidence`，不是字符串，也不是一个带导出字段的标签结构：五个状态 `Unobserved` / `Version` / `Absent` / `Conflicted` / `Provisioned` 各有命名构造器，载荷字段不导出，零值是 `Unobserved`。三种曾被同一个 `""` 或逗号串冒充的情况现在各有名字，理由与强制点见 §4.2。
 - 强制点（门禁步骤 `plan blocks carry the reason the console states`）：持久化的 `lenovo_driver_plan.txt` 必须与瞬态通道（控制台汇总、GUI 导出）承载同等的逐行理由——`BuildPlanText` 输出 `NonMatchReason`/`Unknown` 原因。最耐久的产物证据最少的旧形态违反证据优先。
 
 ### 2.1 静默安装：开关派发只由端到端验证决定
@@ -61,10 +62,23 @@
 - 前置：两侧必须先**归一到同一个可比分量**。厂商 `Version` 字段在 82JQ 两个 edition 的 47 行里有 49 种形态：裸版本（`31.0.15.4630`）、带前缀（`Intel_22.10.0.7`）、带后缀（`15.11.29.13 MS signed`）、**组合串**（`Intel_22.10.0.7/Realtek8852AE_6001.0.10.336/Mediatek_3.0.1.1314`，一个字段三个包）、以及非版本（`Inbox`）。`compare.ResolveComparableVersion` 负责按 vendor 选出对应分量。**不做这一步的直接后果**：装后复核原本用原始字符串相等，而 WLAN 那些行的 `Version` 是组合串，任何设备的本机版本都不可能等于它——**这些驱动永远无法被判定为 `bound`**，装没装成都报"没变化"。
 - 强制点：门禁 `one comparison primitive decides every version question`（检查体在 `internal/gate`）要求 `VersionOrder` 四值齐全（含块式 `const (...)` 声明）、`Order` 对缺失版本先返回 `OrderUndecided` 再谈方向、`CompareDriverStatus` 不得直接调 `Version.Compare`、`installBindingLabel` 不得出现 `== packageVersion` 一类原始字符串比较。注：直接调 `Version.Compare` 这一条现在**编译器也会挡**（返回值类型不匹配），门禁仍保留以覆盖参数顺序写反等能编译的变体。
 
+### 4.2 本地版本是联合类型，不是字符串
+
+- 规则：**本机版本的证据状态必须由类型区分，不能由一个字符串的形态去猜。** 五种状态各有名字：`Version`（测得唯一版本）、`Absent`（匹配到设备但该设备无绑定版本）、`Conflicted`（匹配到的多个设备报出不同版本）、`Provisioned`（Windows 持有预置包，既不能证明已装也不能证明未装）、`Unobserved`（没有任何设备匹配该驱动，本机什么都没测到）。
+- 理由：这五种情况曾被一个 `string` 承载，于是三处判断出错，全部实测复现：
+  1. **冲突被误报为不可读**：两个设备报出 `30.0.15026.8004` 与 `31.0.14052.9003` 时，旧代码拼成 `"30.0.15026.8004, 31.0.14052.9003"`，比较器解析失败，计划把原因写成"版本无法解析"。冲突是**测量结果**，不是解析失败；两者对操作者的含义与处置完全不同。
+  2. **无证据被当成"不存在"**：「Lenovo Fn and Function Keys」这类 `always:true` 软件驱动，适配判定为真但无任何设备匹配、应用列表也查不到时，旧代码得到空字符串，判 `Not installed` 并**进入自动安装集**——工具将无人值守地安装一个本机毫无证据的驱动。`Absent`（测到设备但无版本）与 `Unobserved`（根本没测到设备）必须分开，只有前者能推出 `Not installed`。
+  3. **`Not installed` 的前提被高估**：`Not installed` 是自动安装集唯一据以动手的状态之一，它的合法性依赖"确实观测到该设备且它没有绑定驱动"。无匹配设备时这个前提不成立。
+- 判据：`Not installed` 只由 `Absent` 产生；`Conflicted` / `Provisioned` / `Unobserved` 一律 `Unknown`（`StatusEvidenceBasis` = undetermined），全部挡在自动集之外。
+- **为什么必须是密封联合而非带标签的 struct**：只要载荷可写，`Conflicted` 就能带一个 `Version`（显示成空串）、`Version` 就能带空载荷，每个消费方都得自己再判一次哪种组合合法。更要紧的是零值——它曾被定义为 `Absent`，于是任何一条忘记赋值的路径都直接产出 `Not installed`，而这是自动安装集唯一据以动手的状态之一。三个密闭条件缺一不可：**载荷不导出**（非法组合在构造器之外不可表达）、**构造器命名状态**（`ObservedVersion`/`ObservedAbsence`/`ObservedConflict`/`ObservedProvisioning`/`NotObserved`，构造器自身拒绝矛盾，如单版本不构成冲突、空版本不构成测量）、**零值是 `Unobserved`**（漏赋值退化为"什么都不知道"，而不是"驱动不存在"）。同类收编：装后复核结论 `bindingVerdict` 与因果基底 `causalBasis` 同样改为枚举，零值分别是 `undetected` 与 `none`，都不指向成功。
+- 强制点：门禁 `local evidence is a closed union` 要求 `LocalEvidence` 的载荷字段零导出、五个构造器齐全、`LocalEvidenceKind` 的首个常量是 `LocalEvidenceUnobserved`（即零值）；反例测试 `TestEvidenceUnionRejectsExportedFields`、`TestEvidenceUnionRejectsAbsentZeroValue` 各钉一个方向，`internal/model/evidence_test.go` 另钉零值语义、构造器拒绝非法组合、冲突切片是副本。
+- 强制点：门禁 `the provisioning placeholder never reaches a decision` 按 `switch local.Kind` 的 case 子句判定 `LocalEvidenceProvisioned` 必须返回 `StatusUnknown`（按 switch 标签过滤，别处的同名 case 不能顶替）；`software-versioned compare falls back to the measured device version` 要求软件驱动分支在应用列表无结果时返回设备实测证据而不是空值；`the source audit matches every measured version` 要求来源审计对每个实测版本逐一比对（冲突时拼成显示串会让安装历史与设备证据全部失配，把"有证据"报成"无证据"）。回归测试 `TestConflictingDeviceVersionsAreReportedAsConflict`、`TestNoMatchedDeviceIsUnobservedNotAbsent`、`TestSoftwareRuleWithNoEvidenceIsUnobserved`、`TestUnobservedIsNotAbsence`、`TestConflictedEvidenceIsUnknown`、`TestUnknownReasonNamesEvidenceKind`。
+- 已知边界：`Conflicted` 目前不尝试判定哪台设备权威。来源审计对冲突的每个版本都尝试匹配，因此仍能给出真实归因；只有状态判定保持未决。让多设备版本互相矛盾时选一个"代表"，等于凭空造事实；报冲突并交给操作者，是当前证据能支持的唯一诚实结论。
+
 ## 5. 审计先于状态变更
 
 - 约束：历史账本追加写入，写入失败不提交成功结果。
-- 强制点：安装前先写 `Install` 意图行、回退前先写 `Rollback` 意图行，写入失败则跳过该动作（不提交）。账本每行带 SHA-256 链哈希（`Hash` 结构性尾列），`verifyHistoryChain` 重算可证伪篡改/乱序/删除；回退动作派生 pending 前先校验链。
+- 强制点：安装前先写 `Install` 意图行、回退前先写 `Rollback` 意图行，写入失败则跳过该动作（不提交）。账本每行带 SHA-256 链哈希（`Hash` 结构性尾列），`internal/ledger` 的 `VerifyChain` 重算可证伪篡改/乱序/删除；回退动作派生 pending 前先校验链。账本结构（列序、链、读写）整体在 `internal/ledger`，`internal/app/history.go` 只是薄适配，因此任何入口复用同一套链规则。
 - 强制点（设备身份与 schema 诚实）：账本每行在 `devices` 列记录本行动作触及的 PnP 设备实例 id，使“本工具对哪个驱动动手”与设备实际变化可按身份 join，下游不从自由文本解析。账本表头即 schema：在盘表头缺当前列时**拒绝写入**并给出处置指令，不追加更宽的行（旧行不可重写，宽行会让读取端把值绑到错误列名、并让链哈希位置静默错位）。链哈希按表头列名定位，不按当前列数定位。
 
 ## 6. 回退语义

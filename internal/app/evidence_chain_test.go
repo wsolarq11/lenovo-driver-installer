@@ -151,7 +151,8 @@ func chainAssess(t *testing.T) []*model.AssessedDriver {
 			versions = append(versions, m.DriverVersion)
 		}
 		local, vendor := compare.ResolveLocalDriverVersion(d, matched, versions, snapshot)
-		ad.LocalVersion = local
+		ad.LocalEvidence = local
+		ad.LocalVersion = local.Display()
 		ad.LocalVendor = vendor
 		ad.CompareStatus = compare.CompareDriverStatus(d.Version, local, vendor)
 		ad.MatchedDeviceIDs = pnpIDsOf(matched)
@@ -166,10 +167,11 @@ func chainAssess(t *testing.T) []*model.AssessedDriver {
 // installed. Undetermined is the only status the evidence supports: it keeps
 // the driver out of the automatic set without asserting absence.
 func TestProvisionedIsNotAVersion(t *testing.T) {
-	if got := compare.CompareDriverStatus("6.0.0.9", model.LocalVersionProvisioned, ""); got != model.StatusUnknown {
+	provisioned := model.ObservedProvisioning()
+	if got := compare.CompareDriverStatus("6.0.0.9", provisioned, ""); got != model.StatusUnknown {
 		t.Fatalf("provisioned local = %q, want Unknown", got)
 	}
-	if model.StatusEvidenceBasis(model.StatusUnknown) != "undetermined" {
+	if model.StatusEvidenceBasis(model.StatusUnknown) != model.BasisUndetermined {
 		t.Fatal("Unknown must stay undetermined so the placeholder never reaches the automatic set")
 	}
 	_, updates := partitionViewDrivers([]*model.AssessedDriver{
@@ -179,7 +181,8 @@ func TestProvisionedIsNotAVersion(t *testing.T) {
 		t.Fatalf("a provisioned placeholder entered the automatic set: %d member(s)", len(updates))
 	}
 	// A measured version is still compared, so the placeholder did not disable the rule.
-	if got := compare.CompareDriverStatus("6.0.0.9", "5.0.0.1", ""); got != model.StatusUpdate {
+	measured := model.ObservedVersion("5.0.0.1")
+	if got := compare.CompareDriverStatus("6.0.0.9", measured, ""); got != model.StatusUpdate {
 		t.Fatalf("measured older local = %q, want Update", got)
 	}
 }
@@ -364,7 +367,7 @@ func TestEvidenceChainLocalNewerStayOut(t *testing.T) {
 		if ad.Driver.Version != chainLocalSize {
 			continue
 		}
-		if compare.CompareDriverStatus(ad.Driver.Version, ad.LocalVersion, ad.LocalVendor) == model.StatusLocalNewer {
+		if compare.CompareDriverStatus(ad.Driver.Version, ad.LocalEvidence, ad.LocalVendor) == model.StatusLocalNewer {
 			newer = append(newer, ad.Driver.DriverCode+" local="+ad.LocalVersion)
 		}
 	}

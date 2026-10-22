@@ -10,7 +10,8 @@
 - 固件包（BIOS/EC/ME/TPM/Thunderbolt/UEFI）默认跳过，除非传 `-IncludeBios`。
 - 匹配设备经 `CM_Get_DevNode_Status` 读 Windows 问题码；匹配设备报问题的驱动在评估、计划、GUI 导出中带 `DeviceProblem` 摘要。
 - `CompareStatus` 取值：`Update` / `Up to date` / `Not installed` / `Local newer` / `Unknown` / `Not applicable`。
-- 计划文件每个块带 `Reason` 行：`Not applicable` 行写 `NonMatchReason`（实际核对过的硬件 ID/命名规则），`Unknown` 行写真实原因（Provisioned 占位符 / 官方行无版本 / 两侧版本不可比）。其余状态是比较结果本身已印在 Remote/Local 上的，不加强解释。
+- 状态由本机证据状态推出，不是由字符串形态推出：`Version` → 按版本比较得 `Update`/`Up to date`/`Local newer`；`Absent`（匹配到设备但无绑定版本）→ `Not installed`；`Conflicted` / `Provisioned` / `Unobserved` → `Unknown`。只有 `Absent` 能推出 `Not installed`，因为只有它满足「确实观测到该设备且它没有绑定驱动」这个前提。见 `invariants.md` §4.2。
+- 计划文件每个块带 `Reason` 行：`Not applicable` 行写 `NonMatchReason`（实际核对过的硬件 ID/命名规则），`Unknown` 行写真实原因，取自证据类型而非重新解析显示串：Provisioned 占位符 / 多设备版本互相矛盾（列出各版本）/ 无设备匹配（本机未测到）/ 官方行无版本 / 两侧版本不可比。其余状态是比较结果本身已印在 Remote/Local 上的，不加强解释。
 - 官方列表中被包过滤器丢弃的行（厂商停用、固件名、非安装扩展名）逐行写入运行日志（`DriverCode + FileName + 原因`），不静默消失——计划展示的行数必须能与 API 返回行数对账。
 - 汇总 `Note` 行不解释代码产出不了的状态：`Unknown` 逐行注原因（不再有「multi-vendor」一揽子句），`inference` 一览说明不再打印（`StatusEvidenceBasis` 已不产出该级，见不变量 4 强制点）。
 - `Local newer` 的来源备注按 `INFO` 记录。事实标准规则 2 明确它不是异常；对善态机打十条 WARN 会训练读者跳过所有 WARN。

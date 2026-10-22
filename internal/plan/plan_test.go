@@ -53,6 +53,7 @@ func TestBuildPlanTextCarriesRowReason(t *testing.T) {
 	provisioned := &model.AssessedDriver{
 		Driver: &model.Driver{DriverName: "AMD Power Processor", Version: "6.0.0.9", OSID: "42"},
 		DriverAssessment: model.DriverAssessment{
+			LocalEvidence: model.ObservedProvisioning(),
 			LocalVersion:  model.LocalVersionProvisioned,
 			CompareStatus: "Unknown",
 		},
@@ -75,6 +76,7 @@ func TestFormatStatusSummaryStatusNotes(t *testing.T) {
 		{
 			Driver: &model.Driver{DriverName: "AMD Power Processor", Version: "6.0.0.9"},
 			DriverAssessment: model.DriverAssessment{
+				LocalEvidence: model.ObservedProvisioning(),
 				LocalVersion:  model.LocalVersionProvisioned,
 				CompareStatus: "Unknown",
 			},
@@ -187,5 +189,39 @@ func TestBuildDriverHistoryRecord(t *testing.T) {
 	record := BuildDriverHistoryRecord(driver, "Installed", "exit=0", "6.0.9363.1", "6.0.9363.0", "2026-01-01 00:00:00")
 	if record.DriverCode != "d1" || record.Result != "Installed" || record.VerifiedVersion != "6.0.9363.1" {
 		t.Fatalf("history record mismatch: %#v", record)
+	}
+}
+
+// TestUnknownReasonNamesEvidenceKind pins that the plan explains Unknown from the
+// evidence kind, not by re-reading the display string. Reading the string made a
+// measured conflict ("30.0.15026.8004, 31.0.14052.9003") look like unparseable
+// input, so the operator was told the versions could not be read when in fact
+// two devices disagreed — a different problem with a different remedy.
+func TestUnknownReasonNamesEvidenceKind(t *testing.T) {
+	conflicted := &model.AssessedDriver{
+		Driver: &model.Driver{DriverName: "AMD VGA", Version: "27.20.15026.8004"},
+		DriverAssessment: model.DriverAssessment{
+			LocalEvidence: model.ObservedConflict([]string{"30.0.15026.8004", "31.0.14052.9003"}),
+			CompareStatus: model.StatusUnknown,
+		},
+	}
+	text := strings.Join(BuildPlanText([]*model.AssessedDriver{conflicted}, "2026-01-01"), "\n")
+	if !strings.Contains(text, "matched devices report different driver versions") {
+		t.Fatalf("plan did not name the measured conflict:\n%s", text)
+	}
+	if strings.Contains(text, "could be parsed") {
+		t.Fatalf("plan reported a measured conflict as unparseable input:\n%s", text)
+	}
+
+	unobserved := &model.AssessedDriver{
+		Driver: &model.Driver{DriverName: "Lenovo Fn", Version: "10.1.0.5"},
+		DriverAssessment: model.DriverAssessment{
+			LocalEvidence: model.NotObserved(),
+			CompareStatus: model.StatusUnknown,
+		},
+	}
+	text = strings.Join(BuildPlanText([]*model.AssessedDriver{unobserved}, "2026-01-01"), "\n")
+	if !strings.Contains(text, "no local device matched this driver") {
+		t.Fatalf("plan did not distinguish absence of evidence from evidence of absence:\n%s", text)
 	}
 }

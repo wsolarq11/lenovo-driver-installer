@@ -199,3 +199,14 @@ func resolvePackageEvidence(device model.Device, imports []model.ImportRecord) *
 		ImportKind:          kind,
 	}
 }
+
+// pnpIDsOf collects the non-empty PnP device ids of a device set.
+func pnpIDsOf(devices []model.Device) []string {
+	ids := make([]string, 0, len(devices))
+	for _, dev := range devices {
+		if dev.PnpDeviceID != "" {
+			ids = append(ids, dev.PnpDeviceID)
+		}
+	}
+	return ids
+}

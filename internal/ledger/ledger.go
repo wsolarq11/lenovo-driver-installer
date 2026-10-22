@@ -1,0 +1,286 @@
+// Package ledger owns the append-only WORM audit ledger: its column order, its
+// integrity chain, and the read/write pair that must agree on both.
+//
+// It depends on nothing but the standard library and internal/model, and it
+// holds no orchestrator state: every entry point takes the path it acts on. That
+// is what lets the same verification run from the install flow, the rollback
+// flow, and a test without three copies of the chain rule.
+package ledger
+
+import (
+	"crypto/sha256"
+	"encoding/csv"
+	"encoding/hex"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"lenovo-driver/internal/model"
+)
+
+// Columns is the single source of truth for the ledger CSV data-column order.
+// Both the header write and every data-row write are derived from it, so adding
+// or reordering a data column happens in exactly one place. The contract test in
+// ledger_test.go locks this slice against a golden literal and verifies that
+// Values stays field-for-field aligned with it.
+var Columns = []string{
+	"Timestamp", "DriverCode", "OSID", "OSName", "DriverName", "Version",
+	"VerifiedVersion", "BeforeVersion", "FileName", "MD5", "Source", "Result", "Message",
+	"Devices",
+}
+
+// hashColumn is the trailing integrity column, appended after the data columns.
+// It is structural, not a data field: it holds the SHA-256 of the previous row's
+// hash chained with this row's data, making the append-only ledger
+// tamper-evident (a rewrite, reorder, or deletion breaks the chain).
+const hashColumn = "Hash"
+
+// deviceSeparator separates device instance ids inside the Devices column. PnP
+// instance ids are built from class GUIDs, instance paths, ampersands,
+// backslashes, and dots, so a semicolon is unambiguous and needs no escaping;
+// the writer and the reader share this one constant.
+const deviceSeparator = ";"
+
+// joinDevices renders the device identity cell: unique, non-empty ids in
+// first-seen order. Recording a set rather than a multiset keeps the device-level
+// join from double-counting a device that matched a driver more than once.
+func joinDevices(devices []string) string {
+	seen := map[string]bool{}
+	unique := make([]string, 0, len(devices))
+	for _, id := range devices {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		unique = append(unique, id)
+	}
+	return strings.Join(unique, deviceSeparator)
+}
+
+// SplitDevices parses the device identity cell back into ids.
+func SplitDevices(cell string) []string {
+	if cell == "" {
+		return nil
+	}
+	var ids []string
+	for _, part := range strings.Split(cell, deviceSeparator) {
+		if part = strings.TrimSpace(part); part != "" {
+			ids = append(ids, part)
+		}
+	}
+	return ids
+}
+
+// MissingColumns returns the current schema's columns that an on-disk ledger
+// header does not carry. The ledger is append-only, so a file created before a
+// column existed keeps its original header forever and that column reads empty
+// for every row of that file; callers surface the gap instead of letting an
+// absent device identity look like "no devices matched".
+func MissingColumns(header []string) []string {
+	present := make(map[string]bool, len(header))
+	for _, name := range header {
+		present[name] = true
+	}
+	var missing []string
+	for _, column := range Columns {
+		if !present[column] {
+			missing = append(missing, column)
+		}
+	}
+	return missing
+}
+
+// Values renders one HistoryRecord in Columns order. The field order here must
+// match Columns exactly; the contract test enforces the length and round-trips a
+// known record through the CSV so a misalignment cannot silently drift the
+// ledger.
+func Values(r model.HistoryRecord) []string {
+	return []string{
+		r.Timestamp, r.DriverCode, r.OSID, r.OSName, r.DriverName,
+		r.Version, r.VerifiedVersion, r.BeforeVersion, r.FileName,
+		r.MD5, r.Source, r.Result, r.Message, joinDevices(r.Devices),
+	}
+}
+
+// headerDriftError returns a non-nil error when an existing ledger's header is
+// not the current schema. The ledger is append-only and WORM: rows written
+// before a column existed cannot be rewritten, so a file whose header predates
+// the current schema can never carry that column. Appending a wider row than its
+// header would bind values to the wrong names, and a stale header would silently
+// drop the new identity column. Both are silent, expensive drift, so a schema
+// mismatch is a loud refusal with the remedy spelled out instead of a quiet
+// corruption.
+func headerDriftError(header []string, path string) error {
+	if len(header) == 0 {
+		return nil
+	}
+	missing := MissingColumns(header)
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"history ledger schema is older than this build and cannot record %s; "+
+			"move %s aside (it is an append-only audit ledger and is never rewritten) and rerun",
+		strings.Join(missing, ", "), filepath.Base(path))
+}
+
+// resolveHashIndex locates the structural hash column inside a ledger header by
+// name. Deriving it from the header rather than from len(Columns) keeps chain
+// verification working across a schema change: a positional index would silently
+// point at a data column once a column was added, so tampering would stop being
+// detectable without any error surfacing. ok is false for a ledger that carries
+// no hash column (a pre-hash legacy file), which has no chain to verify and is
+// handled by the caller.
+func resolveHashIndex(header []string) (hashIndex, dataCount int, ok bool) {
+	for i, name := range header {
+		if name == hashColumn {
+			return i, i, true
+		}
+	}
+	return 0, 0, false
+}
+
+// ReadRows reads the ledger file and returns its header and data rows. A missing
+// file yields an empty header and no rows; any other failure is reported to the
+// caller so it can decide between degrading and refusing.
+func ReadRows(path string) (header []string, rows [][]string, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil, nil
+		}
+		return nil, nil, err
+	}
+	defer f.Close()
+	rows, err = csv.NewReader(f).ReadAll()
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil, nil
+	}
+	header = rows[0]
+	if len(header) > 0 {
+		header[0] = strings.TrimPrefix(header[0], "\uFEFF")
+	}
+	return header, rows[1:], nil
+}
+
+// Header returns the ledger header: the data columns plus the trailing integrity
+// hash column.
+func ledgerHeader() []string {
+	return append(append([]string(nil), Columns...), hashColumn)
+}
+
+// rowHash computes one link of the integrity chain: SHA-256 over the previous
+// row's hash and this row's data fields, separated by the unit separator (0x1F)
+// which never appears in a data field.
+func rowHash(prevHash string, fields []string) string {
+	h := sha256.New()
+	h.Write([]byte(prevHash))
+	h.Write([]byte{0x1F})
+	for i, f := range fields {
+		if i > 0 {
+			h.Write([]byte{0x1F})
+		}
+		h.Write([]byte(f))
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// headerAndTail reads the ledger once and returns its header plus the previous
+// chain hash for the next append. Reading the header is what lets every consumer
+// locate the structural hash column by NAME instead of by the current schema's
+// column count; a positional index would shift onto a data column as soon as a
+// column was added, and tamper detection would quietly stop working. A missing,
+// empty, headerless, or pre-hash ledger yields the header (possibly empty) and an
+// empty hash, i.e. a fresh chain to start.
+func headerAndTail(path string) (header []string, prevHash string, err error) {
+	header, rows, err := ReadRows(path)
+	if err != nil || len(header) == 0 || len(rows) == 0 {
+		return header, "", err
+	}
+	hashIndex, _, hasHash := resolveHashIndex(header)
+	if !hasHash {
+		return header, "", nil
+	}
+	last := rows[len(rows)-1]
+	if len(last) <= hashIndex {
+		return header, "", nil
+	}
+	return header, last[hashIndex], nil
+}
+
+// VerifyChain recomputes the integrity chain over every hashed row and returns
+// an error at the first broken link. Pre-hash (legacy) rows are skipped because
+// they were written before the hash column existed and cannot be retroactively
+// covered. The hash column is located by name from the on-disk header, so a
+// ledger written under an earlier schema is still verified against its own
+// column layout rather than against the current one.
+func VerifyChain(path string) error {
+	header, rows, err := ReadRows(path)
+	if err != nil {
+		return err
+	}
+	if len(header) == 0 {
+		return nil
+	}
+	hashIndex, dataCount, hasHash := resolveHashIndex(header)
+	if !hasHash {
+		return nil
+	}
+	prevHash := ""
+	for i, row := range rows {
+		if len(row) <= hashIndex {
+			continue
+		}
+		want := rowHash(prevHash, row[:dataCount])
+		if row[hashIndex] != want {
+			return fmt.Errorf("history hash chain broken at row %d", i+2)
+		}
+		prevHash = row[hashIndex]
+	}
+	return nil
+}
+
+// Append appends one record, creating the header on the first write. The record
+// is written in the same open operation as the header so a fresh ledger never
+// drops its first entry. Each row carries a chained hash so later
+// rewrite/reorder/deletion of the append-only ledger is detectable.
+//
+// A pre-existing ledger whose header predates the current schema is refused
+// rather than appended to: the ledger is append-only and never rewritten, so its
+// rows cannot be widened to the new schema, and appending a wider row would bind
+// the reader's values to the wrong column names. Refusing keeps the audit trail
+// honest instead of silently corrupting it.
+func Append(path string, record model.HistoryRecord) error {
+	header, prevHash, err := headerAndTail(path)
+	if err != nil {
+		return err
+	}
+	if err := headerDriftError(header, path); err != nil {
+		return err
+	}
+	creating := len(header) == 0
+
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	writer := csv.NewWriter(f)
+	if creating {
+		if err := writer.Write(ledgerHeader()); err != nil {
+			return err
+		}
+	}
+	fields := Values(record)
+	row := append(fields, rowHash(prevHash, fields))
+	if err := writer.Write(row); err != nil {
+		return err
+	}
+	writer.Flush()
+	return writer.Error()
+}

@@ -40,20 +40,57 @@ func TestVersionCompare(t *testing.T) {
 }
 
 func TestCompareDriverStatus(t *testing.T) {
+	measured := func(v string) model.LocalEvidence {
+		return model.ObservedVersion(v)
+	}
 	cases := []struct {
-		remote, local, vendor string
-		want                  model.CompareStatus
+		name           string
+		remote, vendor string
+		local          model.LocalEvidence
+		want           model.CompareStatus
 	}{
-		{"2.0.0.5", "1.0.0.1", "", "Update"},
-		{"2.0.0.5", "2.0.0.5", "", "Up to date"},
-		{"1.0.0.1", "2.0.0.5", "", "Local newer"},
-		{"2.0.0.5", "", "", "Not installed"},
-		{"2.0.0.5/3.0.0.1", "3.0.0.1", "Intel", "Unknown"},
+		{"behind", "2.0.0.5", "", measured("1.0.0.1"), "Update"},
+		{"same", "2.0.0.5", "", measured("2.0.0.5"), "Up to date"},
+		{"ahead", "1.0.0.1", "", measured("2.0.0.5"), "Local newer"},
+		{"absent", "2.0.0.5", "", model.ObservedAbsence(), "Not installed"},
+		{"composite remote under unknown vendor", "2.0.0.5/3.0.0.1", "Intel", measured("3.0.0.1"), "Unknown"},
 	}
 	for _, tc := range cases {
 		if got := CompareDriverStatus(tc.remote, tc.local, tc.vendor); got != tc.want {
-			t.Fatalf("CompareDriverStatus(%q,%q,%q) = %q, want %q", tc.remote, tc.local, tc.vendor, got, tc.want)
+			t.Fatalf("%s: CompareDriverStatus(%q,%v,%q) = %q, want %q",
+				tc.name, tc.remote, tc.local, tc.vendor, got, tc.want)
 		}
+	}
+}
+
+// TestUnobservedIsNotAbsence pins the distinction the evidence kinds exist for.
+// A driver with no device on this machine measured nothing, so calling it Not
+// installed would assert absence from silence — and Not installed is the one
+// status the automatic install set acts on unattended.
+func TestUnobservedIsNotAbsence(t *testing.T) {
+	unobserved := model.NotObserved()
+	got := CompareDriverStatus("2.0.0.5", unobserved, "")
+	if got != model.StatusUnknown {
+		t.Fatalf("unobserved local evidence = %q, want Unknown", got)
+	}
+	if model.InAutomaticInstallSet(got) {
+		t.Fatal("an unobserved driver must not enter the automatic install set")
+	}
+	if model.StatusEvidenceBasis(got) != model.BasisUndetermined {
+		t.Fatalf("unobserved status basis = %q, want undetermined", model.StatusEvidenceBasis(got))
+	}
+}
+
+// TestConflictedEvidenceIsUnknown pins that a measured disagreement yields no
+// direction. The conflict is a fact about the machine; the ordering is not
+// decidable from it.
+func TestConflictedEvidenceIsUnknown(t *testing.T) {
+	conflicted := model.ObservedConflict([]string{"30.0.15026.8004", "31.0.14052.9003"})
+	if got := CompareDriverStatus("27.20.15026.8004", conflicted, "AMD"); got != model.StatusUnknown {
+		t.Fatalf("conflicted local evidence = %q, want Unknown", got)
+	}
+	if model.InAutomaticInstallSet(model.StatusUnknown) {
+		t.Fatal("Unknown must stay out of the automatic install set")
 	}
 }
 

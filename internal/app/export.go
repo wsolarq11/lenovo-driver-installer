@@ -83,7 +83,7 @@ func (a *App) ExportGUIView(path string, vc *ViewContext, view *DriverView) erro
 			SourceAudit:    sourceAudit,
 			CompareSource:  ad.CompareSource,
 			DeviceProblem:  ad.DeviceProblem,
-			EvidenceBasis:  model.StatusEvidenceBasis(ad.CompareStatus),
+			EvidenceBasis:  model.StatusEvidenceBasis(ad.CompareStatus).String(),
 			NonMatchReason: ad.NonMatchReason,
 			FileName:       ad.FileName,
 			FilePath:       ad.FilePath,

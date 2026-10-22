@@ -35,8 +35,8 @@ func TestSoftwareVersionedDriverFallsBackToMeasuredDeviceVersion(t *testing.T) {
 		{DisplayName: "NVIDIA 图形驱动程序 546.30", DisplayVersion: "546.30"},
 	}}
 	local, vendor := ResolveLocalDriverVersion(driver, []model.Device{device}, []string{device.DriverVersion}, empty)
-	if local != "15.11.29.65" {
-		t.Fatalf("local version = %q, want the measured device version 15.11.29.65", local)
+	if got := local.MeasuredVersion(); got != "15.11.29.65" {
+		t.Fatalf("local version = %q, want the measured device version 15.11.29.65", got)
 	}
 	// deviceVendorFor does not recognise this device's name, so vendor comes
 	// back empty and the compare falls back to parsing the whole remote string.
@@ -66,20 +66,20 @@ func TestSoftwareVersionedDriverPrefersSoftwareVersionWhenPresent(t *testing.T) 
 		{DisplayName: "Lenovo Energy Management", DisplayVersion: "1.0.2.0"},
 	}}
 	local, _ := ResolveLocalDriverVersion(driver, []model.Device{device}, []string{device.DriverVersion}, present)
-	if local != "1.0.2.0" {
-		t.Fatalf("local version = %q, want the software-side 1.0.2.0", local)
+	if got := local.MeasuredVersion(); got != "1.0.2.0" {
+		t.Fatalf("local version = %q, want the software-side 1.0.2.0", got)
 	}
 	if got := CompareDriverStatus(driver.Version, local, ""); got != model.StatusUpdate {
 		t.Fatalf("status = %q, want Update", got)
 	}
 }
 
-// A local version of "" reaching the compare step means "a device matched but
-// carries no driver version", never "we have no idea" — TestDriverApplicable
-// already removed every driver with no matching device before the compare runs.
-// This test pins that guarantee, because the automatic set acts on the
-// Not installed status and that status is only meaningful if "" is impossible
-// to reach without a matched device.
+// An absent local version means "a device matched but carries no driver
+// version". That reading is only sound while a matched device is known to exist:
+// the always-applicable software rules (Lenovo Fn, Energy Management, X-Rite)
+// make a driver applicable with no matching device at all, so applicability does
+// NOT imply a matched device. Both halves are pinned here; treating the second
+// as the first put evidence-free drivers into the automatic install set.
 func TestEmptyLocalVersionAlwaysHasAMatchedDevice(t *testing.T) {
 	driver := &model.Driver{
 		DriverCode: "DRVX", DriverName: "Lenovo Energy Management 驱动",
@@ -95,10 +95,19 @@ func TestEmptyLocalVersionAlwaysHasAMatchedDevice(t *testing.T) {
 		t.Fatal("driver with a matching device must be applicable")
 	}
 	local, _ := ResolveLocalDriverVersion(driver, devices, []string{""}, &model.SoftwareSnapshot{})
-	if local != "" {
-		t.Fatalf("local version = %q, want empty for a device with no bound driver", local)
+	if local.Kind() != model.LocalEvidenceAbsent {
+		t.Fatalf("evidence kind = %v, want Absent for a matched device with no bound driver", local.Kind())
 	}
 	if got := CompareDriverStatus(driver.Version, local, ""); got != model.StatusNotInstalled {
 		t.Fatalf("status = %q, want Not installed", got)
+	}
+	// The counterpart: no matched device at all is a different claim, and it
+	// must not produce the status the automatic set acts on.
+	none, _ := ResolveLocalDriverVersion(driver, nil, nil, &model.SoftwareSnapshot{})
+	if none.Kind() != model.LocalEvidenceUnobserved {
+		t.Fatalf("evidence kind = %v, want Unobserved with no matched device", none.Kind())
+	}
+	if got := CompareDriverStatus(driver.Version, none, ""); got == model.StatusNotInstalled {
+		t.Fatal("an unobserved driver must not be reported as Not installed")
 	}
 }

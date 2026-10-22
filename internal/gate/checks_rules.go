@@ -67,16 +67,19 @@ func checkAutomaticSetExcludesDowngrade(ctx *Context) error {
 
 	// view.go partitions the presented set; it must ask the one membership
 	// authority rather than compare statuses itself.
-	view, err := ctx.Repo.fileAt("internal/app/view.go")
+	// The partition is found by the function that performs it, not by filename:
+	// a package split moves declarations between sibling files, and a rule pinned
+	// to a path would then fail with "no such file" rather than checking anything.
+	view, err := ctx.Repo.fileDeclaring("internal/app", "partitionViewDrivers")
 	if err != nil {
 		return err
 	}
 	if !callsQualified(view.ast, "model.InAutomaticInstallSet") {
-		return fmt.Errorf("view.go partitions the automatic install set itself; it must call " +
+		return fmt.Errorf("the view partitions the automatic install set itself; it must call " +
 			"model.InAutomaticInstallSet so the set has one membership rule")
 	}
 	if loose := binaryOpsWithOperand(view.ast, token.NEQ, "model.StatusNotApplicable"); len(loose) > 0 {
-		return failf("view.go partitions the automatic install set with a loose comparison; use "+
+		return failf("the view partitions the automatic install set with a loose comparison; use "+
 			"model.InAutomaticInstallSet", positions(ctx, loose))
 	}
 
@@ -162,7 +165,9 @@ func checkOneComparisonPrimitive(ctx *Context) error {
 	if !callsQualified(binding.ast, "compare.Order") {
 		return fmt.Errorf("the post-install recheck no longer uses the one comparator")
 	}
-	matching, err := ctx.Repo.fileAt("internal/compare/matching.go")
+	// Located by declaration rather than filename: the compare package splits its
+	// files as it grows, and a path-pinned rule turns a move into "not found".
+	matching, err := ctx.Repo.fileDeclaring("internal/compare", "CompareDriverStatus")
 	if err != nil {
 		return err
 	}
@@ -222,11 +227,17 @@ func checkAutomaticSetBackedByMeasurements(ctx *Context) error {
 			return fmt.Errorf("%s; widening the automatic set would no longer have to be argued", err)
 		}
 	}
+	// The "fact" grade may be spelled as the string literal or as the typed
+	// constant that replaced it. A rule that only accepted the literal would
+	// report "no longer returns fact" for a stronger, typed implementation.
 	fn := topLevelFunc(model.ast, "StatusEvidenceBasis")
+	isFact := func(returned string) bool {
+		return returned == "fact" || returned == "model.BasisFact" || returned == "BasisFact"
+	}
 	factStatuses := map[string]bool{}
 	for _, clause := range switchCases(fn.Body) {
 		for _, returned := range clause.returns {
-			if returned != "fact" {
+			if !isFact(returned) {
 				continue
 			}
 			for _, value := range clause.values {
@@ -244,6 +255,12 @@ func checkAutomaticSetBackedByMeasurements(ctx *Context) error {
 	}
 	for _, lit := range stringLiteralValues(fn.Body) {
 		if lit == "inference" {
+			return fmt.Errorf("StatusEvidenceBasis still emits inference; every status it can name is " +
+				"either measured or undecided")
+		}
+	}
+	for _, name := range []string{"BasisInference"} {
+		if identsIn(fn.Body)[name] {
 			return fmt.Errorf("StatusEvidenceBasis still emits inference; every status it can name is " +
 				"either measured or undecided")
 		}
@@ -297,15 +314,16 @@ func checkInteractiveHintGuarded(ctx *Context) error {
 // older callers and tests, so it must delegate rather than grow a second copy
 // of the filter that drifts away from the one that reports.
 func checkSkippedRowsReported(ctx *Context) error {
-	f, err := ctx.Repo.fileAt("internal/app/view.go")
+	// Both functions are methods-or-not by circumstance; find them by name so
+	// one becoming a method cannot silence the check, and so a package split
+	// cannot turn this rule into a missing-file error.
+	f, err := ctx.Repo.fileDeclaring("internal/app", "CompareOSDriverView")
 	if err != nil {
 		return err
 	}
-	// Both functions are methods-or-not by circumstance; find them by name so
-	// one becoming a method cannot silence the check.
 	fn := funcDeclByName(f.ast, "CompareOSDriverView")
 	if fn == nil {
-		return fmt.Errorf("CompareOSDriverView is gone from view.go")
+		return fmt.Errorf("CompareOSDriverView is gone from internal/app")
 	}
 	if !identsIn(fn.Body)["filterDriverRowsWithSkips"] {
 		return fmt.Errorf("CompareOSDriverView filters rows without asking for the skip report; dropped " +
@@ -327,13 +345,13 @@ func checkSkippedRowsReported(ctx *Context) error {
 // not an anomaly. Ten of those on a clean machine at WARN trains the reader
 // to skip every WARN, including the ones about degradations that matter.
 func checkLocalNewerNotWarn(ctx *Context) error {
-	f, err := ctx.Repo.fileAt("internal/app/view.go")
+	f, err := ctx.Repo.fileDeclaring("internal/app", "assessSelectedDrivers")
 	if err != nil {
 		return err
 	}
 	fn := funcDeclByName(f.ast, "assessSelectedDrivers")
 	if fn == nil {
-		return fmt.Errorf("assessSelectedDrivers is gone from view.go")
+		return fmt.Errorf("assessSelectedDrivers is gone from internal/app")
 	}
 	found := false
 	var offenders []string

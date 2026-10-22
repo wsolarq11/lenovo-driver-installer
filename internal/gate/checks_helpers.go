@@ -73,10 +73,10 @@ func classifyBindingLabels(block *ast.BlockStmt) (confirmed, denied map[string]b
 	return confirmed, denied
 }
 
-// keyedOnFamily reports whether installBindingLabel is called with the driver
+// keyedOnFamily reports whether installBindingVerdict is called with the driver
 // family predicate among its arguments.
 func keyedOnFamily(f *ast.File) bool {
-	for _, call := range callsNamed(f, "installBindingLabel") {
+	for _, call := range callsNamed(f, "installBindingVerdict") {
 		for _, arg := range call.Args {
 			if callsBare(arg, "isSoftwareVersionedDriver") {
 				return true

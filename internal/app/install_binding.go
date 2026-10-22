@@ -9,12 +9,12 @@ import (
 // IO-heavy verification pass in install.go so the rule that decides whether a
 // run may call a driver installed has one owner and no side effects.
 
-// installBindingLabel classifies a post-install recheck. "bound" means the
-// active local version is now the package version; "staged" means the version
-// moved but has not reached the package version; "unchanged-same" means the
+// installBindingVerdict classifies a post-install recheck. Bound means the
+// active local version is now the package version; staged means the version
+// moved but has not reached the package version; unchanged-same means the
 // machine already ran exactly this package version, so the reinstall is a
-// confirmed no-op; "unchanged" means the version did not move at all, which is
-// also what an installer that silently did nothing produces; and "undetected"
+// confirmed no-op; unchanged means the version did not move at all, which is
+// also what an installer that silently did nothing produces; and undetected
 // means no comparable version could be read. Only bound, staged and
 // unchanged-same are evidence that the package took effect.
 //
@@ -33,35 +33,78 @@ import (
 // "Intel_22.10.0.7/Realtek8852AE_6001.0.10.336/Mediatek_3.0.1.1314" in Version,
 // which no device's local version can equal, so those drivers could never be
 // reported as bound no matter what happened on the machine.
-func installBindingLabel(before, after, packageVersion, vendor string) string {
-	afterV := compare.ResolveComparableVersion(after, vendor)
+func installBindingVerdict(before string, after model.LocalEvidence, packageVersion, vendor string) bindingVerdict {
+	// Only a single measured version can confirm a binding. A conflicted,
+	// provisioned, absent, or unobserved after-state carries no number to compare
+	// against the package, so the recheck reports it as undetected rather than
+	// picking one device's version and calling the install confirmed.
+	afterRaw := after.MeasuredVersion()
+	afterV := compare.ResolveComparableVersion(afterRaw, vendor)
 	packageV := compare.ResolveComparableVersion(packageVersion, vendor)
-	if !model.IsMeasuredLocalVersion(after) || afterV == nil {
-		return "undetected"
+	if !model.IsMeasuredLocalVersion(afterRaw) || afterV == nil {
+		return bindingUndetected
 	}
 	switch compare.Order(afterV, packageV) {
 	case compare.OrderUndecided:
-		return "undetected"
+		return bindingUndetected
 	case compare.OrderEqual:
 		if compare.Order(compare.ResolveComparableVersion(before, vendor), packageV) == compare.OrderEqual {
-			return "unchanged-same"
+			return bindingUnchangedSame
 		}
-		return "bound"
+		return bindingBound
 	default:
 		if compare.Order(compare.ResolveComparableVersion(before, vendor), afterV) == compare.OrderEqual {
-			return "unchanged"
+			return bindingUnchanged
 		}
-		return "staged"
+		return bindingStaged
 	}
 }
 
-// installBindingConfirmsEffect reports whether a binding label is evidence that
-// the package actually took effect. This is the single gate between the recheck
-// and the run summary, so a driver cannot be reported as installed on the
-// strength of its exit code alone.
-func installBindingConfirmsEffect(binding string) bool {
-	switch binding {
-	case "bound", "staged", "unchanged-same":
+// bindingVerdict is what a post-install recheck can conclude. It was a bare
+// string switched at the call site, where a `default:` branch quietly absorbed
+// every unrecognized value — including the zero value, which had no meaning and
+// therefore no honest log line. The zero value is now Undetected, the
+// no-information verdict, so a forgotten assignment cannot read as success.
+type bindingVerdict int
+
+const (
+	// bindingUndetected is the ZERO VALUE: no comparable version could be read,
+	// so the recheck has nothing to say. It never confirms an install.
+	bindingUndetected bindingVerdict = iota
+	// bindingBound means the active local version is now the package version.
+	bindingBound
+	// bindingStaged means the version moved but has not reached the package
+	// version yet (a reboot may be pending).
+	bindingStaged
+	// bindingUnchangedSame means the machine already ran exactly this package
+	// version, so the reinstall is a confirmed no-op.
+	bindingUnchangedSame
+	// bindingUnchanged means the version did not move at all — what an installer
+	// that silently did nothing also produces.
+	bindingUnchanged
+)
+
+func (v bindingVerdict) String() string {
+	switch v {
+	case bindingBound:
+		return "bound"
+	case bindingStaged:
+		return "staged"
+	case bindingUnchangedSame:
+		return "unchanged-same"
+	case bindingUnchanged:
+		return "unchanged"
+	default:
+		return "undetected"
+	}
+}
+
+// confirmsEffect reports whether this verdict is evidence that the package took
+// effect. It is the single gate between the recheck and the run summary, so a
+// driver cannot be reported as installed on the strength of its exit code alone.
+func (v bindingVerdict) confirmsEffect() bool {
+	switch v {
+	case bindingBound, bindingStaged, bindingUnchangedSame:
 		return true
 	default:
 		return false

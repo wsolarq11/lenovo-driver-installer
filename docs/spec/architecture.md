@@ -47,14 +47,16 @@ WPF 只是表现壳：渲染 JSON 导出、启动后台 Go 进程、回传 `Driv
 cmd/lenovo-driver            CLI 入口
 cmd/gatecheck                门禁的 Go 源码检查入口（把 internal/gate 的规则接成 verify.ps1 的命名步骤）
 internal/api                 Lenovo API 客户端与响应归一化
-internal/app                 编排、CLI、GUI 导出、账本、提示
+internal/app                 编排、CLI、GUI 导出、提示（history.go 只是 ledger 的薄适配）
 internal/audit               setupapi 解析与来源证据审计
 internal/compare             版本解析、匹配、选择、格式化
 internal/download            HTTP 下载、重试、SHA-256 伴生文件
 internal/gate                门禁规则本体：go/parser + go/types 的只读源码分析（只用标准库、不开进程）
-                             checks_docs.go=契约文档比对；checks_behavior.go=行为规范比对；
-                             checks_rules.go=不变量规则；checks_install.go=安装/账本规则
+                             checks_docs.go=契约文档比对；checks_fixtures.go=记录数据与证据链；
+                             checks_behavior.go=行为规范比对；checks_rules.go=不变量规则；
+                             checks_install.go=安装/账本规则；checks_conventions.go=规范单一源
 internal/install             安装器分发与 EXE 回退；原生 INF 安装（pnputil 回退）
+internal/ledger              WORM 账本：列定义、哈希链、按表头名定位、schema 拒绝
 internal/inventory           Windows 机器/OS/PnP/应用快照（原生 SetupAPI/CfgMgr32/注册表）
 internal/model               共享纯数据类型
 internal/pathutil            Windows 路径助手
@@ -92,11 +94,11 @@ docs/                        本文档树
 
 | 阶段 | 职责 | 副作用 | 不变量落点 | 代码锚点 |
 | --- | --- | --- | --- | --- |
-| 解析 | 收集机型/OS/分类/OS 列表/本地盘点/历史账本，构建只读视图 | 读系统、读 API、读账本 | 硬失败即停；快照失败降级为空 | `internal/app/app.go`、`internal/inventory`、`internal/api` |
-| 比较 | 加载官方列表，选出最新适用行，评估版本/状态/来源 | 无（纯函数 + 只读输入） | 事实分级、默认不动 | `internal/app/view.go`、`internal/compare`、`internal/audit` |
+| 解析 | 收集机型/OS/分类/OS 列表/本地盘点/历史账本，构建只读视图 | 读系统、读 API、读账本 | 硬失败即停；快照失败降级为空 | `internal/app/app.go`、`internal/app/cli.go`、`internal/inventory`、`internal/api` |
+| 比较 | 加载官方列表，选出最新适用行，评估版本/状态/来源 | 无（纯函数 + 只读输入） | 事实分级、默认不动 | `internal/app/view.go`、`internal/app/driverlists.go`、`internal/compare`、`internal/audit` |
 | 选择 | 按导出/试运行/交互/回传码分发下一步 | 写 GUI JSON（可选） | 选择先于副作用可见 | `internal/app/interactive.go`、`internal/app/export.go` |
 | 下载安装 | 下载校验、按文件类型分发安装、装后复核 | 网络下载、写文件、装驱动 | 审计先于状态变更、设备级回退 | `internal/download`、`internal/install` |
-| 记账 | 写计划、日志、WORM 账本、回退 offer | 追加写文件 | 审计先于状态变更（写失败不提交） | `internal/plan`、`internal/app/history.go`、`internal/app/rollback.go` |
+| 记账 | 写计划、日志、WORM 账本、回退 offer | 追加写文件 | 审计先于状态变更（写失败不提交） | `internal/plan`、`internal/ledger`、`internal/app/rollback.go` |
 
 阶段语义要点：
 

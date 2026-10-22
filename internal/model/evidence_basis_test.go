@@ -3,17 +3,17 @@ package model
 import "testing"
 
 func TestStatusEvidenceBasis(t *testing.T) {
-	cases := map[CompareStatus]string{
-		StatusUpdate:        "fact",
-		StatusUpToDate:      "fact",
-		StatusNotInstalled:  "fact",
-		StatusLocalNewer:    "fact",
-		StatusUnknown:       "undetermined",
-		StatusNotApplicable: "undetermined",
+	cases := map[CompareStatus]EvidenceBasis{
+		StatusUpdate:        BasisFact,
+		StatusUpToDate:      BasisFact,
+		StatusNotInstalled:  BasisFact,
+		StatusLocalNewer:    BasisFact,
+		StatusUnknown:       BasisUndetermined,
+		StatusNotApplicable: BasisUndetermined,
 	}
 	for status, want := range cases {
 		if got := StatusEvidenceBasis(status); got != want {
-			t.Fatalf("StatusEvidenceBasis(%q) = %q, want %q", status, got, want)
+			t.Fatalf("StatusEvidenceBasis(%q) = %v, want %v", status, got, want)
 		}
 	}
 }
@@ -35,8 +35,8 @@ func TestAutomaticSetStatusesAreMeasured(t *testing.T) {
 			continue
 		}
 		members++
-		if basis := StatusEvidenceBasis(status); basis != "fact" {
-			t.Errorf("status %q may enter the automatic install set but its evidence basis is %q, want fact",
+		if basis := StatusEvidenceBasis(status); basis != BasisFact {
+			t.Errorf("status %q may enter the automatic install set but its evidence basis is %v, want fact",
 				status, basis)
 		}
 	}
@@ -51,7 +51,7 @@ func TestAutomaticSetStatusesAreMeasured(t *testing.T) {
 // just passing a loop.
 func TestNonFactStatusesStayOutOfTheAutomaticSet(t *testing.T) {
 	for _, status := range []CompareStatus{StatusUnknown, StatusNotApplicable} {
-		if basis := StatusEvidenceBasis(status); basis == "fact" {
+		if basis := StatusEvidenceBasis(status); basis == BasisFact {
 			t.Fatalf("%q is undetermined; if that changes, this test must be re-argued, not deleted", status)
 		}
 		if InAutomaticInstallSet(status) {

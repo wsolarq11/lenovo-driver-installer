@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"lenovo-driver/internal/api"
@@ -41,116 +40,11 @@ var (
 	installableExts = map[string]bool{".exe": true, ".msi": true, ".zip": true, ".inf": true, ".cab": true}
 )
 
-func (a *App) cachedDriverObjects(ctx context.Context, vc *ViewContext, osID, preferredSource string) (api.SourceDrivers, error) {
-	key := osID + "|" + preferredSource
-	a.osDriverCacheMu.Lock()
-	if a.osDriverCache == nil {
-		a.osDriverCache = map[string]api.SourceDrivers{}
-	} else if result, ok := a.osDriverCache[key]; ok {
-		a.osDriverCacheMu.Unlock()
-		return result, nil
-	}
-	a.osDriverCacheMu.Unlock()
-
-	result, err := a.APIClient.GetDriverObjects(ctx, vc.CategoryID, osID, preferredSource)
-	if err != nil {
-		// Escape hatch: both Lenovo endpoints are dead or gated, fall back to
-		// the last-good persisted list (clearly marked stale) instead of
-		// failing outright.
-		if cached, ok := loadDriverListCache(a.driverListCachePath(osID), osID); ok {
-			a.Log(ctx, "Driver list for OSID "+osID+": "+cached.DriftWarning, "WARN")
-			a.osDriverCacheMu.Lock()
-			a.osDriverCache[key] = cached
-			a.osDriverCacheMu.Unlock()
-			return cached, nil
-		}
-		return api.SourceDrivers{}, err
-	}
-	if saveErr := saveDriverListCache(a.driverListCachePath(osID), osID, result); saveErr != nil {
-		a.Log(ctx, "Could not persist driver list cache for OSID "+osID+": "+saveErr.Error(), "WARN")
-	}
-	if result.DriftWarning != "" {
-		a.Log(ctx, "Driver list for OSID "+osID+": "+result.DriftWarning+" (fell back to "+result.Source+")", "WARN")
-	}
-	a.osDriverCacheMu.Lock()
-	a.osDriverCache[key] = result
-	a.osDriverCacheMu.Unlock()
-	return result, nil
-}
-
-// toleratedDriverListMiss reports why a driver list is unusable under the soft-
-// miss policy: a fetch error, or an official list with no rows. A nil return
-// means the list is usable. Both the cross-OS merge and the alternate-OS source
-// map share this single fetch/tolerate policy.
-func toleratedDriverListMiss(err error, result api.SourceDrivers) error {
-	if err != nil {
-		return err
-	}
-	if len(result.Drivers) == 0 {
-		return fmt.Errorf("the official driver list was empty")
-	}
-	return nil
-}
-
-// driverListLoad is one OSID's fetch outcome, kept in input order so that
-// callers can apply their per-OSID policy deterministically after the parallel
-// fetch phase completes.
-type driverListLoad struct {
-	osID   string
-	result api.SourceDrivers
-	err    error
-}
-
-// loadDriverListsForOSIDs fetches the cached driver lists for a group of
-// independent OSIDs in parallel (the reads are unrelated network calls that
-// only benefit from concurrency), preserving the input order in the returned
-// slice. The soft-miss policy is applied by the caller per slot in order.
-func (a *App) loadDriverListsForOSIDs(ctx context.Context, vc *ViewContext, osIDs []string, preferredSource string) []driverListLoad {
-	out := make([]driverListLoad, len(osIDs))
-	for i, osID := range osIDs {
-		out[i].osID = osID
-	}
-	var wg sync.WaitGroup
-	for i, osID := range osIDs {
-		wg.Add(1)
-		go func(i int, osID string) {
-			defer wg.Done()
-			out[i].result, out[i].err = a.cachedDriverObjects(ctx, vc, osID, preferredSource)
-		}(i, osID)
-	}
-	wg.Wait()
-	return out
-}
-
-// loadDriverList returns the cached driver list for an OSID, logging a WARN and
-// returning ok=false when the source is unavailable or empty. Both the
-// cross-OS merge and the alternate-OS source map share this single
-// fetch/tolerate policy.
-func (a *App) loadDriverList(ctx context.Context, vc *ViewContext, osID, preferredSource string) (api.SourceDrivers, bool) {
-	result, err := a.cachedDriverObjects(ctx, vc, osID, preferredSource)
-	if miss := toleratedDriverListMiss(err, result); miss != nil {
-		a.Log(ctx, "Could not load a driver list for OSID "+osID+": "+miss.Error(), "WARN")
-		return api.SourceDrivers{}, false
-	}
-	return result, true
-}
-
-// pnpIDsOf collects the non-empty PnP device ids of a device set.
-func pnpIDsOf(devices []model.Device) []string {
-	ids := make([]string, 0, len(devices))
-	for _, dev := range devices {
-		if dev.PnpDeviceID != "" {
-			ids = append(ids, dev.PnpDeviceID)
-		}
-	}
-	return ids
-}
-
 // localDriverState resolves the current local version and vendor for a driver
 // against the pre-fetched per-device version index. It is the single canonical
 // pipeline shared by the driver-comparison view and post-install verification;
 // the index itself is fetched once per pass by deviceVersionIndex.
-func (a *App) localDriverState(driver *model.Driver, matchedDevices []model.Device, versionIndex map[string]string, snapshot *model.SoftwareSnapshot) (localVersion, localVendor string) {
+func (a *App) localDriverState(driver *model.Driver, matchedDevices []model.Device, versionIndex map[string]string, snapshot *model.SoftwareSnapshot) (model.LocalEvidence, string) {
 	versions := make([]string, 0, len(matchedDevices))
 	for _, dev := range matchedDevices {
 		versions = append(versions, versionIndex[dev.PnpDeviceID])
@@ -327,11 +221,12 @@ func (a *App) assessSelectedDrivers(ctx context.Context, vc *ViewContext, select
 			continue
 		}
 		matchedDevices := matchedForDriver[i]
-		localVersion, localVendor := a.localDriverState(driver, matchedDevices, versionIndex, &vc.SoftwareSnapshot)
-		ad.LocalVersion = localVersion
+		localEvidence, localVendor := a.localDriverState(driver, matchedDevices, versionIndex, &vc.SoftwareSnapshot)
+		ad.LocalEvidence = localEvidence
+		ad.LocalVersion = localEvidence.Display()
 		ad.LocalVendor = localVendor
-		ad.CompareStatus = compare.CompareDriverStatus(driver.Version, localVersion, localVendor)
-		if localVersion == "" {
+		ad.CompareStatus = compare.CompareDriverStatus(driver.Version, localEvidence, localVendor)
+		if !localEvidence.Sought() {
 			continue
 		}
 		if ad.CompareStatus == model.StatusLocalNewer && alternateSourceMap == nil {

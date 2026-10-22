@@ -9,7 +9,7 @@ API、GUI JSON 协议、退出码、产物与账本列的**单一权威**。改�
 | 契约项 | 机器源（代码） | 门禁 | 本文件的角色 |
 | --- | --- | --- | --- |
 | CLI 参数、退出码、产物路径 | `internal/app/help.go` 的 `helpText` | `scripts/verify.ps1` 比对退出码，漂移即失败 | 人读语义 |
-| 账本列序 | `internal/app/history.go` 的 `historyColumns` | `history_test.go` golden 锁列序 | 人读语义 |
+| 账本列序 | `internal/ledger` 的 `Columns` | `internal/ledger/ledger_test.go` golden 锁列序 | 人读语义 |
 | GUI JSON 协议 | `internal/app/export.go` | WPF 层解析（参数引用共享 golden） | 人读协议 |
 | API 端点与字段 | `internal/api/` | API 层单测 | 人读契约 |
 | 回退 offer 字段 | `internal/app/rollback.go` | 回退测试 golden | 人读语义 |
@@ -153,7 +153,9 @@ Go CLI 写出的 JSON：
 
 ## 5. 账本（WORM 历史）
 
-`lenovo_driver_history.csv` 每行 14 个数据列 + `Hash` 结构性尾列：`timestamp`、`driver code`、`OSID/OSName`、`driver name`、`remote version`、`verified version`、`before version`、`file name`、`MD5`、`source`、`result`、`message`、`devices`、（序列）。列序由 `historyColumns` 单一源驱动，`history_test.go` 用 golden 字面量锁列序；`Hash` 不进入数据列。
+`verified version` 与 `before version` 两列**只装实测版本号或空串，绝不装散文**：非实测状态（未观测 / 匹配到设备但无绑定版本 / 多设备版本冲突 / Provisioned 占位符）在这两列一律为空，人类可读的描述（`not detected`、`not observed`、`30.0.x, 31.0.y`）只进 `message` 列。理由：这两列是设备级别 join 与来源审计的输入，一句散文在版本位置上会被读成版本声明——而冲突的拼接串看起来恰好像一个复合版本。判据与强制点见 `invariants.md` §4.2（门禁 `ledger version columns hold measured versions`）。GUI 导出里的 `LocalVersion` 字段是展示投影（`LocalEvidence.Display()`），同样不参与任何决策。
+
+`lenovo_driver_history.csv` 每行 14 个数据列 + `Hash` 结构性尾列：`timestamp`、`driver code`、`OSID/OSName`、`driver name`、`remote version`、`verified version`、`before version`、`file name`、`MD5`、`source`、`result`、`message`、`devices`、（序列）。列序由 `internal/ledger` 的 `Columns` 单一源驱动，`internal/ledger/ledger_test.go` 用 golden 字面量锁列序；`Hash` 不进入数据列。
 
 `devices` 列是账本的**设备身份**：本行动作触及的 PnP 设备实例 id 集合（去重、`;` 分隔、按首次出现排序）。它是“本工具对哪个驱动动了手”与“设备实际怎么变”之间的 join 键，`-Audit` 用它对设备差分逐条归因。该列是设备身份的唯一机器可读出口——`message` 只放人类可读细节，不得再埋 `device <id>` 之类的身份文本（`TestAuditAttributionIgnoresMessageText` 锁死这条）。
 

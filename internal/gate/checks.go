@@ -120,20 +120,24 @@ func checkLedgerDeviceIdentity(ctx *Context) error {
 // be found by name in the on-disk header: a positional lookup silently verifies
 // the wrong cells once a column is added, so tampering stops being detectable
 // without any error surfacing.
+//
+// The rule names the ledger package rather than a file so moving the ledger's
+// structure out of the orchestrator cannot make the rule pass vacuously: the
+// existence half fails loudly when the package or the function is gone.
 func checkLedgerHashByName(ctx *Context) error {
 	found := false
-	for _, f := range ctx.Repo.dirProd("internal/app") {
+	for _, f := range ctx.Repo.dirProd("internal/ledger") {
 		if len(topLevelFuncs(f.ast, "resolveHashIndex")) > 0 {
 			found = true
 		}
 	}
 	if !found {
-		return fmt.Errorf("internal/app must expose resolveHashIndex (header-name lookup)")
+		return fmt.Errorf("internal/ledger must expose resolveHashIndex (header-name lookup)")
 	}
 
 	var offenders []string
 	for _, f := range ctx.Repo.prod() {
-		if f.dir != "internal" && !strings.HasPrefix(f.dir, "internal/") {
+		if !under(f.dir) {
 			continue
 		}
 		ast.Inspect(f.ast, func(n ast.Node) bool {
@@ -141,7 +145,7 @@ func checkLedgerHashByName(ctx *Context) error {
 			if !ok {
 				return true
 			}
-			if call, ok := index.Index.(*ast.CallExpr); ok && isLenOf(call, "historyColumns") {
+			if call, ok := index.Index.(*ast.CallExpr); ok && isLenOfAny(call, "historyColumns", "Columns") {
 				offenders = append(offenders, ctx.Repo.position(index))
 			}
 			return true
@@ -269,6 +273,19 @@ func isLenOf(call *ast.CallExpr, name string) bool {
 	}
 	arg, ok := call.Args[0].(*ast.Ident)
 	return ok && arg.Name == name
+}
+
+// isLenOfAny reports whether a call is len(x) for any of the given names. The
+// ledger's column slice was renamed when its structure moved into its own
+// package; naming both spellings means a positional index is caught whichever
+// name the offender copied.
+func isLenOfAny(call *ast.CallExpr, names ...string) bool {
+	for _, name := range names {
+		if isLenOf(call, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // selectorNamesAssigned collects the selector names that appear on the left of

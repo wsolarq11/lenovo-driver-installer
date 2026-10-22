@@ -2,8 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/csv"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -43,16 +41,6 @@ func TestLedgerCarriesDeviceIdentity(t *testing.T) {
 	want := []string{`PCI\VEN_1002&DEV_1638`, `HDAUDIO\FUNC_01`}
 	if !reflect.DeepEqual(records[0].Devices, want) {
 		t.Fatalf("device identity lost in round-trip: got %#v, want %#v", records[0].Devices, want)
-	}
-}
-
-// TestLedgerDeviceIdentityIsDeduped proves the recorded identity is a set: a
-// device that matched a driver more than once is recorded once, so the audit
-// join cannot double-count it.
-func TestLedgerDeviceIdentityIsDeduped(t *testing.T) {
-	got := joinDevices([]string{"A", "A", "", "B", "A", "B"})
-	if got != "A;B" {
-		t.Fatalf("joinDevices = %q, want %q", got, "A;B")
 	}
 }
 
@@ -146,89 +134,5 @@ func TestRollbackRowsCarryDeviceIdentity(t *testing.T) {
 	}
 	if scoped.LocalVersion != "" || scoped.CompareStatus != "" {
 		t.Fatalf("scoping must not invent assessment fields: %#v", scoped.DriverAssessment)
-	}
-}
-
-// TestHashChainIndexSurvivesSchemaGrowth proves the integrity chain is located
-// by column name, not by the current schema's column count. A ledger written
-// under the older 13-column schema must still verify against its own layout
-// after the schema grew; a positional index would have silently started
-// verifying the wrong cells and stopped detecting tampering.
-func TestHashChainIndexSurvivesSchemaGrowth(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "legacy.csv")
-	legacyColumns := []string{
-		"Timestamp", "DriverCode", "OSID", "OSName", "DriverName", "Version",
-		"VerifiedVersion", "BeforeVersion", "FileName", "MD5", "Source", "Result", "Message",
-	}
-	data := []string{"2026-01-01T00:00:00Z", "d1", "42", "Win10", "Audio", "1.0", "1.0", "0.9", "a.exe", "md5", "QuickFix", "Installed", "exit=0"}
-	row := append(append([]string(nil), data...), historyRowHash("", data))
-
-	f, err := os.Create(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	w := csv.NewWriter(f)
-	if err := w.Write(append(append([]string(nil), legacyColumns...), historyHashColumn)); err != nil {
-		t.Fatal(err)
-	}
-	if err := w.Write(row); err != nil {
-		t.Fatal(err)
-	}
-	w.Flush()
-	f.Close()
-
-	if err := verifyHistoryChain(path); err != nil {
-		t.Fatalf("legacy ledger must verify against its own column layout: %v", err)
-	}
-
-	// Tampering with the legacy row must still be caught.
-	rewriteCSV(t, path, 1, 5, "tampered")
-	if err := verifyHistoryChain(path); err == nil {
-		t.Fatal("tampering in a legacy-layout ledger must break the chain")
-	}
-}
-
-// TestWriteHistoryRecordRefusesStaleSchema proves an existing ledger whose
-// header predates the current schema is refused loudly instead of being
-// appended to. Its rows are append-only and cannot be widened, so appending a
-// wider row would silently bind values to the wrong column names.
-func TestWriteHistoryRecordRefusesStaleSchema(t *testing.T) {
-	app := newTestApp(t)
-	app.HistoryPath = filepath.Join(t.TempDir(), "history.csv")
-
-	stale := []string{
-		"Timestamp", "DriverCode", "OSID", "OSName", "DriverName", "Version",
-		"VerifiedVersion", "BeforeVersion", "FileName", "MD5", "Source", "Result", "Message",
-	}
-	f, err := os.Create(app.HistoryPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	w := csv.NewWriter(f)
-	if err := w.Write(append(append([]string(nil), stale...), historyHashColumn)); err != nil {
-		t.Fatal(err)
-	}
-	w.Flush()
-	f.Close()
-
-	driver := &model.AssessedDriver{Driver: &model.Driver{DriverCode: "d1"}}
-	err = app.WriteHistoryRecord(driver, "Installed", "exit=0", "", "")
-	if err == nil {
-		t.Fatal("appending to a stale-schema ledger must be refused")
-	}
-	if !strings.Contains(err.Error(), "Devices") {
-		t.Fatalf("refusal must name the missing column: %v", err)
-	}
-	if !strings.Contains(err.Error(), "history.csv") {
-		t.Fatalf("refusal must name the file: %v", err)
-	}
-
-	// The refused ledger must be left untouched (no partial row appended).
-	_, rows, readErr := readHistoryRows(app.HistoryPath)
-	if readErr != nil {
-		t.Fatal(readErr)
-	}
-	if len(rows) != 0 {
-		t.Fatalf("refused write must not append anything, got %#v", rows)
 	}
 }

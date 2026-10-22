@@ -18,6 +18,7 @@ import (
 
 	"lenovo-driver/internal/api"
 	"lenovo-driver/internal/download"
+	"lenovo-driver/internal/ledger"
 	"lenovo-driver/internal/model"
 )
 
@@ -126,7 +127,7 @@ func TestReadHistoryStripsUTF8BOM(t *testing.T) {
 		DriverName: "Audio", Version: "1.0.0.1", FileName: "audio.exe", MD5: "abc",
 		Source: "QuickFix", Result: "Installed", Message: "exit=0",
 	}
-	content := "\uFEFF" + strings.Join(historyColumns, ",") + "\n" + strings.Join(historyValues(rec), ",") + "\n"
+	content := "\uFEFF" + strings.Join(ledger.Columns, ",") + "\n" + strings.Join(ledger.Values(rec), ",") + "\n"
 	if err := os.WriteFile(app.HistoryPath, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -596,7 +597,7 @@ func TestParseOptionsSignatureFlag(t *testing.T) {
 
 func TestInstallBindingLabel(t *testing.T) {
 	cases := []struct {
-		name, before, after, pkg, vendor, want string
+		name, before, afterRaw, pkg, vendor, want string
 	}{
 		{"bound", "1.0", "2.0", "2.0", "", "bound"},
 		{"already bound", "2.0", "2.0", "2.0", "", "unchanged-same"},
@@ -624,8 +625,13 @@ func TestInstallBindingLabel(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		if got := installBindingLabel(tc.before, tc.after, tc.pkg, tc.vendor); got != tc.want {
-			t.Fatalf("%s: installBindingLabel(%q, %q, %q) = %q, want %q", tc.name, tc.before, tc.after, tc.pkg, got, tc.want)
+		after := model.ObservedAbsence()
+		if tc.afterRaw != "" {
+			after = model.ObservedVersion(tc.afterRaw)
+		}
+		want := verdictNamed(t, tc.want)
+		if got := installBindingVerdict(tc.before, after, tc.pkg, tc.vendor); got != want {
+			t.Fatalf("%s: installBindingVerdict(%q, %v, %q) = %v, want %v", tc.name, tc.before, after, tc.pkg, got, want)
 		}
 	}
 }
@@ -635,9 +641,10 @@ func TestInstallBindingLabel(t *testing.T) {
 // reports "Provisioned" before and after regardless of what the installer did,
 // so before==after carried no information and the run was counted as a success.
 func TestInstallBindingLabelHasNoVerdictWithoutComparableVersions(t *testing.T) {
-	if got := installBindingLabel(model.LocalVersionProvisioned, model.LocalVersionProvisioned,
-		"6.0.0.9", ""); got != "undetected" {
-		t.Fatalf("provisioned recheck = %q, want undetected", got)
+	provisioned := model.ObservedProvisioning()
+	if got := installBindingVerdict(model.LocalVersionProvisioned, provisioned,
+		"6.0.0.9", ""); got != bindingUndetected {
+		t.Fatalf("provisioned recheck = %v, want undetected", got)
 	}
 	if model.IsMeasuredLocalVersion(model.LocalVersionProvisioned) {
 		t.Fatal("the provisioning placeholder must not count as a measured version")
@@ -651,7 +658,7 @@ func TestInstallBindingLabelHasNoVerdictWithoutComparableVersions(t *testing.T) 
 // them as unverified.
 func TestInstallBindingReadsRealSoftwareVersions(t *testing.T) {
 	for _, tc := range []struct {
-		name, before, after, pkg, vendor, want string
+		name, before, afterRaw, pkg, vendor, want string
 	}{
 		{"installed the listed version", "15.11.29.13", "15.11.29.65", "15.11.29.65", "", "bound"},
 		{"already on the same version", "2.0.0.25", "2.0.0.25", "2.0.0.25", "", "unchanged-same"},
@@ -661,13 +668,18 @@ func TestInstallBindingReadsRealSoftwareVersions(t *testing.T) {
 		// part of the number and must not defeat the comparison.
 		{"suffixed vendor string", "15.11.29.13", "15.11.29.13", "15.11.29.13 MS signed", "", "unchanged-same"},
 	} {
-		if got := installBindingLabel(tc.before, tc.after, tc.pkg, tc.vendor); got != tc.want {
-			t.Errorf("%s: installBindingLabel(%q, %q, %q) = %q, want %q", tc.name, tc.before, tc.after, tc.pkg, got, tc.want)
+		after := model.ObservedAbsence()
+		if tc.afterRaw != "" {
+			after = model.ObservedVersion(tc.afterRaw)
+		}
+		want := verdictNamed(t, tc.want)
+		if got := installBindingVerdict(tc.before, after, tc.pkg, tc.vendor); got != want {
+			t.Errorf("%s: installBindingVerdict(%q, %v, %q) = %v, want %v", tc.name, tc.before, after, tc.pkg, got, want)
 		}
 	}
 	// A genuinely moved kernel-driver version is still judged on its own evidence.
-	if got := installBindingLabel("1.0", "2.0", "2.0", ""); got != "bound" {
-		t.Fatalf("kernel-driver recheck = %q, want bound", got)
+	if got := installBindingVerdict("1.0", model.ObservedVersion("2.0"), "2.0", ""); got != bindingBound {
+		t.Fatalf("kernel-driver recheck = %v, want bound", got)
 	}
 }
 
@@ -675,20 +687,42 @@ func TestInstallBindingReadsRealSoftwareVersions(t *testing.T) {
 // run summary. "unchanged" and "undetected" must not be reported as installed.
 func TestOnlyConfirmedBindingsCountAsSuccess(t *testing.T) {
 	for _, tc := range []struct {
-		binding string
+		verdict bindingVerdict
 		want    bool
 	}{
-		{"bound", true},
-		{"staged", true},
-		{"unchanged-same", true},
-		{"unchanged", false},
-		{"undetected", false},
-		{"", false},
+		{bindingBound, true},
+		{bindingStaged, true},
+		{bindingUnchangedSame, true},
+		{bindingUnchanged, false},
+		{bindingUndetected, false},
+		// The zero value is Undetected, so an uninitialized verdict is never a
+		// success. This case is the reason the type exists.
+		{bindingVerdict(0), false},
 	} {
-		if got := installBindingConfirmsEffect(tc.binding); got != tc.want {
-			t.Errorf("installBindingConfirmsEffect(%q) = %v, want %v", tc.binding, got, tc.want)
+		if got := tc.verdict.confirmsEffect(); got != tc.want {
+			t.Errorf("bindingVerdict(%d).confirmsEffect() = %v, want %v", tc.verdict, got, tc.want)
 		}
 	}
+}
+
+// verdictNamed maps the table's readable spelling to the typed verdict, so the
+// cases stay legible while the assertion compares typed values.
+func verdictNamed(t *testing.T, name string) bindingVerdict {
+	t.Helper()
+	switch name {
+	case "bound":
+		return bindingBound
+	case "staged":
+		return bindingStaged
+	case "unchanged-same":
+		return bindingUnchangedSame
+	case "unchanged":
+		return bindingUnchanged
+	case "undetected":
+		return bindingUndetected
+	}
+	t.Fatalf("unknown verdict name %q", name)
+	return bindingUndetected
 }
 
 func TestClassifyInstallResult(t *testing.T) {
@@ -823,5 +857,35 @@ func TestOSListSourceWarningSilentOnWeb(t *testing.T) {
 	app.logOSResolution(context.Background(), res)
 	if strings.Contains(out.String(), "WARN") {
 		t.Fatalf("a clean webpage resolution warned:\n%s", out.String())
+	}
+}
+
+// TestLedgerVersionColumnsCarryOnlyMeasuredVersions pins the boundary between
+// prose and a version column. LocalEvidence.Display renders human text
+// ("not detected", "a, b"); writing it into VerifiedVersion/BeforeVersion would
+// put a sentence where every later join expects a number, and a conflict would
+// read as a composite version string. The ledger columns take the measured
+// version or nothing, and the display form belongs in Message.
+func TestLedgerVersionColumnsCarryOnlyMeasuredVersions(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		evidence model.LocalEvidence
+		want     string
+	}{
+		{"absent", model.ObservedAbsence(), ""},
+		{"unobserved", model.NotObserved(), ""},
+		{"provisioned", model.ObservedProvisioning(), ""},
+		{"conflicted", model.ObservedConflict([]string{"1.0", "2.0"}), ""},
+		{"measured", model.ObservedVersion("6.0.1.8000"), "6.0.1.8000"},
+	} {
+		measured := tc.evidence.MeasuredVersion()
+		if measured != tc.want {
+			t.Fatalf("%s: MeasuredVersion = %q, want %q", tc.name, measured, tc.want)
+		}
+		// The display form must never equal the ledger form for a non-measured
+		// state, or the two could be confused at a call site.
+		if tc.want == "" && tc.evidence.Display() == "" {
+			t.Fatalf("%s: display is empty, so prose and absence are indistinguishable", tc.name)
+		}
 	}
 }

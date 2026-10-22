@@ -214,6 +214,30 @@ type caseClause struct {
 	returnsTrue bool
 }
 
+// returnsAnyName reports whether the block returns the named value in any
+// result position. returnsName requires a single result, which misses a
+// `return evidence, vendor` pair; a rule asking "does this branch hand back the
+// device evidence" must read every returned expression.
+func returnsAnyName(block *ast.BlockStmt, name string) bool {
+	found := false
+	if block == nil {
+		return false
+	}
+	ast.Inspect(block, func(n ast.Node) bool {
+		ret, ok := n.(*ast.ReturnStmt)
+		if !ok {
+			return true
+		}
+		for _, result := range ret.Results {
+			if qualifiedName(result) == name {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
+}
+
 // switchCases returns every case clause of every switch in a block.
 func switchCases(block *ast.BlockStmt) []caseClause {
 	var out []caseClause
@@ -221,9 +245,22 @@ func switchCases(block *ast.BlockStmt) []caseClause {
 		return nil
 	}
 	ast.Inspect(block, func(n ast.Node) bool {
-		clause, ok := n.(*ast.CaseClause)
+		if stmt, ok := n.(*ast.SwitchStmt); ok && stmt.Body != nil {
+			out = append(out, clauseFrom(stmt.Body)...)
+			return false
+		}
+		return true
+	})
+	return out
+}
+
+// clauseFrom reads every case clause of one switch body.
+func clauseFrom(body *ast.BlockStmt) []caseClause {
+	var out []caseClause
+	for _, stmt := range body.List {
+		clause, ok := stmt.(*ast.CaseClause)
 		if !ok {
-			return true
+			continue
 		}
 		cc := caseClause{}
 		for _, expr := range clause.List {
@@ -244,9 +281,70 @@ func switchCases(block *ast.BlockStmt) []caseClause {
 				cc.returnsTrue = true
 				continue
 			}
+			if name := qualifiedName(ret.Results[0]); name != "" {
+				cc.returns = append(cc.returns, name)
+			}
 			cc.returns = append(cc.returns, stringLiteralValues(ret.Results[0])...)
 		}
 		out = append(out, cc)
+	}
+	return out
+}
+
+// namesValue reports whether the clause's case list names the given constant.
+func (c caseClause) namesValue(name string) bool {
+	for _, value := range c.values {
+		if value == name {
+			return true
+		}
+	}
+	return false
+}
+
+// returnsName reports whether the clause body returns the named value.
+func (c caseClause) returnsName(name string) bool {
+	for _, value := range c.returns {
+		if value == name {
+			return true
+		}
+	}
+	return false
+}
+
+// tagMatches compares a switch tag against a dotted name, tolerating the
+// accessor form: `local.Kind` and `local.Kind()` name the same discriminant, and
+// a union that hides its field behind a method must not silently drop the rule
+// that reads it.
+func tagMatches(expr ast.Expr, tag string) bool {
+	if qualifiedName(expr) == tag {
+		return true
+	}
+	if call, ok := expr.(*ast.CallExpr); ok && len(call.Args) == 0 {
+		return qualifiedName(call.Fun) == tag
+	}
+	return false
+}
+
+// switchClausesOn returns the case clauses of every switch whose tag renders to
+// the given name, so a rule about one discriminant is not satisfied by a case
+// label that happens to appear in a different switch. Without the tag filter a
+// check for "the placeholder answers undetermined" would match any switch in the
+// function that contained both spellings.
+func switchClausesOn(block *ast.BlockStmt, tag string) []caseClause {
+	var out []caseClause
+	if block == nil {
+		return nil
+	}
+	ast.Inspect(block, func(n ast.Node) bool {
+		stmt, ok := n.(*ast.SwitchStmt)
+		if !ok || stmt.Tag == nil {
+			return true
+		}
+		if !tagMatches(stmt.Tag, tag) {
+			return true
+		}
+		cc := clauseFrom(stmt.Body)
+		out = append(out, cc...)
 		return true
 	})
 	return out
@@ -271,138 +369,4 @@ func calleeName(call *ast.CallExpr) string {
 		return id.Name
 	}
 	return ""
-}
-
-// hasTypeNamed reports whether a signature mentions the named type in its
-// parameters or results. It is how "this function must not take a flag again"
-// is stated: the parameter list is the signature, not the line that formats it.
-func hasTypeNamed(fn *ast.FuncType, name string) bool {
-	if fn == nil {
-		return false
-	}
-	check := func(fields *ast.FieldList) bool {
-		if fields == nil {
-			return false
-		}
-		for _, field := range fields.List {
-			if qualifiedName(field.Type) == name {
-				return true
-			}
-		}
-		return false
-	}
-	return check(fn.Params) || check(fn.Results)
-}
-
-// isStringSliceType reports whether a type expression is []string. It is
-// spelled as an ArrayType with an element name, so asking for the qualified name
-// of the type node alone would return "" and the rule would never see the table
-// it forbids.
-func isStringSliceType(expr ast.Expr) bool {
-	arr, ok := expr.(*ast.ArrayType)
-	if !ok || arr.Len != nil {
-		return false
-	}
-	id, ok := arr.Elt.(*ast.Ident)
-	return ok && id.Name == "string"
-}
-
-// returnsStringSliceLiteral reports whether the file returns a []string built
-// from a composite literal, which is what a silent-switch table looks like. The
-// rule is that no such table may exist while no switch is verified, so the
-// question is whether the literal is there at all.
-func returnsStringSliceLiteral(f *ast.File) bool {
-	found := false
-	ast.Inspect(f, func(n ast.Node) bool {
-		ret, ok := n.(*ast.ReturnStmt)
-		if !ok {
-			return true
-		}
-		for _, result := range ret.Results {
-			lit, ok := result.(*ast.CompositeLit)
-			if ok && isStringSliceType(lit.Type) {
-				found = true
-			}
-		}
-		return !found
-	})
-	return found
-}
-
-// stringLiteralValues returns every string literal value in a node.
-func stringLiteralValues(n ast.Node) []string {
-	var out []string
-	if n == nil {
-		return nil
-	}
-	ast.Inspect(n, func(node ast.Node) bool {
-		if lit, ok := node.(*ast.BasicLit); ok && lit.Kind == token.STRING {
-			out = append(out, unquote(lit))
-		}
-		return true
-	})
-	return out
-}
-
-// topLevelFunc returns the single top-level function declaration with the given
-// name, or nil when there is none.
-func topLevelFunc(f *ast.File, name string) *ast.FuncDecl {
-	decls := topLevelFuncs(f, name)
-	if len(decls) == 0 {
-		return nil
-	}
-	return decls[0]
-}
-
-// funcDeclByName returns the declaration of the named function, whether it is
-// top-level or a method. topLevelFunc deliberately rejects methods - a method
-// is reached through a receiver, so a name-pinning rule that accepted both
-// would silently move targets - but some rules genuinely pin the method, and
-// they say so by asking here instead.
-func funcDeclByName(f *ast.File, name string) *ast.FuncDecl {
-	var out *ast.FuncDecl
-	ast.Inspect(f, func(n ast.Node) bool {
-		if fd, ok := n.(*ast.FuncDecl); ok && fd.Name.Name == name {
-			out = fd
-			return false
-		}
-		return true
-	})
-	return out
-}
-
-// fileDeclaring returns the parsed file in dir that declares the named
-// top-level function. A rule pinned to a function rather than to a filename
-// keeps holding when the function moves to a sibling file, which is how this
-// repository splits a package as it grows.
-func (r *Repo) fileDeclaring(dir, funcName string) (*file, error) {
-	for _, f := range r.dirProd(dir) {
-		if topLevelFunc(f.ast, funcName) != nil {
-			return f, nil
-		}
-	}
-	return nil, &missingDeclError{dir: dir, name: funcName}
-}
-
-// fileWithName returns the parsed file in dir that declares the named top-level
-// entity, whether it is a function, a type, a constant or a variable. A rule
-// about a value (the help text, a struct's shape) has to find its file the same
-// way a rule about a function does, so that moving the declaration does not
-// break the rule.
-func (r *Repo) fileWithName(dir, name string) (*file, error) {
-	for _, f := range r.dirProd(dir) {
-		if hasTopLevelName(f.ast, name) {
-			return f, nil
-		}
-	}
-	return nil, &missingDeclError{dir: dir, name: name}
-}
-
-type missingDeclError struct {
-	dir  string
-	name string
-}
-
-func (e *missingDeclError) Error() string {
-	return e.name + " is gone from " + e.dir
 }

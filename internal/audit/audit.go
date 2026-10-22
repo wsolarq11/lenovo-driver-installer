@@ -2,8 +2,6 @@ package audit
 
 import (
 	"regexp"
-	"sort"
-	"strconv"
 	"strings"
 
 	"lenovo-driver/internal/compare"
@@ -40,6 +38,32 @@ func SourceMapKeys(driverName, driverCode, version string) []string {
 	return keys
 }
 
+// versionInCandidates reports whether a version string is one of the versions
+// this driver has on this machine.
+func versionInCandidates(version string, candidates []string) bool {
+	if version == "" {
+		return false
+	}
+	for _, candidate := range candidates {
+		if candidate == version {
+			return true
+		}
+	}
+	return false
+}
+
+// sourceMapMatchAny returns the first match across every candidate version, so a
+// conflicted driver can still be attributed to an official list through either
+// of its measured versions.
+func sourceMapMatchAny(driver *model.Driver, sourceMap map[string]model.SourceMapEntry, candidates []string) *model.SourceMapEntry {
+	for _, candidate := range candidates {
+		if match := sourceMapMatch(driver, sourceMap, candidate); match != nil {
+			return match
+		}
+	}
+	return nil
+}
+
 // sourceMapMatch mirrors Get-SourceMapMatch.
 func sourceMapMatch(driver *model.Driver, sourceMap map[string]model.SourceMapEntry, localVersion string) *model.SourceMapEntry {
 	if len(sourceMap) == 0 || localVersion == "" {
@@ -55,9 +79,11 @@ func sourceMapMatch(driver *model.Driver, sourceMap map[string]model.SourceMapEn
 }
 
 // resolveExternalDriverSourceLabel mirrors Resolve-ExternalDriverSourceLabel.
-// localVersion is the driver's assessment local version, not on *model.Driver.
-func resolveExternalDriverSourceLabel(driver *model.Driver, alternateSourceMap map[string]model.SourceMapEntry, localVersion string) string {
-	if match := sourceMapMatch(driver, alternateSourceMap, localVersion); match != nil {
+// candidates are the driver's measured local versions, not fields of
+// *model.Driver; taking the set keeps a disagreeing driver attributable through
+// either version instead of matching a joined string that equals no key.
+func resolveExternalDriverSourceLabel(driver *model.Driver, alternateSourceMap map[string]model.SourceMapEntry, candidates []string) string {
+	if match := sourceMapMatchAny(driver, alternateSourceMap, candidates); match != nil {
 		if match.OSName != "" {
 			return "Local newer (version matches " + match.OSName + " list)"
 		}
@@ -210,178 +236,6 @@ type sourceCategoryRule struct {
 	category model.AuditCategory
 	summary  string
 	match    bool
-}
-
-// sourceEvidenceRules assembles the priority table for one driver in the
-// documented order: install history, matching device, current official OS
-// list, then alternate official OS list.
-func sourceEvidenceRules(
-	driver *model.AssessedDriver,
-	history []model.HistoryRecord,
-	deviceEvidence []model.Device,
-	currentOSMap, alternateSourceMap map[string]model.SourceMapEntry,
-) []sourceCategoryRule {
-	localVersion := driver.LocalVersion
-	rules := make([]sourceCategoryRule, 0, 4)
-
-	if latest := latestSourceHistory(history, driver, localVersion); latest != nil {
-		summary := "Installed by this script from OSID " + latest.OSID
-		if latest.OSID == driver.OSID {
-			summary = "Installed by this script from the current OS source"
-		} else if latest.OSName != "" {
-			summary = "Installed by this script from " + latest.OSName
-		}
-		rules = append(rules, sourceCategoryRule{
-			name:     "install-history",
-			category: model.AuditCategoryInstallHistory,
-			summary:  summary,
-			match:    true,
-		})
-	}
-
-	for _, device := range deviceEvidence {
-		if device.DriverVersion != localVersion {
-			continue
-		}
-		// Device evidence comes from shared setupapi logs and the DriverStore,
-		// which record a mechanism (offline image, online package, pre-existing
-		// store) but not an attributable provenance. The category is therefore
-		// External rather than a claim about who installed the driver; the
-		// mechanism stays in the summary and the raw evidence lines.
-		rule := sourceCategoryRule{name: "device:" + device.Name, match: true}
-		rule.category = model.AuditCategoryExternal
-		switch {
-		case device.ImportSource != "" && device.ImportKind == "Offline":
-			rule.summary = "External source (offline image integration): " + device.ImportSource
-		case device.ImportSource != "":
-			rule.summary = "External source (online package installation): " + device.ImportSource
-		default:
-			rule.summary = "External source (pre-existing DriverStore package)"
-		}
-		rules = append(rules, rule)
-	}
-
-	if sourceMapMatch(driver.Driver, currentOSMap, localVersion) != nil {
-		rules = append(rules, sourceCategoryRule{
-			name:     "current-os",
-			category: model.AuditCategoryCurrentOfficialOS,
-			summary:  "Matches the current OS official Lenovo list",
-			match:    true,
-		})
-	}
-
-	if sourceMapMatch(driver.Driver, alternateSourceMap, localVersion) != nil {
-		rules = append(rules, sourceCategoryRule{
-			name:     "alternate-os",
-			category: model.AuditCategoryAlternateOfficialOS,
-			summary:  "Matches another OS official Lenovo list",
-			match:    true,
-		})
-	}
-	return rules
-}
-
-// driverEvidenceLines gathers the always-on audit lines (install history and
-// every matching device), independent of which source ultimately wins the
-// category. The current/alternate OS lines are attached separately when their
-// rule wins, to preserve the first-match summary contract.
-func driverEvidenceLines(driver *model.AssessedDriver, deviceEvidence []model.Device, history []model.HistoryRecord) []string {
-	localVersion := driver.LocalVersion
-	var lines []string
-	if latest := latestSourceHistory(history, driver, localVersion); latest != nil {
-		lines = append(lines, "History: time="+latest.Timestamp+"; version="+latest.Version+"; verified="+latest.VerifiedVersion+"; before="+latest.BeforeVersion+"; result="+latest.Result)
-	}
-	for _, device := range deviceEvidence {
-		if device.DriverVersion != localVersion {
-			continue
-		}
-		lines = append(lines, "Device: "+device.Name+"; version="+device.DriverVersion+"; date="+device.DriverDate+"; INF="+device.InfName+"; provider="+device.ProviderName+"; install-date="+device.InstallDate)
-		if device.PackageDir != "" {
-			lines = append(lines, "DriverStore package: "+device.PackageDir+"; created="+device.PackageCreationTime+"; DriverVer="+device.PackageDriverVer)
-		}
-		if device.ImportSource != "" {
-			lines = append(lines, "Import: source="+device.ImportSource+"; command="+device.ImportCommand+"; log="+device.ImportLog+":"+strconv.Itoa(device.ImportLine))
-		}
-	}
-	return lines
-}
-
-// ResolveDriverSourceEvidence mirrors Resolve-DriverSourceEvidence.
-func ResolveDriverSourceEvidence(driver *model.AssessedDriver, deviceEvidence []model.Device, history []model.HistoryRecord, alternateSourceMap, currentOSMap map[string]model.SourceMapEntry) model.SourceAudit {
-	localVersion := driver.LocalVersion
-	if localVersion == "" {
-		return model.SourceAudit{Category: model.AuditCategoryUnknown, Summary: "No local version evidence"}
-	}
-	evidence := driverEvidenceLines(driver, deviceEvidence, history)
-	for _, rule := range sourceEvidenceRules(driver, history, deviceEvidence, currentOSMap, alternateSourceMap) {
-		if !rule.match {
-			continue
-		}
-		audit := model.SourceAudit{Category: rule.category, Summary: rule.summary, EvidenceLines: evidence}
-		if rule.category == model.AuditCategoryCurrentOfficialOS {
-			if match := sourceMapMatch(driver.Driver, currentOSMap, localVersion); match != nil {
-				audit.EvidenceLines = append(audit.EvidenceLines, "Official current OS: "+match.OSName+" (OSID "+match.OSID+"); version="+localVersion)
-			}
-		} else if rule.category == model.AuditCategoryAlternateOfficialOS {
-			if match := sourceMapMatch(driver.Driver, alternateSourceMap, localVersion); match != nil {
-				audit.EvidenceLines = append(audit.EvidenceLines, "Official alternate OS: "+match.OSName+" (OSID "+match.OSID+"); version="+localVersion)
-			}
-		}
-		return audit
-	}
-	return model.SourceAudit{
-		Category:      model.AuditCategoryUnknown,
-		Summary:       "No install history, DriverStore import evidence, or official Lenovo version match",
-		EvidenceLines: evidence,
-	}
-}
-
-// ResolveDriverSourceLabel mirrors Resolve-DriverSourceLabel.
-func ResolveDriverSourceLabel(driver *model.AssessedDriver, history []model.HistoryRecord, alternateSourceMap map[string]model.SourceMapEntry, sourceAudit *model.SourceAudit) string {
-	if latest := latestSourceHistory(history, driver, driver.LocalVersion); latest != nil {
-		sourceOSID := latest.OSID
-		sourceOSName := latest.OSName
-		if sourceOSID != "" && sourceOSID != driver.OSID {
-			if sourceOSName != "" {
-				return "Local newer (source " + sourceOSName + ")"
-			}
-			return "Local newer (source OSID " + sourceOSID + ")"
-		}
-		if sourceOSID == driver.OSID {
-			return "Local newer (same current OS source)"
-		}
-	}
-	if sourceAudit != nil && sourceAudit.Category == model.AuditCategoryCurrentOfficialOS {
-		return "Local newer (version matches current OS official list)"
-	}
-	return resolveExternalDriverSourceLabel(driver.Driver, alternateSourceMap, driver.LocalVersion)
-}
-
-func latestSourceHistory(history []model.HistoryRecord, driver *model.AssessedDriver, localVersion string) *model.HistoryRecord {
-	var matches []model.HistoryRecord
-	for _, h := range history {
-		if h.Result != "Installed" && h.Result != "Verified" {
-			continue
-		}
-		if h.Version != localVersion && h.VerifiedVersion != localVersion {
-			continue
-		}
-		if h.DriverCode != driver.DriverCode && h.DriverName != driver.DriverName {
-			continue
-		}
-		if h.BeforeVersion != "" && h.BeforeVersion == localVersion {
-			continue
-		}
-		matches = append(matches, h)
-	}
-	if len(matches) == 0 {
-		return nil
-	}
-	sort.SliceStable(matches, func(i, j int) bool {
-		return matches[i].Timestamp > matches[j].Timestamp
-	})
-	best := matches[0]
-	return &best
 }
 
 func submatch(re *regexp.Regexp, line, name string) string {

@@ -201,10 +201,10 @@ func TestLedgerDeviceIdentityRejectsFreeText(t *testing.T) {
 func TestLedgerHashByNameRejectsPositionalIndex(t *testing.T) {
 	ctx := loadFixture(t, "example.com/m", map[string]string{
 		"go.mod": "module example.com/m\n\ngo 1.27\n",
-		"internal/app/history.go": "package app\n\n" +
-			"var historyColumns = []string{}\n\n" +
+		"internal/ledger/ledger.go": "package ledger\n\n" +
+			"var Columns = []string{}\n\n" +
 			"func resolveHashIndex(header []string) (int, int, bool) { return 0, 0, true }\n\n" +
-			"func readRow(row []string) string {\n\treturn row[len(historyColumns)]\n}\n",
+			"func readRow(row []string) string {\n\treturn row[len(Columns)]\n}\n",
 	})
 	err := checkErr(t, ctx, "ledger hash column located by header name")
 	if err == nil {
@@ -241,7 +241,7 @@ func TestAllowListIgnoresCommentMentioningNotEqual(t *testing.T) {
 			"\t// never widen this with a != comparison\n" +
 			"\treturn status == StatusUpdate || status == StatusNotInstalled\n}\n",
 		"internal/app/view.go": "package app\n\nimport \"example.com/m/internal/model\"\n\n" +
-			"func partition() {\n\tif model.InAutomaticInstallSet(0) {\n\t\treturn\n\t}\n}\n",
+			"func partitionViewDrivers() {\n\tif model.InAutomaticInstallSet(0) {\n\t\treturn\n\t}\n}\n",
 		"internal/app/export.go": "package app\n\nimport \"example.com/m/internal/model\"\n\n" +
 			"type payload struct {\n\tIsApplicable bool\n}\n\n" +
 			"func export() payload {\n\treturn payload{IsApplicable: model.InAutomaticInstallSet(0)}\n}\n",
@@ -263,10 +263,13 @@ func TestTestGuardIgnoresCommentNamingTheTest(t *testing.T) {
 		// which is exactly the drift the comment used to hide.
 		"internal/model/model.go": "package model\n\ntype CompareStatus int\n\n" +
 			"const (\n\tStatusUnknown CompareStatus = iota\n\tStatusNotInstalled\n)\n\n" +
-			"const LocalVersionProvisioned = \"Provisioned\"\n",
+			"type LocalEvidenceKind int\n\n" +
+			"const (\n\tLocalEvidenceAbsent LocalEvidenceKind = iota\n\tLocalEvidenceProvisioned\n)\n\n" +
+			"type LocalEvidence struct{ Kind LocalEvidenceKind }\n",
 		"internal/compare/matching.go": "package compare\n\nimport \"example.com/m/internal/model\"\n\n" +
-			"func CompareDriverStatus(local string) model.CompareStatus {\n" +
-			"\tif local == model.LocalVersionProvisioned {\n" +
+			"func CompareDriverStatus(local model.LocalEvidence) model.CompareStatus {\n" +
+			"\tswitch local.Kind() {\n" +
+			"\tcase model.LocalEvidenceProvisioned:\n" +
 			"\t\treturn model.StatusUnknown\n\t}\n" +
 			"\treturn model.StatusNotInstalled\n}\n",
 		"internal/app/evidence_chain_test.go": "package app\n\nimport \"testing\"\n\n" +
@@ -715,4 +718,166 @@ func exampleBehaviorFixture(extra map[string]string) map[string]string {
 		files[k] = v
 	}
 	return files
+}
+
+// TestConventionsMustBeTracked rejects the shape this rule was written for: the
+// authority sitting in a gitignored tree, where a clone has nothing and the gate
+// reads nothing. Two directions are pinned here — an unreadable authority, and a
+// readable authority with no entrance pointing at it.
+func TestConventionsMustBeTracked(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod":             "module example.com/m\n\ngo 1.27\n",
+		"docs/spec/index.md": "# index\n",
+	})
+	err := checkErr(t, ctx, "the coding conventions have one tracked authority")
+	if err == nil {
+		t.Fatal("missing convention documents were not rejected")
+	}
+}
+
+// TestConventionsRejectSecondCopyInIgnoredTree rejects a full copy reappearing
+// under a gitignored tree, which is how the copy that drifted was kept. A
+// pointer stub stays legal; the rule keys on size because that is what separates
+// a pointer from a copy.
+func TestConventionsRejectSecondCopyInIgnoredTree(t *testing.T) {
+	files := map[string]string{
+		"go.mod":             "module example.com/m\n\ngo 1.27\n",
+		"docs/spec/index.md": "编码规范在 `docs/spec/coding/`。\n",
+	}
+	for _, rel := range conventionDocs {
+		files[rel] = "# conventions\n"
+	}
+	// A copy large enough to be content rather than a pointer.
+	files[".trellis/spec/backend/quality-guidelines.md"] = strings.Repeat("duplicated convention text\n", 40)
+
+	ctx := loadFixture(t, "example.com/m", files)
+	err := checkErr(t, ctx, "the coding conventions have one tracked authority")
+	if err == nil {
+		t.Fatal("a second copy of a convention document in a gitignored tree was not rejected")
+	}
+	if !strings.Contains(err.Error(), ".trellis") {
+		t.Fatalf("the refusal must name the offending copy: %v", err)
+	}
+}
+
+// TestAuditMustUseCandidateVersionSet rejects an audit that compares one display
+// string. The red-light is the shape that lost evidence: a sourceEvidenceRules
+// that reads driver.LocalVersion directly and filters devices by raw equality.
+func TestAuditMustUseCandidateVersionSet(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/audit/audit.go": "package audit\n\nimport \"example.com/m/internal/model\"\n\n" +
+			"func sourceEvidenceRules(d *model.AssessedDriver) bool {\n" +
+			"\tlocalVersion := d.LocalVersion\n" +
+			"\treturn localVersion == \"x\"\n}\n",
+	})
+	err := checkErr(t, ctx, "the source audit matches every measured version")
+	if err == nil {
+		t.Fatal("an audit comparing one display string was not rejected")
+	}
+	if !strings.Contains(err.Error(), "candidate") {
+		t.Fatalf("the refusal must name what is missing: %v", err)
+	}
+}
+
+// The positive direction: an audit that asks for the candidate set passes.
+func TestAuditUsingCandidateVersionSetPasses(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/audit/audit.go": "package audit\n\nimport \"example.com/m/internal/model\"\n\n" +
+			"func candidateVersions(d *model.AssessedDriver) []string { return nil }\n\n" +
+			"func versionInCandidates(v string, c []string) bool { return false }\n\n" +
+			"func sourceEvidenceRules(d *model.AssessedDriver) bool {\n" +
+			"\tfor _, v := range candidateVersions(d) {\n" +
+			"\t\tif versionInCandidates(v, nil) {\n\t\t\treturn true\n\t\t}\n\t}\n" +
+			"\treturn false\n}\n",
+	})
+	if err := checkErr(t, ctx, "the source audit matches every measured version"); err != nil {
+		t.Fatalf("an audit using the candidate set was rejected: %v", err)
+	}
+}
+
+// TestEvidenceUnionRejectsExportedFields rejects the regression that would make
+// the union suggestion-only: exported payload fields, which let any caller build
+// a Conflicted state carrying one version.
+func TestEvidenceUnionRejectsExportedFields(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/model/evidence.go": "package model\n\n" +
+			"type LocalEvidenceKind int\n\n" +
+			"const (\n\tLocalEvidenceUnobserved LocalEvidenceKind = iota\n\tLocalEvidenceVersion\n)\n\n" +
+			"type LocalEvidence struct {\n\tKind    LocalEvidenceKind\n\tVersion string\n}\n\n" +
+			"func NotObserved() LocalEvidence                     { return LocalEvidence{} }\n" +
+			"func ObservedVersion(v string) LocalEvidence          { return LocalEvidence{} }\n" +
+			"func ObservedAbsence() LocalEvidence                  { return LocalEvidence{} }\n" +
+			"func ObservedConflict(v []string) LocalEvidence       { return LocalEvidence{} }\n" +
+			"func ObservedProvisioning() LocalEvidence             { return LocalEvidence{} }\n",
+	})
+	err := checkErr(t, ctx, "local evidence is a closed union")
+	if err == nil {
+		t.Fatal("exported payload fields were not rejected")
+	}
+	if !strings.Contains(err.Error(), "exported field") {
+		t.Fatalf("the refusal must name the defect: %v", err)
+	}
+}
+
+// TestEvidenceUnionRejectsAbsentZeroValue rejects the ordering that made a
+// forgotten assignment mean "measured absence".
+func TestEvidenceUnionRejectsAbsentZeroValue(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/model/evidence.go": "package model\n\n" +
+			"type LocalEvidenceKind int\n\n" +
+			"const (\n\tLocalEvidenceAbsent LocalEvidenceKind = iota\n\tLocalEvidenceUnobserved\n)\n\n" +
+			"type LocalEvidence struct {\n\tkind LocalEvidenceKind\n}\n\n" +
+			"func NotObserved() LocalEvidence                { return LocalEvidence{} }\n" +
+			"func ObservedVersion(v string) LocalEvidence     { return LocalEvidence{} }\n" +
+			"func ObservedAbsence() LocalEvidence             { return LocalEvidence{} }\n" +
+			"func ObservedConflict(v []string) LocalEvidence  { return LocalEvidence{} }\n" +
+			"func ObservedProvisioning() LocalEvidence        { return LocalEvidence{} }\n",
+	})
+	err := checkErr(t, ctx, "local evidence is a closed union")
+	if err == nil {
+		t.Fatal("an Absent zero value was not rejected")
+	}
+	if !strings.Contains(err.Error(), "zero value") {
+		t.Fatalf("the refusal must explain the zero-value requirement: %v", err)
+	}
+}
+
+// TestVersionColumnRuleRejectsDisplay rejects handing the display prose to a
+// ledger append. That value is a sentence; the columns are versions.
+func TestVersionColumnRuleRejectsDisplay(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/app/install.go": "package app\n\nimport \"example.com/m/internal/model\"\n\n" +
+			"func (a *App) writeHistoryRecordChecked(d *model.AssessedDriver, r, m, v, b string) {}\n\n" +
+			"func (a *App) verifyInstalled(d []*model.AssessedDriver) {\n" +
+			"\tev := model.NotObserved()\n" +
+			"\ta.writeHistoryRecordChecked(d[0], \"Verified\", \"m\", ev.Display(), ev.Display())\n}\n",
+	})
+	err := checkErr(t, ctx, "ledger version columns hold measured versions")
+	if err == nil {
+		t.Fatal("Display() passed into a ledger append was not rejected")
+	}
+	if !strings.Contains(err.Error(), "display prose") && !strings.Contains(err.Error(), "Message") {
+		t.Fatalf("the refusal must name the prose/version confusion: %v", err)
+	}
+}
+
+// TestVersionColumnRuleAcceptsMeasured is the positive direction.
+func TestVersionColumnRuleAcceptsMeasured(t *testing.T) {
+	ctx := loadFixture(t, "example.com/m", map[string]string{
+		"go.mod": "module example.com/m\n\ngo 1.27\n",
+		"internal/app/install.go": "package app\n\nimport \"example.com/m/internal/model\"\n\n" +
+			"func (a *App) writeHistoryRecordChecked(d *model.AssessedDriver, r, m, v, b string) {}\n\n" +
+			"func (a *App) verifyInstalled(d []*model.AssessedDriver) {\n" +
+			"\tev := model.NotObserved()\n" +
+			"\tmsg := \"local=\" + ev.Display()\n" +
+			"\ta.writeHistoryRecordChecked(d[0], \"Verified\", msg, ev.MeasuredVersion(), ev.MeasuredVersion())\n}\n",
+	})
+	if err := checkErr(t, ctx, "ledger version columns hold measured versions"); err != nil {
+		t.Fatalf("measured versions were rejected: %v", err)
+	}
 }

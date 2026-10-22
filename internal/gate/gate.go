@@ -250,6 +250,9 @@ func checks() []check {
 		{"driver selection order is a total order", checkSelectionOrderTotal},
 		{"the automatic install set is backed by measurements only", checkAutomaticSetBackedByMeasurements},
 		{"software-versioned compare falls back to the measured device version", checkSoftwareVersionedFallback},
+		{"the source audit matches every measured version", checkAuditUsesEvidenceSet},
+		{"local evidence is a closed union", checkEvidenceUnionStaysClosed},
+		{"ledger version columns hold measured versions", checkVersionColumnsHoldVersions},
 		{"CLI exit codes match docs contract", checkCLIExitCodesMatchDocs},
 		{"CLI artifact paths match docs contract", checkCLIArtifactPathsMatchDocs},
 		{"the documented JSON contracts match the engine", checkJSONContractsMatchDocs},
@@ -262,6 +265,7 @@ func checks() []check {
 		{"the OS-switch hint only speaks where a menu exists", checkInteractiveHintGuarded},
 		{"rows dropped before selection are reported", checkSkippedRowsReported},
 		{"local newer is not logged as an anomaly", checkLocalNewerNotWarn},
+		{"the coding conventions have one tracked authority", checkConventionsAreTracked},
 	}
 }
 

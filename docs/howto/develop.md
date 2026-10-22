@@ -23,7 +23,7 @@
 门禁包含这些强制项（细节在脚本里，与不变量挂钩）：
 
 - Go build/test/vet/gofmt；`legacyps` tag 的 build/vet。
-- 生产 Go 文件 ≤ 500 行。
+- 生产 Go 文件 ≤ 400 行（上限值只在 `scripts/verify.ps1` 声明一次）。
 - 覆盖率下限（`inventory` 8 / `app` 22 / `install` 45 / `compare` 50 / `audit` 50 / `download` 35 / `plan` 65 / `api` 55 / `trust` 40 / `gate` 70）。`trust` 是签名边界（判定下载包是否为 Lenovo 签名且未被吊销），其联网 smoke 按设计 opt-in，故离线下限是它唯一的防退化闸门（该钉的版本上实测 45.5%，删掉白名单测试后掉到 25.5%，下限落在这个缝里）。**下限只在钉死的编译器上有意义**：数字读自 `go test -cover`，插桩随补丁版本变，故门禁有专步断言运行的工具链等于 `go.mod` 所钉的那个版本；否则同一份代码在两台机器上会给出不同的「通过」。
 - 含非 ASCII 的 `.ps1` 必须 UTF-8 BOM（Windows PowerShell 5.1 要求）；`verify.ps1` 检测即失败（CI 阻断）、`-FixBom` 显式修复，语法解析覆盖全部 `.ps1`。
 - 宿主无关读取：仓库内每个 `.ps1` 的 `Get-Content` 必须显式 `-Encoding`（门禁自身统一走 `Read-GateText`）。5.1 用 ANSI 代码页解码无 BOM 的 UTF-8，负向断言会在错宿主下**静默放过**——该步审计的是读取方而不是文件，注入一个裸 `Get-Content -Raw` 即红。

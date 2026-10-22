@@ -29,14 +29,18 @@ func checkBehaviorDocMatchesEngine(ctx *Context) error {
 		return err
 	}
 
-	// The flags the engine registers, read as declarations rather than text.
-	app, err := ctx.Repo.fileAt("internal/app/app.go")
-	if err != nil {
-		return err
+	// The flags the engine registers, read as declarations rather than text. The
+	// whole package is scanned rather than one filename: flag registration moved
+	// out of app.go when the CLI surface became its own file, and a path-pinned
+	// rule would have reported "the parse is wrong" instead of finding them.
+	var registered = map[string]bool{}
+	for _, f := range ctx.Repo.dirProd("internal/app") {
+		for _, name := range flagNames(f.ast) {
+			registered[name] = true
+		}
 	}
-	registered := toSet(flagNames(app.ast))
 	if len(registered) < 10 {
-		return fmt.Errorf("parsed only %d registered CLI flags from app.go; the parse is wrong", len(registered))
+		return fmt.Errorf("parsed only %d registered CLI flags from internal/app; the parse is wrong", len(registered))
 	}
 	documented := flagsInDoc(behavior)
 	if len(documented) < 5 {

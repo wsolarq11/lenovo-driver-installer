@@ -141,6 +141,10 @@ Assert-Step 'Go test + coverage floor (side-effect packages)' {
         # red-light test is deleted starts passing everything silently — the one
         # failure mode that leaves no trace anywhere else in this gate.
         'lenovo-driver/internal/gate'      = 70
+        # The WORM ledger's structure: column order, integrity chain, schema
+        # refusal. A wrong chain makes tampering invisible rather than loud, so
+        # the floor sits high. Measured 85.8% on the pinned toolchain.
+        'lenovo-driver/internal/ledger'    = 80
     }
     $below = @()
     foreach ($line in @($coverageOutput)) {
@@ -223,17 +227,23 @@ Assert-Step 'non-Windows build and vet' {
     }
 }
 
-Assert-Step 'Go source file size (prod <= 500)' {
+# The production-file line ceiling is declared exactly once, here. The step name
+# deliberately carries no number: a number in the step name is a second copy, and
+# the two copies drifted before (400 in AGENTS.md, 500 in this script) with every
+# file between them silently passing or failing depending on which text you read.
+$script:ProdFileLineLimit = 400
+
+Assert-Step 'Go source file size (prod limit)' {
     $over = @()
     foreach ($dir in @('cmd', 'internal')) {
         Get-ChildItem -LiteralPath (Join-Path $repoRoot $dir) -Recurse -Filter '*.go' -File |
             Where-Object { $_.Name -notlike '*_test.go' } |
             ForEach-Object {
                 $count = @(((Read-GateText $_.FullName) -replace '\r?\n$', '') -split "\r?\n").Count
-                if ($count -gt 500) { $over += ("{0} = {1} lines" -f $_.FullName, $count) }
+                if ($count -gt $script:ProdFileLineLimit) { $over += ("{0} = {1} lines" -f $_.FullName, $count) }
             }
     }
-    if ($over.Count -gt 0) { throw "production Go file exceeds 500 lines: $($over -join ', ')" }
+    if ($over.Count -gt 0) { throw "production Go file exceeds $script:ProdFileLineLimit lines: $($over -join ', ')" }
 }
 
 Assert-Step 'PowerShell UTF-8 BOM (non-ASCII ps1 must carry BOM)' {
