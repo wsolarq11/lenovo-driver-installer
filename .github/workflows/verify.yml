@@ -28,6 +28,15 @@ jobs:
       fail-fast: false
       matrix:
         host: [pwsh, powershell]
+    # GOTOOLCHAIN lives at job level, not on the setup-go step: a step-level
+    # env: reaches only that step's process, and the gate runs in later steps.
+    # Run 53 proved it - setup-go downloaded go1.27.2 and `go version` reported
+    # it, while the gate's `go env GOVERSION` still saw the image's preinstalled
+    # go1.27.3. The runner image can drift ahead of go.mod's pin at any time;
+    # the coverage floors are only thresholds for the compiler that measured
+    # them, so every go command in every step must use the pinned release.
+    env:
+      GOTOOLCHAIN: go1.27.2
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -44,17 +53,6 @@ jobs:
           # Stdlib-only module (go.mod has no requires, hence no go.sum).
           # setup-go defaults cache to true, which would emit a misleading
           # "go.sum not found" warning; disable it explicitly.
-        env:
-          # setup-go resolves `go 1.27` from go-version-file but may land on a
-          # newer preinstalled patch (the runner image moved to go1.27.3 while
-          # go.mod pins go1.27.2), and the gate's toolchain step then fails the
-          # run exactly as designed: floors measured by another compiler are not
-          # verdicts. GOTOOLCHAIN=go1.27.2 makes every go command use the pinned
-          # release, downloading it if the image does not have it. The variable
-          # is set here — once, for every step — rather than patched into the
-          # gate script, because which compiler runs is the environment's
-          # decision, not the verifier's.
-          GOTOOLCHAIN: go1.27.2
       - name: Report Go and host versions
         shell: pwsh
         # The gate has its own step asserting the running toolchain matches the
