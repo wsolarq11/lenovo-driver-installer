@@ -50,9 +50,9 @@ jobs:
           # toolchain directive when go.mod has one.
           go-version-file: go.mod
           cache: false
-          # Stdlib-only module (go.mod has no requires, hence no go.sum).
-          # setup-go defaults cache to true, which would emit a misleading
-          # "go.sum not found" warning; disable it explicitly.
+          # The module carries one dependency (mygo, for internal/gui); the
+          # gate's `go build ./...` fetches it through the module proxy as
+          # usual. Build caching stays off to keep every run from-image.
       - name: Report Go and host versions
         shell: pwsh
         # The gate has its own step asserting the running toolchain matches the

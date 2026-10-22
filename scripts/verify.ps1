@@ -201,8 +201,8 @@ Assert-Step 'non-Windows build and vet' {
     # //go:build !windows file holding the stubs for every native entry point.
     # The Windows build excludes them by build tag, so nothing on the normal
     # path ever compiles them: a syntax error or signature drift there would sit
-    # unnoticed until someone built elsewhere. Cross-compiling is cheap (the
-    # module is stdlib-only) and covers all three at once.
+    # unnoticed until someone built elsewhere. Cross-compiling is cheap (mygo
+    # itself builds without cgo) and covers all three at once.
     $prevGoos = $env:GOOS
     $prevCgo = $env:CGO_ENABLED
     try {
@@ -476,7 +476,7 @@ Assert-Step 'the workflow files are usable by GitHub' {
     #
     # The instance that happened here: `shell: ${{ matrix.shell }}`. GitHub
     # allows no context in the shell keyword, so the whole file was invalid.
-    # There is no YAML parser available offline (and the module is stdlib-only),
+    # There is no YAML parser available offline in the gate,
     # so this pins the rules that are both real and checkable as text. It is
     # deliberately not a general YAML validator, and it says so rather than
     # implying more coverage than it has.
