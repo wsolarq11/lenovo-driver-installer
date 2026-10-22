@@ -16,9 +16,9 @@ import (
 )
 
 // readFile returns a repository file's bytes as text. The Go rules read Go
-// source through the parser; the few non-Go artifacts a rule pins (the WPF
-// markup) are read here. Decoding is explicit UTF-8, so the verdict does not
-// depend on the host's default code page the way a PowerShell Get-Content does.
+// source through the parser; the few non-Go artifacts a rule pins (specs and
+// launcher scripts) are read here. Decoding is explicit UTF-8, so the verdict
+// does not depend on the host's default code page.
 func (r *Repo) readFile(rel string) (string, error) {
 	data, err := os.ReadFile(filepath.Join(r.root, filepath.FromSlash(rel)))
 	if err != nil {
@@ -95,8 +95,8 @@ func checkAutomaticSetExcludesDowngrade(ctx *Context) error {
 		}
 	}
 
-	// The GUI export is a second exit onto the same set: the WPF install-all
-	// button filters on IsApplicable and passes the codes back, bypassing the
+	// The GUI export is a second exit onto the same set: a GUI install-all
+	// action filters on IsApplicable and passes the codes back, bypassing the
 	// partition entirely. It must project the same predicate or the GUI keeps
 	// downgrading what the CLI refuses.
 	export, err := ctx.Repo.fileAt("internal/app/export.go")
@@ -108,14 +108,15 @@ func checkAutomaticSetExcludesDowngrade(ctx *Context) error {
 			"would otherwise act on a set the CLI does not")
 	}
 
-	// The button label makes the same claim to the operator.
-	xaml, err := ctx.Repo.readFile("wpf/window.xaml")
+	// The embedded GUI must project the same predicate onto its own row
+	// rendering: projectRows is its single row projection.
+	guiRunner, err := ctx.Repo.fileAt("internal/gui/runner.go")
 	if err != nil {
 		return err
 	}
-	if strings.Contains(xaml, "安装全部可安装") {
-		return fmt.Errorf("the WPF install-all button still says \"安装全部可安装\"; the set no longer " +
-			"contains every applicable driver")
+	if !assignsCallToKey(guiRunner.ast, "IsApplicable", "model.InAutomaticInstallSet") {
+		return fmt.Errorf("internal/gui/runner.go must project model.InAutomaticInstallSet onto IsApplicable; " +
+			"the GUI would otherwise act on a set the CLI does not")
 	}
 	return nil
 }
@@ -269,12 +270,12 @@ func checkAutomaticSetBackedByMeasurements(ctx *Context) error {
 }
 
 // checkInteractiveHintGuarded holds the run-log contract for the OS-switch
-// hint: "press t" names the interactive selection menu, and only three run
-// shapes show that menu. Export, dry-run, and GUI-code runs never do - the
-// WPF switches OS with a dropdown - and a hint that names a key that cannot
-// do anything sends the reader looking for a prompt that will not appear.
-// The guard lives in the same if statement as the log call, so the check
-// insists the guard names every non-interactive run shape.
+// hint: "press t" names the interactive selection menu, and only the plain
+// interactive run shows that menu. Export, dry-run, and GUI-code runs never
+// do - the desktop GUI switches OS with a dropdown - and a hint that names a
+// key that cannot do anything sends the reader looking for a prompt that will
+// not appear. The guard lives in the same if statement as the log call, so
+// the check insists the guard names every non-interactive run shape.
 func checkInteractiveHintGuarded(ctx *Context) error {
 	// resolveListOS is a method, so it cannot be located by fileDeclaring
 	// (which deliberately matches receiver-less decls only); search by name.

@@ -15,7 +15,7 @@
 - 官方列表中被包过滤器丢弃的行（厂商停用、固件名、非安装扩展名）逐行写入运行日志（`DriverCode + FileName + 原因`），不静默消失——计划展示的行数必须能与 API 返回行数对账。
 - 汇总 `Note` 行不解释代码产出不了的状态：`Unknown` 逐行注原因（不再有「multi-vendor」一揽子句），`inference` 一览说明不再打印（`StatusEvidenceBasis` 已不产出该级，见不变量 4 强制点）。
 - `Local newer` 的来源备注按 `INFO` 记录。事实标准规则 2 明确它不是异常；对善态机打十条 WARN 会训练读者跳过所有 WARN。
-- 「交互菜单按 `t` 切换 OS 列表」的提示只在会出现交互菜单的运行里打印：export（`-GuiExportPath`）、dry-run、`-GuiInstallCodes` 三种运行没有菜单（WPF 用下拉框切 OS），不出现该提示。
+- 「交互菜单按 `t` 切换 OS 列表」的提示只在会出现交互菜单的运行里打印：export（`-GuiExportPath`）、dry-run、`-GuiInstallCodes` 三种运行没有菜单（桌面 GUI 用下拉框切 OS），不出现该提示。
 
 ### 来源审计的证据等级（[推断]）
 

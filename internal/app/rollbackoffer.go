@@ -137,6 +137,78 @@ func (a *App) rollbackOfferPath() string {
 	return filepath.Join(filepath.Dir(a.HistoryPath), rollbackOfferFileName)
 }
 
+// PendingOffer is the GUI-facing projection of one rollback offer: display
+// evidence for informed consent. The WORM ledger, not this artifact, decides
+// whether the offer can still be acted on; construct them with
+// NewPendingOffer, which records that ledger verdict.
+type PendingOffer struct {
+	DriverCode    string
+	DriverName    string
+	AfterVersion  string
+	BeforeVersion string
+	BeforeInf     string
+	Devices       []PendingOfferDevice
+
+	pending bool
+}
+
+// NewPendingOffer records one offer and whether the ledger still shows it
+// actionable.
+func NewPendingOffer(code, name, afterVersion, beforeVersion, beforeInf string, devices []PendingOfferDevice, pending bool) PendingOffer {
+	return PendingOffer{
+		DriverCode:    code,
+		DriverName:    name,
+		AfterVersion:  afterVersion,
+		BeforeVersion: beforeVersion,
+		BeforeInf:     beforeInf,
+		Devices:       devices,
+		pending:       pending,
+	}
+}
+
+// Pending reports whether the ledger still shows the offer actionable.
+func (o *PendingOffer) Pending() bool { return o.pending }
+
+// PendingOfferDevice is one problem device an offer would roll back.
+type PendingOfferDevice struct {
+	PnpDeviceID string
+	Problem     string
+}
+
+// PendingRollbackOffers returns the offers a rollback could still act on:
+// ledger-pending codes joined with the display artifact. File and ledger read
+// failures yield no offers rather than a partial, unattributed list.
+func (a *App) PendingRollbackOffers() []PendingOffer {
+	records := a.ReadHistory(context.Background())
+	pending := pendingRollbackCodes(records)
+	if len(pending) == 0 {
+		return nil
+	}
+	offers, err := a.readRollbackOffers()
+	if err != nil {
+		return nil
+	}
+	var out []PendingOffer
+	for _, offer := range offers {
+		if !pending[offer.DriverCode] {
+			continue
+		}
+		devices := make([]PendingOfferDevice, 0, len(offer.Devices))
+		for _, device := range offer.Devices {
+			devices = append(devices, PendingOfferDevice{
+				PnpDeviceID: device.PnpDeviceID,
+				Problem:     device.Problem,
+			})
+		}
+		out = append(out, NewPendingOffer(
+			offer.DriverCode, offer.DriverName,
+			offer.AfterVersion, offer.BeforeVersion, offer.BeforeInf,
+			devices, true,
+		))
+	}
+	return out
+}
+
 func (a *App) writeRollbackOffers(offers []rollbackOffer) error {
 	data, err := json.MarshalIndent(rollbackOffersFile{Offers: offers}, "", "  ")
 	if err != nil {

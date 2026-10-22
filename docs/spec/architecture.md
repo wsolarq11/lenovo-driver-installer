@@ -8,30 +8,25 @@
 
 Lenovo 驱动安装器是面向联想中国大陆机型的 Windows 桌面工具：解析机型与主机编号 → 查询联想官方驱动接口 → 与本地驱动状态对比 → 让用户选择下载或安装适用驱动。
 
-运行时引擎是 Go CLI（`cmd/lenovo-driver` → `internal/app`）。PowerShell WPF 是唯一桌面前端，通过 JSON 导出文件与 `DriverCode` 选择与 CLI 通信。仓库里没有第二个运行时引擎。
+运行时引擎是 Go CLI（`cmd/lenovo-driver` → `internal/app`）。桌面 GUI 是 mygo 原生 UI（`internal/gui`），引擎直接嵌入 GUI 进程：GUI 只是状态渲染层，驱动决策全部在引擎内。仓库里没有第二个运行时引擎。
 
 ## 2. 分层
 
 ```text
 User
   |
-  | install_lenovo_drivers.bat / install_lenovo_drivers_wpf.bat
+  | install_lenovo_drivers.bat（CLI 模式）/ bin\lenovo-driver.exe -Gui（GUI 模式）
   v
-WPF 层 (lenovo_driver_wpf.ps1 -> wpf/ui.ps1, worker.ps1, actions.ps1)
-  |
-  | Start-Process bin\lenovo-driver.exe
-  | -GuiExportPath <json> / -GuiInstallCodes <codes>
-  v
-Go CLI (cmd/lenovo-driver -> internal/app)
-  |
-  | 系统调用
-  v
-联想 API + Windows 盘点 + 安装器 + 文件
+Go 引擎 (cmd/lenovo-driver -> internal/app)
+  ^                             |
+  | 函数调用（嵌入）             | 系统调用
+  |                             v
+internal/gui (mygo 原生 UI)   联想 API + Windows 盘点 + 安装器 + 文件
 ```
 
-Go CLI 拥有全部驱动业务逻辑：API 访问与归一化、本机/OS/PnP/应用/软件快照、适用性与版本比较、来源审计、下载重试与 URL 刷新、MD5/SHA-256 完整性、MSI/INF/ZIP/CAB/EXE 安装分发、计划/日志/账本/JSON 导出产物。
+Go 引擎拥有全部驱动业务逻辑：API 访问与归一化、本机/OS/PnP/应用/软件快照、适用性与版本比较、来源审计、下载重试与 URL 刷新、MD5/SHA-256 完整性、MSI/INF/ZIP/CAB/EXE 安装分发、计划/日志/账本/JSON 导出产物。
 
-WPF 只是表现壳：渲染 JSON 导出、启动后台 Go 进程、回传 `DriverCode` 选择。它不实现驱动匹配或安装逻辑。
+`internal/gui` 只是表现壳：状态 → mygo 视图的纯函数、后台 goroutine 调引擎、经 `Window.Update` 把结果写回状态。它不实现驱动匹配、来源归因或安装集判定；安装集成员资格直接投影 `model.InAutomaticInstallSet`。GUI 启动时经唯一 UAC 入口提权（`-Gui` 非管理员即 runas 重启自身）。
 
 ### 2.1 确定性边界（架构级约束）
 
@@ -44,10 +39,10 @@ WPF 只是表现壳：渲染 JSON 导出、启动后台 Go 进程、回传 `Driv
 ## 3. 仓库布局
 
 ```text
-cmd/lenovo-driver            CLI 入口
+cmd/lenovo-driver            CLI 与 GUI 共用入口（-Gui 分发到 internal/gui）
 cmd/gatecheck                门禁的 Go 源码检查入口（把 internal/gate 的规则接成 verify.ps1 的命名步骤）
 internal/api                 Lenovo API 客户端与响应归一化
-internal/app                 编排、CLI、GUI 导出、提示（history.go 只是 ledger 的薄适配）
+internal/app                 编排、CLI、GUI 出口门面（gui.go）、JSON 导出、提示（history.go 只是 ledger 的薄适配）
 internal/audit               setupapi 解析与来源证据审计
 internal/compare             版本解析、匹配、选择、格式化
 internal/download            HTTP 下载、重试、SHA-256 伴生文件
@@ -55,6 +50,7 @@ internal/gate                门禁规则本体：go/parser + go/types 的只读
                              checks_docs.go=契约文档比对；checks_fixtures.go=记录数据与证据链；
                              checks_behavior.go=行为规范比对；checks_rules.go=不变量规则；
                              checks_install.go=安装/账本规则；checks_conventions.go=规范单一源
+internal/gui                 桌面 GUI：mygo 原生 UI 壳（状态→视图纯函数 + 引擎嵌入 runner + UAC 提权入口）
 internal/install             安装器分发与 EXE 回退；原生 INF 安装（pnputil 回退）
 internal/ledger              WORM 账本：列定义、哈希链、按表头名定位、schema 拒绝
 internal/inventory           Windows 机器/OS/PnP/应用快照（原生 SetupAPI/CfgMgr32/注册表）
@@ -62,17 +58,11 @@ internal/model               共享纯数据类型
 internal/pathutil            Windows 路径助手
 internal/plan                计划文本、表格、账本行构建
 internal/trust               WinVerifyTrust Authenticode 签名校验
-wpf/window.xaml              WPF 窗口布局
-wpf/ui.ps1                   WPF 窗口构造与 UI 助手
-wpf/worker.ps1               WPF 后台 worker 状态机
-wpf/actions.ps1              WPF 安装动作确认与分发
 scripts/verify.ps1           离线验收门禁
 scripts/dev.ps1              快速内循环
 scripts/lib/go-toolchain.ps1 go 工具链发现（单一源）
-scripts/lib/ensure-engine.bat 引擎新鲜度判定与重建（两个启动器共用）
-lenovo_driver_wpf.ps1        WPF 表现入口
+scripts/lib/ensure-engine.bat 引擎新鲜度判定与重建（启动器共用）
 install_lenovo_drivers.bat   薄 CLI 启动器
-install_lenovo_drivers_wpf.bat 薄 WPF 启动器
 docs/                        本文档树
 ```
 
@@ -80,7 +70,6 @@ docs/                        本文档树
 
 - Windows 10 / Windows 11
 - Go 1.27 或更新（官方工具链）；**跑门禁**需要 `go.mod` 的 `toolchain` 指令所钉的那个补丁版本——覆盖率下限随插桩差异变化，门禁步骤 `the running Go toolchain is the one the module pins` 会拒绝其他编译器（`GOTOOLCHAIN=auto` 默认即会切到该版本）
-- Windows PowerShell 5.1（仅 WPF 层）
 - 驱动安装需要管理员权限
 - 需要访问联想官方 API 主机的网络
 
@@ -112,6 +101,7 @@ docs/                        本文档树
 
 - 确定性逻辑放 `internal/compare`、`internal/audit`、`internal/plan`、`internal/model`；联网放 `internal/api`、`internal/download`；副作用放 `internal/app`、`internal/install`、`internal/inventory`。
 - 保留公开 CLI 参数、交互选择、退出码、缓存规则、安装器交互（`r`/`s`）。
+- `internal/gui` 只依赖 `internal/app` 的导出门面（`gui.go`）与 `internal/model`/`internal/compare`/`internal/inventory`，不绕过引擎直接碰 API、盘点或安装器。
 - 不新增第二个运行时语言入口点。
 - 任何行为变更必须更新测试并通过 `scripts/verify.ps1`。
-- 不复活已删除的旧 PowerShell 引擎文件。
+- 不复活已删除的旧 PowerShell 引擎文件与 WPF 表现层。

@@ -10,7 +10,7 @@ API、GUI JSON 协议、退出码、产物与账本列的**单一权威**。改�
 | --- | --- | --- | --- |
 | CLI 参数、退出码、产物路径 | `internal/app/help.go` 的 `helpText` | `scripts/verify.ps1` 比对退出码，漂移即失败 | 人读语义 |
 | 账本列序 | `internal/ledger` 的 `Columns` | `internal/ledger/ledger_test.go` golden 锁列序 | 人读语义 |
-| GUI JSON 协议 | `internal/app/export.go` | WPF 层解析（参数引用共享 golden） | 人读协议 |
+| GUI JSON 协议 | `internal/app/export.go` | `internal/gate` 比对字段名集合 | 人读协议 |
 | API 端点与字段 | `internal/api/` | API 层单测 | 人读契约 |
 | 回退 offer 字段 | `internal/app/rollback.go` | 回退测试 golden | 人读语义 |
 
@@ -80,7 +80,7 @@ Go CLI 写出的 JSON：
 }
 ```
 
-字段机器源是 `internal/app/export.go` 的 `guiExportPayload` / `guiDriverRow` 结构体 tag（`OsList` 元素取自 `model.OSListEntry`），由 `export_test.go` 的 golden 锁死；上面的示例是示意，字段增删必须同步两处，否则测试失败。`SourceAudit` 是规范字符串形式 `Category: Summary`。WPF 直接渲染此 JSON，并用 `-GuiInstallCodes` 回传选择。`NonMatchReason` 压缩为 `hardware ids X, Y, ... (N ids)`。
+字段机器源是 `internal/app/export.go` 的 `guiExportPayload` / `guiDriverRow` 结构体 tag（`OsList` 元素取自 `model.OSListEntry`），由 `export_test.go` 的 golden 锁死；上面的示例是示意，字段增删必须同步两处，否则测试失败。`SourceAudit` 是规范字符串形式 `Category: Summary`。`-GuiExportPath` 的消费者是外部脚本与人工检查；桌面 GUI 已改为嵌入引擎（`internal/gui`），不再经过此 JSON。`-GuiInstallCodes` 仍是 GUI 之外的 CLI 安装入口。`NonMatchReason` 压缩为 `hardware ids X, Y, ... (N ids)`。
 
 本节的块与 §4 的回退 offer 块是人读副本，门禁步骤 `the documented JSON contracts match the engine`（检查体在 `internal/gate`，由 `scripts/verify.ps1` 逐条调用）把这两块的字段名集合与引擎 tag 集合逐个比对：只改引擎或只改文档都会让门禁失败。引擎侧的 tag 由 `go/parser` 从 struct 声明读出——写在注释里的 tag 不算字段。
 
@@ -149,7 +149,7 @@ Go CLI 写出的 JSON：
 
 `-Audit <snapshotPath>` 的设备差分把每条变化归因到账本中针对该设备记录过的驱动动作（`[ledger: DRV1,DRV2]`，见 §5 的 `devices` 列）；无匹配账本行的设备保持可见的未归因（无标注）。
 
-前三个审计产物（log / plan / history）的机器源是 `internal/app/help.go` 的 `Artifacts` 块，由 `scripts/verify.ps1` 比对锁死；改路径必须同步 `help.go` 与本文件，否则门禁失败。回退 offer 的文件名另有 Go 常量源（`rollback.go` 的 `rollbackOfferFileName`），`help.go` 的 `Artifacts` 块、本文件与 WPF 层（`wpf/actions.ps1`、`scripts/rollback_behavior_test.ps1` 各自拼路径）都必须与它一致；WPF 层拼出的产物名同样受门禁比对——只能出现引擎声明过的名字。
+前三个审计产物（log / plan / history）的机器源是 `internal/app/help.go` 的 `Artifacts` 块，由 `scripts/verify.ps1` 比对锁死；改路径必须同步 `help.go` 与本文件，否则门禁失败。回退 offer 的文件名另有 Go 常量源（`rollbackoffer.go` 的 `rollbackOfferFileName`），`help.go` 的 `Artifacts` 块与本文件都必须与它一致；启动器脚本拼出的产物名同样受门禁比对——只能出现引擎声明过的名字。
 
 ## 5. 账本（WORM 历史）
 

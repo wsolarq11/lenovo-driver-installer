@@ -7,7 +7,7 @@
 | 清单 | 用途 | 什么时候读 |
 | --- | --- | --- |
 | [复用清单](./code-reuse-thinking-guide.md) | 新建或改动一个值之前，确认这个事实是否已有单一源 | 写新逻辑或改值时 |
-| [跨层清单](./cross-layer-thinking-guide.md) | 变更跨 Go / WPF / API / 账本边界时，把整条数据流走一遍 | 变更跨多于一层时 |
+| [跨层清单](./cross-layer-thinking-guide.md) | 变更跨 GUI / 引擎 / API / 账本边界时，把整条数据流走一遍 | 变更跨多于一层时 |
 
 机器源映射表：[../single-source.md](../single-source.md) 指向 `docs/spec/index.md`。
 
@@ -17,13 +17,13 @@
 
 - [ ] 这个参数 / 退出码 / 产物路径 / 列顺序 / JSON 字段是否已在它的机器源里声明？
 - [ ] 是否已有助手在做这件事？
-- [ ] 这段逻辑是否同时存在于 Go 与 PowerShell，由共享 golden 锁定？
+- [ ] 这段逻辑是否在引擎里已有单一权威（golden 或门禁锁定），而不是第二份副本？
 
 → 读 [复用清单](./code-reuse-thinking-guide.md)
 
 ### 跨层变更之前
 
-- [ ] 是否触及 Go ↔ WPF 的 JSON 桥或 DriverCode 回传？
+- [ ] 是否触及 GUI ↔ 引擎的出口门面（internal/app/gui.go）或行投影？
 - [ ] 是否把逻辑移过了确定性 ↔ 副作用边界？
 - [ ] 是否改变了联想 API 响应的解析或分类？
 - [ ] 是否触及 WORM 账本的列顺序或“意图行先于状态变更”的顺序？

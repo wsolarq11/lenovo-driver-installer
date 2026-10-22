@@ -160,7 +160,7 @@ func artifactPathsAtLineStart(doc string) []string {
 }
 
 // artifactNamesIn returns every artifact filename a text mentions, with or
-// without the directory prefix. The WPF layer spells both.
+// without the directory prefix. Launcher scripts and specs spell both.
 func artifactNamesIn(text string) []string {
 	var out []string
 	for i := 0; i+len("lenovo_driver_") <= len(text); i++ {

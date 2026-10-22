@@ -7,8 +7,8 @@
 ## Overview
 
 `App.Log` 把每行写入稳定审计目录并镜像到控制台。目录由 `internal/app/app.go` 的
-`artifactBaseDir` 决定：优先用户缓存根，不可用时退回 `%TEMP%`。WPF 子进程把
-stdout/stderr 重定向到临时文件，由 WPF 轮询显示。
+`artifactBaseDir` 决定：优先用户缓存根，不可用时退回 `%TEMP%`。桌面 GUI 嵌入引擎进程，
+日志行经 runner 回调直达日志面板，同时仍落在同一个稳定文件里。
 
 ---
 

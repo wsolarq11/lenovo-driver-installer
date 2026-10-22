@@ -32,6 +32,9 @@ if not defined STALE (
 if not defined STALE (
     for /f "delims=" %%F in ('xcopy /L /D /Y "go.mod" "%ENGINE%" 2^>nul ^| findstr /i /e /c:".mod"') do set "STALE=1"
 )
+if not defined STALE (
+    for /f "delims=" %%F in ('xcopy /L /D /Y "go.sum" "%ENGINE%" 2^>nul ^| findstr /i /e /c:".sum"') do set "STALE=1"
+)
 
 if not defined STALE (
     popd

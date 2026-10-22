@@ -19,6 +19,5 @@
 *.bat text eol=crlf
 *.ps1 text eol=lf
 *.go text eol=lf
-*.xaml text eol=lf
 go.mod text eol=lf
 go.sum text eol=lf

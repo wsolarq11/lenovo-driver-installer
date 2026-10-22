@@ -11,12 +11,11 @@
 | 内循环 + 完整门禁一次跑 | `.\scripts\dev.ps1 -Verify` |
 | 内循环但不重建 `bin\lenovo-driver.exe` | `.\scripts\dev.ps1 -SkipBin` |
 | CI 离线门禁 | push/PR 触发 `.github/workflows/verify.yml` |
-| 修复 .ps1 的 BOM 漂移（幂等） | `.\scripts\fix-bom.ps1` 或 `.\scripts\verify.ps1 -FixBom` |
 
 ## 双环模型
 
 - **内循环**（`scripts/dev.ps1`）：日常迭代。按序跑 `go build ./...` → `go vet ./...` → `gofmt -l internal cmd`（有未格式化即失败）→ `go test ./...` → `go build -o bin\lenovo-driver.exe ./cmd\lenovo-driver`（`-SkipBin` 跳过）。全过打印 `DEV_OK`，否则打印失败步骤名退出 `1`。
-- **验收门禁**（`scripts/verify.ps1`）：CI 权威离线门禁。除内循环外还检查覆盖率下限、WPF 层 PowerShell 5.1 解析/BOM、CLI smoke、git-diff 卫生、未跟踪产物卫生，最后打印 `VERIFY_OK`。
+- **验收门禁**（`scripts/verify.ps1`）：CI 权威离线门禁。除内循环外还检查覆盖率下限（含 `internal/gui`）、GUI 死文件检查、CLI smoke、git-diff 卫生、未跟踪产物卫生，最后打印 `VERIFY_OK`。
 
 `go` 工具链发现共享：`scripts/lib/go-toolchain.ps1` 提供 `Resolve-GoExe`，`dev.ps1` 与 `verify.ps1` 都用它，查找规则不漂移；两者都接受 `-GoExe <path>` 覆盖。
 
@@ -24,11 +23,8 @@
 
 - Go build/test/vet/gofmt；`legacyps` tag 的 build/vet。
 - 生产 Go 文件 ≤ 400 行（上限值只在 `scripts/verify.ps1` 声明一次）。
-- 覆盖率下限（`inventory` 8 / `app` 22 / `install` 45 / `compare` 50 / `audit` 50 / `download` 35 / `plan` 65 / `api` 55 / `trust` 40 / `gate` 70）。`trust` 是签名边界（判定下载包是否为 Lenovo 签名且未被吊销），其联网 smoke 按设计 opt-in，故离线下限是它唯一的防退化闸门（该钉的版本上实测 45.5%，删掉白名单测试后掉到 25.5%，下限落在这个缝里）。**下限只在钉死的编译器上有意义**：数字读自 `go test -cover`，插桩随补丁版本变，故门禁有专步断言运行的工具链等于 `go.mod` 所钉的那个版本；否则同一份代码在两台机器上会给出不同的「通过」。
-- 含非 ASCII 的 `.ps1` 必须 UTF-8 BOM（Windows PowerShell 5.1 要求）；`verify.ps1` 检测即失败（CI 阻断）、`-FixBom` 显式修复，语法解析覆盖全部 `.ps1`。
-- 宿主无关读取：仓库内每个 `.ps1` 的 `Get-Content` 必须显式 `-Encoding`（门禁自身统一走 `Read-GateText`）。5.1 用 ANSI 代码页解码无 BOM 的 UTF-8，负向断言会在错宿主下**静默放过**——该步审计的是读取方而不是文件，注入一个裸 `Get-Content -Raw` 即红。
-- WPF 参数引用共享 golden（`internal/app/testdata/windows_argument_quoting.json`）。
-- 旧 PowerShell 引擎文件已删除。
+- 覆盖率下限（`inventory` 8 / `app` 22 / `gui` 35 / `install` 45 / `compare` 50 / `audit` 50 / `download` 35 / `plan` 65 / `api` 55 / `trust` 40 / `gate` 70）。`gui` 的视图测试经 mygo 的 `ui.NewTester` 无窗口驱动真实视图函数（表格投影、确认对话框、动作分发），下限不依赖桌面会话。`trust` 是签名边界（判定下载包是否为 Lenovo 签名且未被吊销），其联网 smoke 按设计 opt-in，故离线下限是它唯一的防退化闸门（该钉的版本上实测 45.5%，删掉白名单测试后掉到 25.5%，下限落在这个缝里）。**下限只在钉死的编译器上有意义**：数字读自 `go test -cover`，插桩随补丁版本变，故门禁有专步断言运行的工具链等于 `go.mod` 所钉的那个版本；否则同一份代码在两台机器上会给出不同的「通过」。
+- 旧 PowerShell 引擎文件与 WPF 表现层（`wpf/`、`lenovo_driver_wpf.ps1`、`install_lenovo_drivers_wpf.bat`）已删除，门禁有专步保证它们不再出现。
 - CLI 互斥参数组合退出码 `2` 且错误不进 stdout。
 - 零网络导入：`install/compare/inventory/plan/audit` 不得 import `net/http`/`net/url`；`architecture.md` §2.1 声明的联网包集合必须等于实际 import 网络库的包集合。
 - `git diff --check` + 未跟踪产物卫生。
@@ -49,16 +45,15 @@ $env:LENOVO_NATIVE_INSTALL_SMOKE=1; go test ./internal/install/ -run TestNativeI
 $env:LENOVO_TRUST_SMOKE=1; go test ./internal/trust/ -run TestVerifyLenovoPackageSmoke -v
 ```
 
-构建引擎后 smoke WPF 表面：
+构建引擎后 smoke GUI 表面（连真实 API，会请求 UAC 提权）：
 
 ```powershell
-.\lenovo_driver_wpf.ps1 -SelfTest -NoElevation
-.\lenovo_driver_wpf.ps1 -WorkerSmoke -NoElevation
+.in\lenovo-driver.exe -Gui
 ```
 
 ## CI
 
-`.github/workflows/verify.yml` 在 `windows-latest` 跑 `scripts/verify.ps1`，**工具链版本从 `go.mod` 读**（`setup-go` 的 `go-version-file: go.mod` 取 `toolchain` 指令）。为什么必须是钉死的精确补丁版本而不是 `1.27.x` 一类的浮动范围：门禁的覆盖率下限读自 `go test -cover`，而 Go 的语句插桩**在补丁版本之间会变**——同一份源码在 `go1.27.0` 上把 `internal/trust` 量成 45.8%（33/72 条语句），在 `go1.27.2` 上量成 34.5%（19/55 条），一字未改。于是同一个下限在一台机器上过、在另一台上不过。门禁有专步 `the running Go toolchain is the one the module pins` 钉住这条：跑在别的编译器上直接 FAIL 并点名，而不是让「在下限附近漂」悄悄改变结论。注意 `toolchain` 指令语义是**下限**（本地更新的工具链仍会胜出），所以精确钉靠的是这一步的断言，不是指令本身。注意 `shell:` 关键字不接受任何上下文表达式：写成 `shell: ${{ matrix.host }}` 会让整个工作流文件失效，GitHub 的表现为「0 个 job、耗时 0 秒、无日志、结论 failure」——看起来像基础设施故障，实际是文件没通过校验。门禁有专步钉住这条（连同 `matrix.*` 必须有 `matrix:` 块），**两个 PowerShell 宿主各一个 job**（`pwsh` 7 与 `powershell.exe` 5.1）：这个门禁从设计上就是双宿主的——`Read-GateText` 与「读取点必须声明编码」步存在的唯一理由就是 5.1 按 ANSI 码页解码 BOM-less UTF-8 而 7 默认 UTF-8，只跑单宿主会让这类结论在 CI 里无人验证。`push` 只在 `main` 上触发（PR 已覆盖其余分支，否则同一提交跑两遍）。CI 只跑离线门禁——依赖硬件的 native/WPF smoke 按设计本地驱动，WPF 一步例外：`-SelfTest` 不需要交互桌面，已纳入门禁（构造真实窗口、渲染位图、校验非空）。门禁结论与宿主无关，任何一侧能翻转的结论都由宿主无关读取步阻断。
+`.github/workflows/verify.yml` 在 `windows-latest` 跑 `scripts/verify.ps1`，**工具链版本从 `go.mod` 读**（`setup-go` 的 `go-version-file: go.mod` 取 `toolchain` 指令）。为什么必须是钉死的精确补丁版本而不是 `1.27.x` 一类的浮动范围：门禁的覆盖率下限读自 `go test -cover`，而 Go 的语句插桩**在补丁版本之间会变**——同一份源码在 `go1.27.0` 上把 `internal/trust` 量成 45.8%（33/72 条语句），在 `go1.27.2` 上量成 34.5%（19/55 条），一字未改。于是同一个下限在一台机器上过、在另一台上不过。门禁有专步 `the running Go toolchain is the one the module pins` 钉住这条：跑在别的编译器上直接 FAIL 并点名，而不是让「在下限附近漂」悄悄改变结论。注意 `toolchain` 指令语义是**下限**（本地更新的工具链仍会胜出），所以精确钉靠的是这一步的断言，不是指令本身。注意 `shell:` 关键字不接受任何上下文表达式：写成 `shell: ${{ matrix.host }}` 会让整个工作流文件失效，GitHub 的表现为「0 个 job、耗时 0 秒、无日志、结论 failure」——看起来像基础设施故障，实际是文件没通过校验。门禁有专步钉住这条（连同 `matrix.*` 必须有 `matrix:` 块），**两个 PowerShell 宿主各一个 job**（`pwsh` 7 与 `powershell.exe` 5.1）：这个门禁从设计上就是双宿主的——`Read-GateText` 与「读取点必须声明编码」步存在的唯一理由就是 5.1 按 ANSI 码页解码 BOM-less UTF-8 而 7 默认 UTF-8，只跑单宿主会让这类结论在 CI 里无人验证。`push` 只在 `main` 上触发（PR 已覆盖其余分支，否则同一提交跑两遍）。CI 只跑离线门禁——依赖硬件的 native smoke 按设计本地驱动；GUI 的视图测试经 `ui.NewTester` 无窗口渲染，已纳入离线门禁的覆盖率下限。门禁结论与宿主无关。
 
 ## 排障
 
@@ -98,7 +93,6 @@ Windows 的 `python` / `py` 看不见 Git Bash 的 `/tmp`（反之亦然）。�
 
 - 两个脚本都离线、无副作用：绝不调联想 API、下载驱动或安装。
 - 稳定哨兵 `DEV_OK` / `VERIFY_OK` + 数字失败数，供自动化断言。
-- 含非 ASCII 的 `.ps1` 必须 UTF-8 带 BOM；`verify.ps1` 检测即失败（CI 阻断）、`verify.ps1 -FixBom` 或 `scripts/fix-bom.ps1` 显式修复，`.editorconfig` 让 IDE 保存自动带 BOM（纯 ASCII 脚本也会因此带 BOM，无害但会产生 diff）。
-- 脚本读取带非 ASCII 内容的数据文件（JSON/CSV 账本/XAML 等）必须显式 `-Encoding UTF8`（或门禁内的 `Read-GateText`）：BOM 规则只保脚本**源码**宿主无关，不保脚本**读到的数据**；门禁有专步强制这条。
+- 门禁读取带非 ASCII 内容的文件统一走 `Read-GateText`（显式 UTF-8 解码），结论与 PowerShell 宿主的默认代码页无关。
 - 文档只在本文件维护开发命令，README “开发”节只是指针，避免命令漂移。
 - 六条不变量是硬门禁，违反即阻断合并；语义见 `docs/spec/invariants.md`。

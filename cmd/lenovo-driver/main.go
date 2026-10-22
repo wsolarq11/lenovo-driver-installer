@@ -3,9 +3,9 @@ package main
 import (
 	"os"
 
-	"lenovo-driver/internal/app"
+	"lenovo-driver/internal/gui"
 )
 
 func main() {
-	os.Exit(app.New(os.Stdout, os.Stderr, os.Stdin).Run(os.Args[1:]))
+	os.Exit(gui.Run(os.Args[1:]))
 }

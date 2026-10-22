@@ -5,10 +5,10 @@
 ## 目录布局
 
 ```text
-cmd/lenovo-driver                 CLI 入口：flag 解析后交给 app
+cmd/lenovo-driver                 CLI 与 GUI 共用入口：-Gui 分发到 internal/gui
 cmd/gatecheck                     按名字跑一条门禁源码规则（gate -> verify.ps1）
 internal/api                      Lenovo API 客户端与 JSON 归一化（联网）
-internal/app                      编排：CLI、elevation、选择分发、安装流程、GUI 导出
+internal/app                      编排：CLI、elevation、选择分发、安装流程、GUI 出口门面（gui.go）
 internal/audit                    setupapi 解析与来源证据（纯函数）
 internal/compare                  版本解析、匹配、选择、表格（纯函数）
 internal/download                 HTTP 下载、重试、完整性（联网 + 文件）
@@ -20,7 +20,7 @@ internal/model                    共享纯数据类型
 internal/pathutil                 Windows 路径助手
 internal/plan                     计划文本、表格、账本行构建
 internal/trust                    Authenticode 签名校验
-wpf/                              WPF 表现层（ui/worker/actions/xaml）
+internal/gui                      桌面 GUI：mygo 原生 UI 壳（状态→视图、引擎嵌入 runner、UAC 提权入口）
 scripts/                          门禁与开发脚本
 docs/spec/                        产品与架构规范（人读单一源）
 docs/spec/coding/                 编码规范（本目录）
@@ -37,7 +37,7 @@ docs/records/                     追加式历史与证据
 
 `internal/ledger` 拥有 WORM 账本的全部结构：列顺序、哈希链、读写成对出现。它的方法只接收路径与记录，不持有 orchestrator 状态，因此可以在任何入口被复用且行为一致。
 
-`lenovo_driver_wpf.ps1` 是桌面表现层：不得含驱动匹配、来源归因或安装逻辑。它启动 Go 子进程、读 JSON 视图、渲染表格、用 `-GuiInstallCodes` 回传勾选码。
+`internal/gui` 是桌面表现层：不得含驱动匹配、来源归因或安装逻辑。它嵌入引擎进程，把引擎评估投影成表格行（`IsApplicable` 直接来自 `model.InAutomaticInstallSet`），渲染确认对话框，把操作者意图分发给 runner。
 
 `internal/gate` 是门禁规则集，用源码分析而非文本匹配。它只用 Go 标准库（`go/parser`、`go/ast`、`go/types`），从不启动进程；唯一需要的进程边界——依赖包的导出数据——在 `cmd/gatecheck`，由 `scripts/verify.ps1` 每条具名步骤调用一次。判断依赖“名字指向什么”或“声明形态”的规则属于这里；只读字面文本的规则可以留在门禁脚本。
 
@@ -46,7 +46,7 @@ docs/records/                     追加式历史与证据
 - 生产 Go 文件的行数上限只有一个值，由 `scripts/verify.ps1` 的 `Go source file size` 步骤声明并执行。靠近上限时，把一个完整关注点抽成独立文件或独立包，而不是让一个文件承载第二个关注点。
 - 一个包只承载一个关注点。出现“顺手也放这里”的第二个关注点时，先问它是否值得独立成包。
 - `install_lenovo_drivers.bat` 保持薄：需要时构建引擎、调用它、转发退出码。
-- 不新增第二个 PowerShell 运行时入口。WPF 文件是唯一的 PowerShell 运行时外壳。
+- 不新增第二个运行时入口。CLI 与 GUI 共用 `cmd/lenovo-driver`，GUI 只经 `-Gui` 进入。
 
 ## 命名
 

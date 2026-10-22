@@ -21,7 +21,7 @@
 | API / GUI JSON / 退出码 / 产物路径 / 账本列 | `contracts.md` | `internal/app/help.go`、`internal/ledger`、`internal/app/export.go`、`internal/app/app.go`（`artifactBaseDir`）、`internal/api/` | 门禁步骤 `CLI artifact paths match docs contract`、`CLI exit codes match docs contract` 与 `the documented JSON contracts match the engine`（检查体在 `internal/gate`）；`internal/ledger/ledger_test.go` / `export_test.go` golden |
 | 比较选择 / 下载完整性 / 安装分发 / 回退语义 | `behavior.md` | `internal/compare`、`internal/download`、`internal/install`、`internal/audit` | golden 测试 |
 | Go 工具链发现规则 | `docs/howto/develop.md` | `scripts/lib/go-toolchain.ps1` `Resolve-GoExe` | 两脚本共用同一函数（无副本）；`verify.ps1` 首步 `Go toolchain is discoverable` |
-| WPF 与引擎的参数引用 | `contracts.md` | Go `quoteWindowsArgument` + WPF `ConvertTo-CommandLineArgument` | 共享 golden `internal/app/testdata/windows_argument_quoting.json` |
+| Windows 参数引用 | `internal/app/helpers.go` 的 `quoteWindowsArgument` | `internal/app` 单测 golden | 指针（无副本） |
 
 ## 手册与证据的位置
 

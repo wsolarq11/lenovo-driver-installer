@@ -246,7 +246,9 @@ func TestAllowListIgnoresCommentMentioningNotEqual(t *testing.T) {
 			"type payload struct {\n\tIsApplicable bool\n}\n\n" +
 			"func export() payload {\n\treturn payload{IsApplicable: model.InAutomaticInstallSet(0)}\n}\n",
 		"internal/app/interactive.go": "package app\n\nfunc prompt() {}\n",
-		"wpf/window.xaml":             "<Window />\n",
+		"internal/gui/runner.go": "package gui\n\nimport \"example.com/m/internal/model\"\n\n" +
+			"type row struct {\n\tIsApplicable bool\n}\n\n" +
+			"func projectRows() row {\n\treturn row{IsApplicable: model.InAutomaticInstallSet(0)}\n}\n",
 	})
 	if err := checkErr(t, ctx, "automatic install set excludes downgrade and no-op statuses"); err != nil {
 		t.Fatalf("a comment explaining the allow-list was read as a breach: %v", err)

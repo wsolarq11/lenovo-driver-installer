@@ -103,9 +103,9 @@ func checkCLIExitCodesMatchDocs(ctx *Context) error {
 }
 
 // checkCLIArtifactPathsMatchDocs holds the artifact paths the engine declares
-// against contracts.md and against every name the PowerShell layer spells. The
-// WPF re-derives the plan and offer paths rather than asking the engine, so a
-// renamed artifact would leave the GUI opening a path nothing writes.
+// against contracts.md and against every name the launcher scripts spell. A
+// renamed artifact would otherwise leave a launcher opening a path nothing
+// writes.
 func checkCLIArtifactPathsMatchDocs(ctx *Context) error {
 	help, err := ctx.Repo.fileWithName("internal/app", "helpText")
 	if err != nil {
@@ -149,7 +149,7 @@ func checkCLIArtifactPathsMatchDocs(ctx *Context) error {
 	declared := toSet(artifactNamesIn(helpText))
 	var stray []string
 	for _, f := range ctx.Repo.files {
-		if !strings.HasSuffix(f.relPath, ".ps1") {
+		if !strings.HasSuffix(f.relPath, ".bat") {
 			continue
 		}
 		text, err := ctx.Repo.readFile(f.relPath)
@@ -163,7 +163,7 @@ func checkCLIArtifactPathsMatchDocs(ctx *Context) error {
 		}
 	}
 	if len(stray) > 0 {
-		return fmt.Errorf("PowerShell spells artifact names the engine does not declare: %s",
+		return fmt.Errorf("launcher scripts spell artifact names the engine does not declare: %s",
 			strings.Join(dedupe(stray), ", "))
 	}
 	return nil

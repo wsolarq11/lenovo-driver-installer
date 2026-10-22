@@ -1,6 +1,6 @@
 # Lenovo 驱动安装器（个人单机审计脚本）
 
-Go 引擎 + WPF 桌面的联想驱动审计/安装工具。运行时解析机型与主机编号，查询联想官方驱动接口，与本机已装版本对比，只安装被选中的适用驱动。Go CLI 是确定性引擎，WPF 只做薄渲染、不实现任何驱动决策逻辑。
+Go 引擎 + mygo 原生 UI 桌面的联想驱动审计/安装工具。运行时解析机型与主机编号，查询联想官方驱动接口，与本机已装版本对比，只安装被选中的适用驱动。Go CLI 是确定性引擎，桌面 GUI（`internal/gui`）只做薄渲染、不实现任何驱动决策逻辑。
 
 ## 文档地图
 
@@ -27,10 +27,10 @@ install_lenovo_drivers.bat
 install_lenovo_drivers.bat -DryRun
 ```
 
-桌面界面：
+桌面界面（启动时经 UAC 提权，单实例窗口）：
 
 ```bat
-install_lenovo_drivers_wpf.bat
+bin\lenovo-driver.exe -Gui
 ```
 
 运行参数见 `-Help`（机器源 `internal/app/help.go`）；用法与排障见 `docs/howto/run.md`。

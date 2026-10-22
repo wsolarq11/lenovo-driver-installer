@@ -7,6 +7,7 @@ Usage:
   lenovo-driver [-DryRun] [-CurrentOSOnly] [-LatestAcrossOS] [-TargetOS <OSID|OSName>]
                 [-SkipHashCheck] [-SkipSignatureCheck] [-IncludeBios] [-DownloadOnly]
                 [-DownloadDir <path>] [-Model <model>] [-Help]
+  lenovo-driver -Gui
   lenovo-driver -GuiExportPath <path> [-Model <model>]
   lenovo-driver -GuiInstallCodes <code1,code2,...>
   lenovo-driver -Rollback <code1,code2,...>
@@ -24,7 +25,9 @@ Options:
   -DownloadDir     Download directory. Default is %TEMP%\LenovoDrivers.
   -Model           Lenovo machine model override when automatic lookup fails.
   -Elevated        Skip the automatic UAC relaunch when the process is already elevated.
-  -GuiExportPath   Export the WPF-compatible JSON view and exit.
+  -Gui             Open the desktop window (native UI over the embedded engine).
+                   The window elevates itself once through UAC on launch.
+  -GuiExportPath   Export the JSON view and exit.
   -GuiInstallCodes Install only the comma-separated DriverCode values from a GUI export.
   -Rollback        Roll back the device drivers for the comma-separated DriverCode values
                    that have a pending rollback offer (rolls back the driver, or reinstalls

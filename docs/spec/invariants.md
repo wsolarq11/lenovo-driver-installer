@@ -15,8 +15,8 @@
 
 ## 2. 证据优先
 
-- 约束：计划文件保留原始证据行；WPF 只做薄渲染，不折叠“待定”与来源审计。
-- 强制点：`Source audit` 输出类别 + 结论 + 证据行，`setupapi.*.log` 的 `cmd:` 原始命令行原样进入计划。WPF 不实现比较/来源逻辑，只渲染 Go 引擎的 JSON。
+- 约束：计划文件保留原始证据行；桌面 GUI（`internal/gui`）只做薄渲染，不折叠“待定”与来源审计。
+- 强制点：`Source audit` 输出类别 + 结论 + 证据行，`setupapi.*.log` 的 `cmd:` 原始命令行原样进入计划。GUI 不实现比较/来源逻辑，只把引擎的 `AssessedDriver` 投影成表格行。
 - 强制点：门禁步骤 `the API contract fixtures are recorded responses`——`internal/api/testdata/web_real_82jq_os42.json` 必须是真实抓包：保留 `statusCode`/`localOSID`/`osList`/`partList`/`drivelist` 信封、两个 OS 字段为未加引号的 JSON 数字、带 `PartName`，且不得小于 4 KB。手写样例无法冒充。这条防的是一个已经发生过的具体失效：网页源的 `statusCode`/`localOSID` 被声明为 `string` 而线上是数字，整条 web 链路从未解析成功，而手写夹具把数字写成带引号字符串，让测试与结构体一致、与服务器不一致。
 
 ## 3. 默认不动

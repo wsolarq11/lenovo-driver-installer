@@ -3,14 +3,12 @@
 Offline verification gate for the Lenovo driver installer Go migration.
 
 .DESCRIPTION
-Runs Go build/test/vet/gofmt, PowerShell syntax checks for the WPF layer, CLI
-smoke tests, and workspace hygiene checks. It never calls the real Lenovo API,
-downloads drivers, or installs anything.
+Runs Go build/test/vet/gofmt, CLI smoke tests, and workspace hygiene checks.
+It never calls the real Lenovo API, downloads drivers, or installs anything.
 #>
 [CmdletBinding()]
 param(
-    [string]$GoExe = '',
-    [switch]$FixBom
+    [string]$GoExe = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,7 +44,6 @@ function Assert-Step {
 }
 
 . (Join-Path $PSScriptRoot 'lib\go-toolchain.ps1')
-. (Join-Path $PSScriptRoot 'fix-bom.ps1')
 
 # Go discovery is the one prerequisite every later step stands on, so it runs as
 # a named step: a missing toolchain used to kill the gate with a raw throw
@@ -93,17 +90,8 @@ Assert-Step 'the running Go toolchain is the one the module pins' {
     }
 }
 
-# -FixBom is an explicit local convenience: restore drifted BOM before the gate
-# runs. CI never passes this switch, so a BOM-less non-ASCII ps1 fails the gate
-# there instead of being silently auto-repaired into a green run.
-if ($FixBom) {
-    $fixed = Restore-Ps1Bom -RepoRoot $repoRoot
-    if ($fixed.Count -gt 0) {
-        Write-Host "Restored UTF-8 BOM on: $($fixed -join ', ')"
-    } else {
-        Write-Host 'UTF-8 BOM consistent: nothing to fix.'
-    }
-}
+# -FixBom was removed with the WPF layer: no .ps1 runtime file remains, so
+# there is nothing to auto-repair.
 
 Assert-Step 'Go build' {
     & $GoExe build ./...
@@ -121,6 +109,11 @@ Assert-Step 'Go test + coverage floor (side-effect packages)' {
     $floors = @{
         'lenovo-driver/internal/inventory' = 8
         'lenovo-driver/internal/app'       = 22
+        # The desktop front end. Its view tests drive the real mygo view
+        # function headless through ui.NewTester, so the floor covers the
+        # table projection, the confirmation dialogs and the action dispatch
+        # without a desktop session.
+        'lenovo-driver/internal/gui'       = 35
         'lenovo-driver/internal/install'   = 45
         'lenovo-driver/internal/compare'   = 50
         'lenovo-driver/internal/audit'     = 50
@@ -246,157 +239,29 @@ Assert-Step 'Go source file size (prod limit)' {
     if ($over.Count -gt 0) { throw "production Go file exceeds $script:ProdFileLineLimit lines: $($over -join ', ')" }
 }
 
-Assert-Step 'PowerShell UTF-8 BOM (non-ASCII ps1 must carry BOM)' {
-    $missing = @()
-    foreach ($f in (Get-ProjectPs1Files -RepoRoot $repoRoot)) {
-        if (Test-NeedsBom -File $f) { $missing += $f.FullName }
-    }
-    if ($missing.Count -gt 0) {
-        throw "BOM-less non-ASCII ps1 (Windows PowerShell 5.1 will mis-decode): $($missing -join ', '). Fix with: .\scripts\fix-bom.ps1 or .\scripts\verify.ps1 -FixBom"
-    }
-}
-
-Assert-Step 'every project file read names its encoding (host-independent)' {
-    # Windows PowerShell 5.1 decodes BOM-less UTF-8 with the ANSI code page
-    # while pwsh 7 defaults to UTF-8: the same file can match on one host and
-    # not on the other, and a negative assertion then fails SILENTLY (proven by
-    # injecting forbidden text into window.xaml — 5.1 read it as absent). So
-    # this audits the readers, not the files: every non-comment Get-Content in
-    # the repository must state -Encoding, and the gate's own reads go through
-    # Read-GateText. The literal is split so this step does not match itself.
-    $gc = 'Get-' + 'Content'
-    $bare = @()
-    foreach ($f in (Get-ProjectPs1Files -RepoRoot $repoRoot)) {
-        $src = Read-GateText $f.FullName
-        foreach ($line in ($src -split "\r?\n")) {
-            if ($line -match '^\s*#') { continue }
-            if ($line -match $gc -and $line -notmatch '-Encoding') {
-                $bare += ("{0}: {1}" -f $f.Name, $line.Trim())
-            }
-        }
-    }
-    if ($bare.Count -gt 0) {
-        throw "reads without an explicit encoding (the verdict would flip per host): $($bare -join ' | ')"
-    }
-}
-
-Assert-Step 'PowerShell parse' {
-    foreach ($f in (Get-ProjectPs1Files -RepoRoot $repoRoot)) {
-        $tokens = $null
-        $errors = $null
-        [System.Management.Automation.Language.Parser]::ParseFile(
-            $f.FullName,
-            [ref]$tokens,
-            [ref]$errors
-        ) | Out-Null
-        if ($errors) {
-            $errors | Format-List | Out-String | Write-Host
-            throw "parse failed: $($f.FullName)"
-        }
-    }
-}
-
-Assert-Step 'WPF argument quoting (shared golden)' {
-    . (Join-Path $repoRoot 'wpf\worker.ps1')
-    $casesPath = Join-Path $repoRoot 'internal\app\testdata\windows_argument_quoting.json'
-    $cases = @((Read-GateText $casesPath | ConvertFrom-Json).cases)
-    if ($cases.Count -lt 10) { throw "shared quoting golden too small: $($cases.Count) cases" }
-    foreach ($case in $cases) {
-        $got = ConvertTo-CommandLineArgument -Argument ([string]$case.input)
-        if ($got -ne $case.token) {
-            throw "quoting drift on '$($case.name)': got '$got', want '$($case.token)'"
-        }
-    }
-}
-
 Assert-Step 'Legacy PowerShell files removed' {
+    # The WPF layer (wpf/, lenovo_driver_wpf.ps1, install_lenovo_drivers_wpf.bat)
+    # was replaced by the embedded mygo GUI in internal/gui. The files must stay
+    # gone: a stray copy would resurface a second runtime shell the gate can no
+    # longer see.
     $legacyFiles = @(
         'install_lenovo_drivers.ps1',
         'lenovo_driver_core.ps1',
         'lenovo_driver_core.tests.ps1',
-        'lenovo_installer_improvement_plan.md'
+        'lenovo_installer_improvement_plan.md',
+        'lenovo_driver_wpf.ps1',
+        'install_lenovo_drivers_wpf.bat',
+        'scripts/fix-bom.ps1',
+        'wpf/window.xaml',
+        'wpf/ui.ps1',
+        'wpf/worker.ps1',
+        'wpf/actions.ps1'
     )
     foreach ($file in $legacyFiles) {
         if (Test-Path -LiteralPath (Join-Path $repoRoot $file)) {
             throw "legacy file remains: $file"
         }
     }
-}
-
-Assert-Step 'every WPF control the scripts reach exists in the XAML' {
-    # wpf/ui.ps1, wpf/worker.ps1 and the entry point address controls through a
-    # hashtable lookup that resolves at runtime: a renamed x:Name in window.xaml
-    # yields $null and the code either throws far from the cause or silently
-    # skips its update. The set of names each side spells is small and exact, so
-    # the two are compared as sets rather than trusted to match.
-    $xaml = Read-GateText (Join-Path $repoRoot 'wpf\window.xaml')
-    $declared = [System.Collections.Generic.HashSet[string]]::new()
-    foreach ($m in [regex]::Matches($xaml, 'x:Name="([^"]+)"')) {
-        [void]$declared.Add($m.Groups[1].Value)
-    }
-    if ($declared.Count -lt 10) {
-        throw "window.xaml declares only $($declared.Count) named controls; the parse or the file is wrong"
-    }
-    # The gate's own file is in the same glob, and this step quotes the lookup
-    # form in its comment above; strip comment lines so the check cannot match
-    # its own prose. The needle is assembled from halves so the literal here is
-    # not itself a hit.
-    $needle = "\`$script" + ":Ui\['([^']+)'\]"
-    $used = @{}
-    foreach ($f in (Get-ProjectPs1Files -RepoRoot $repoRoot)) {
-        $src = Read-GateText $f.FullName
-        foreach ($line in ($src -split "\r?\n")) {
-            if ($line -match '^\s*#') { continue }
-            foreach ($m in [regex]::Matches($line, $needle)) {
-                $name = $m.Groups[1].Value
-                if (-not $used.ContainsKey($name)) { $used[$name] = @() }
-                $used[$name] += $f.Name
-            }
-        }
-    }
-    if ($used.Count -lt 10) {
-        throw "only $($used.Count) control names were found in the PowerShell layer; the parse is wrong"
-    }
-    $missing = @()
-    foreach ($name in $used.Keys) {
-        if (-not $declared.Contains($name)) {
-            $missing += ("{0} ({1})" -f $name, (($used[$name] | Sort-Object -Unique) -join ', '))
-        }
-    }
-    if ($missing.Count -gt 0) {
-        throw "these controls are addressed but not declared in window.xaml: $($missing -join ', ')"
-    }
-}
-
-Assert-Step 'the WPF window builds and renders headless' {
-    # The PowerShell parse step proves the scripts are syntactically valid; it
-    # cannot catch a control name that parses but does not exist, a converter
-    # that throws when the window is constructed, or a XAML resource that fails
-    # to load. -SelfTest constructs the real window, binds rows, renders it to a
-    # bitmap and writes a PNG, which exercises all three without a desktop
-    # session. It needs no network and touches no driver.
-    # The self test writes a fixed path, so the gate reads that one rather than
-    # asking the entry point for a location it does not accept.
-    $shot = Join-Path $env:TEMP 'lenovo_driver_wpf_smoke.png'
-    if (Test-Path -LiteralPath $shot) { Remove-Item -LiteralPath $shot -Force }
-    # -STA is required: WPF cannot construct a window on an MTA thread, and the
-    # host the gate itself runs on may be either. Launching a child host pinned
-    # to STA keeps this step independent of which PowerShell started the gate.
-    & powershell.exe -NoProfile -STA -ExecutionPolicy Bypass `
-        -File (Join-Path $repoRoot 'lenovo_driver_wpf.ps1') -SelfTest -NoElevation 2>&1 |
-        ForEach-Object { Write-Host $_ }
-    if ($LASTEXITCODE -ne 0) {
-        throw "the WPF self test exited $LASTEXITCODE"
-    }
-    if (-not (Test-Path -LiteralPath $shot)) {
-        throw "the WPF self test did not render a screenshot"
-    }
-    $size = (Get-Item -LiteralPath $shot).Length
-    Remove-Item -LiteralPath $shot -Force
-    if ($size -lt 4096) {
-        throw "the WPF screenshot is $size bytes; the window rendered empty"
-    }
-    Write-Host "      WPF window rendered ($size bytes)"
 }
 
 Assert-Step 'CLI build to temp' {
@@ -541,29 +406,29 @@ Assert-Step 'the invariants spec carries every rule the code enforces' {
     }
 }
 
-Assert-Step 'the launchers rebuild a stale engine' {
-    # Both launchers run bin\lenovo-driver.exe. If they build only when the file
-    # is missing, a binary from an older checkout runs forever and reports the
-    # results of code that is no longer in the tree -- which is exactly what
-    # happened: a three-month-old exe answered a live run with pre-fix output and
-    # nothing in the log said so.
+Assert-Step 'the launcher rebuilds a stale engine' {
+    # The CLI launcher runs bin\lenovo-driver.exe. If it builds only when the
+    # file is missing, a binary from an older checkout runs forever and reports
+    # the results of code that is no longer in the tree -- which is exactly what
+    # happened: a three-month-old exe answered a live run with pre-fix output
+    # and nothing in the log said so. The GUI shares the same binary and is
+    # launched through it (-Gui), so one launcher rule covers both surfaces.
     #
     # The rule is a call to the shared script, so this step checks the call and
     # the script's own freshness logic rather than restating either.
     $shared = Join-Path $repoRoot 'scripts\lib\ensure-engine.bat'
     if (-not (Test-Path -LiteralPath $shared)) {
-        throw 'scripts/lib/ensure-engine.bat is gone; the launchers have no freshness rule'
+        throw 'scripts/lib/ensure-engine.bat is gone; the launcher has no freshness rule'
     }
-    foreach ($launcher in @('install_lenovo_drivers.bat', 'install_lenovo_drivers_wpf.bat')) {
-        $text = Read-GateText (Join-Path $repoRoot $launcher)
-        if ($text -notmatch '(?i)call\s+"%~dp0scripts\\lib\\ensure-engine\.bat"') {
-            throw "$launcher does not call the shared engine-freshness script"
-        }
-        # The old shape was a bare existence test guarding the build. Its
-        # presence means the launcher went back to ignoring a stale binary.
-        if ($text -match '(?i)if\s+not\s+exist\s+"?bin\\lenovo-driver\.exe') {
-            throw "$launcher still builds only when the engine is missing, so a stale binary would run silently"
-        }
+    $launcher = 'install_lenovo_drivers.bat'
+    $text = Read-GateText (Join-Path $repoRoot $launcher)
+    if ($text -notmatch '(?i)call\s+"%~dp0scripts\\lib\\ensure-engine\.bat"') {
+        throw "$launcher does not call the shared engine-freshness script"
+    }
+    # The old shape was a bare existence test guarding the build. Its
+    # presence means the launcher went back to ignoring a stale binary.
+    if ($text -match '(?i)if\s+not\s+exist\s+"?bin\\lenovo-driver\.exe') {
+        throw "$launcher still builds only when the engine is missing, so a stale binary would run silently"
     }
     $rule = Read-GateText $shared
     foreach ($needle in @('xcopy /L /D', 'go build', 'no Go toolchain')) {
@@ -683,7 +548,7 @@ Assert-Step 'every text type the repo carries has an explicit line ending' {
     $attrs = Read-GateText (Join-Path $repoRoot '.gitattributes')
     foreach ($rule in @('*.md text eol=lf', '*.yml text eol=lf', '*.yaml text eol=lf',
             '*.json text eol=lf', '*.bat text eol=crlf', '*.ps1 text eol=lf',
-            '*.go text eol=lf', '*.xaml text eol=lf')) {
+            '*.go text eol=lf')) {
         if ($attrs -notmatch ('(?m)^' + [regex]::Escape($rule) + '$')) {
             throw ".gitattributes no longer pins '$rule'"
         }

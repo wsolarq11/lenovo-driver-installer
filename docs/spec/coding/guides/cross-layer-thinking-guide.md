@@ -10,9 +10,9 @@
 ## The Layers
 
 ```text
-WPF 表现层 (PowerShell, 薄渲染)
-   |  JSON export  /  DriverCode round-trip
-Go CLI 引擎 (确定性包 ↔ 副作用包)
+GUI 表现层 (internal/gui, mygo 原生 UI, 薄渲染)
+   |  引擎出口门面 (internal/app/gui.go)  /  DriverCode 意图回传
+Go 引擎 (确定性包 ↔ 副作用包)
    |
    +-- 联想 API (唯一归一化点)
    +-- Windows 系统 (SetupAPI / DriverStore / 注册表 / SMBIOS)
@@ -23,9 +23,10 @@ Go CLI 引擎 (确定性包 ↔ 副作用包)
 
 ## Boundary Triggers — Ask Before Editing
 
-1. **Go ↔ WPF**: does this change the JSON view shape or the DriverCode
-   round-trip? WPF must stay a thin renderer — no matching, attribution, or
-   install logic. → `docs/spec/contracts.md`, `docs/spec/architecture.md`.
+1. **GUI ↔ 引擎**: does this change the engine's exported face
+   (internal/app/gui.go) or the row projection? The GUI must stay a thin
+   renderer — no matching, attribution, or install logic. →
+   `docs/spec/contracts.md`, `docs/spec/architecture.md`.
 2. **deterministic ↔ side-effect**: does it move logic across the boundary?
    Deterministic packages never touch network / registry / PnP / console /
    process / file APIs. → `docs/spec/architecture.md` §2.1（分类唯一表）与 `docs/spec/coding/quality-guidelines.md`.
