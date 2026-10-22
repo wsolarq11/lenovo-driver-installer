@@ -44,6 +44,17 @@ jobs:
           # Stdlib-only module (go.mod has no requires, hence no go.sum).
           # setup-go defaults cache to true, which would emit a misleading
           # "go.sum not found" warning; disable it explicitly.
+        env:
+          # setup-go resolves `go 1.27` from go-version-file but may land on a
+          # newer preinstalled patch (the runner image moved to go1.27.3 while
+          # go.mod pins go1.27.2), and the gate's toolchain step then fails the
+          # run exactly as designed: floors measured by another compiler are not
+          # verdicts. GOTOOLCHAIN=go1.27.2 makes every go command use the pinned
+          # release, downloading it if the image does not have it. The variable
+          # is set here — once, for every step — rather than patched into the
+          # gate script, because which compiler runs is the environment's
+          # decision, not the verifier's.
+          GOTOOLCHAIN: go1.27.2
       - name: Report Go and host versions
         shell: pwsh
         # The gate has its own step asserting the running toolchain matches the
