@@ -55,6 +55,15 @@ jobs:
           & ${{ matrix.host }} -NoProfile -Command $PSVersionTable.PSVersion.ToString()
       - name: Run offline verification
         shell: pwsh
+        # The gate's own output is the diagnosis: every failing Assert-Step prints
+        # the step name and the reason before the script exits 1. Job logs need
+        # an admin token to download, but the step summary is readable through
+        # the public API, so the tail of the run lands there on failure.
         run: |
-          & ${{ matrix.host }} -NoProfile -ExecutionPolicy Bypass -File ./scripts/verify.ps1
+          $out = & ${{ matrix.host }} -NoProfile -ExecutionPolicy Bypass -File ./scripts/verify.ps1 2>&1
+          $out | ForEach-Object { Write-Host $_ }
+          if ($LASTEXITCODE -ne 0) {
+            $tail = ($out | Select-Object -Last 60) -join "`n"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### verify failed (${{ matrix.host }})`n``````text`n$tail`n``````"
+          }
           exit $LASTEXITCODE
