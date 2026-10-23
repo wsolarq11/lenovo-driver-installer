@@ -8,6 +8,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -18,11 +19,12 @@ import (
 )
 
 // viewResult is one refresh outcome applied to the state on the main thread.
+// The machine caption is not here: Refresh renders it in its earlier stage,
+// before the comparison view exists.
 type viewResult struct {
-	MachineCaption string
-	OsList         []osEntry
-	ListOsID       string
-	Rows           []driverRow
+	OsList   []osEntry
+	ListOsID string
+	Rows     []driverRow
 }
 
 // engineRunner owns the embedded engine and the single background job slot.
@@ -55,7 +57,7 @@ func (r *engineRunner) start(kind runKind) bool {
 		return false
 	}
 	r.busy = true
-	r.notify(func(s *state) { s.Busy, s.Running = true, kind })
+	r.notify(func(s *state) { s.Busy = true })
 	return true
 }
 
@@ -64,7 +66,7 @@ func (r *engineRunner) done() {
 	r.mu.Lock()
 	r.busy = false
 	r.mu.Unlock()
-	r.notify(func(s *state) { s.Busy, s.Running = false, runNone })
+	r.notify(func(s *state) { s.Busy = false })
 }
 
 // Serve wires the runner to the state: the view's dispatch requests become
@@ -114,14 +116,13 @@ func (r *engineRunner) Refresh(ctx context.Context, osID string, includeBios, sk
 		return
 	}
 	result := viewResult{
-		MachineCaption: machineCaption(vc),
-		OsList:         osEntries(vc.OsList, vc.CurrentSystemOsID),
-		ListOsID:       listOsID,
-		Rows:           projectRows(view.Selected),
+		OsList:   osEntries(vc.OsList, vc.CurrentSystemOsID),
+		ListOsID: listOsID,
+		Rows:     projectRows(view.Selected),
 	}
 	r.notify(func(s *state) { s.applyExport(&result) })
 	r.loadPlan()
-	r.logf("INFO", locales.RowsLoaded(itoa(len(result.Rows)), osLabelFor(vc.OsList, listOsID)))
+	r.logf("INFO", locales.RowsLoaded(strconv.Itoa(len(result.Rows)), osLabelFor(vc.OsList, listOsID)))
 }
 
 // loadPlan reads the engine's plan artifact into the read-only plan pane. A
@@ -175,7 +176,7 @@ func (r *engineRunner) Install(ctx context.Context, osID string, req installRequ
 		r.logf("ERROR", locales.CompareFailed(err.Error()))
 		return
 	}
-	selected, code := r.app.SelectByCodes(vc, view, strings.Join(req.codes, ","))
+	selected, code := r.app.SelectByCodes(ctx, view, strings.Join(req.codes, ","))
 	if code != 0 {
 		r.logf("ERROR", locales.CodesMismatch())
 		return
@@ -222,15 +223,15 @@ func openRollbackConfirm(s *state, offers []app.PendingOffer) {
 		}
 		lines = append(lines,
 			"  "+offer.DriverCode+"  "+offer.DriverName+"\n"+
-				"    版本 "+offer.AfterVersion+" -> "+offer.BeforeVersion+"\n"+
-				"    旧 INF "+offer.BeforeInf+"\n"+
+				locales.RollbackVersion(offer.AfterVersion, offer.BeforeVersion)+"\n"+
+				locales.RollbackInf(offer.BeforeInf)+"\n"+
 				strings.Join(devices, "\n"))
 		codes = append(codes, offer.DriverCode)
 	}
 	if len(codes) == 0 {
 		return
 	}
-	message := "以下驱动安装后检测到设备问题，可回退到安装前的驱动程序：\n\n" +
+	message := locales.RollbackIntro() + "\n\n" +
 		strings.Join(lines, "\n\n") + "\n\n" +
 		locales.RollbackNote()
 	s.Confirm = &confirmDialog{
@@ -288,7 +289,6 @@ func projectRows(assessed []*model.AssessedDriver) []driverRow {
 			DeviceProblem:  ad.DeviceProblem,
 			NonMatchReason: ad.NonMatchReason,
 			FileName:       ad.FileName,
-			FileSize:       ad.FileSize,
 			// IsApplicable mirrors the CLI's automatic install set so the
 			// GUI's install-all action offers the same drivers the CLI would.
 			// A local definition here would re-admit Local newer.
@@ -301,23 +301,23 @@ func projectRows(assessed []*model.AssessedDriver) []driverRow {
 
 // machineCaption renders the header caption.
 func machineCaption(vc *app.ViewContext) string {
-	return vc.Machine.Model + " / " + vc.Machine.Serial + "  |  当前系统 " + vc.OSInfo.Caption
+	return locales.MachineCaption(vc.Machine.Model, vc.Machine.Serial, vc.OSInfo.Caption)
 }
 
 // osEntries builds the dropdown list: the current system first, then the OS
 // list in engine order.
 func osEntries(osList []model.OSListEntry, currentID string) []osEntry {
 	entries := make([]osEntry, 0, len(osList)+1)
-	currentLabel := "当前系统"
+	currentLabel := locales.CurrentSystemOnly()
 	for _, entry := range osList {
 		if entry.OSID == currentID {
-			currentLabel = "当前系统 (" + entry.OSName + ")"
+			currentLabel = locales.CurrentSystemEntry(entry.OSName)
 			break
 		}
 	}
 	entries = append(entries, osEntry{Label: currentLabel, OSID: ""})
 	for _, entry := range osList {
-		entries = append(entries, osEntry{Label: entry.OSName + " (OSID " + entry.OSID + ")", OSID: entry.OSID})
+		entries = append(entries, osEntry{Label: locales.OsEntry(entry.OSName, entry.OSID), OSID: entry.OSID})
 	}
 	return entries
 }

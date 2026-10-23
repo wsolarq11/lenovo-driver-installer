@@ -5,6 +5,8 @@
 package gui
 
 import (
+	"strconv"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 
@@ -31,7 +33,6 @@ type driverRow struct {
 	DeviceProblem  string
 	NonMatchReason string
 	FileName       string
-	FileSize       string
 	IsApplicable   bool
 	IsUpdate       bool
 }
@@ -51,12 +52,13 @@ type confirmDialog struct {
 	Confirm func()
 }
 
-// runKind names the background job the runner is executing.
+// runKind names the job a dispatch request asks for. There is no zero value:
+// a dispatch is always made for one named job, and an unset request is a bug
+// caught by the empty switch arm in Serve.
 type runKind int
 
 const (
-	runNone runKind = iota
-	runRefresh
+	runRefresh runKind = iota + 1
 	runInstall
 	runRollback
 	runOpenPlan
@@ -86,8 +88,7 @@ type state struct {
 
 	// Busy is whether a background job runs. Busy disables every action
 	// button and shows the indeterminate progress bar.
-	Busy    bool
-	Running runKind
+	Busy bool
 
 	IncludeBios   bool
 	SkipHashCheck bool
@@ -186,9 +187,9 @@ func installSummary(req installRequest, rows []driverRow) string {
 	for _, row := range rows {
 		byCode[row.DriverCode] = row
 	}
-	intro := locales.ConfirmInstall(itoa(len(req.codes)))
+	intro := locales.ConfirmInstall(strconv.Itoa(len(req.codes)))
 	if req.downloadOnly {
-		intro = locales.ConfirmDownload(itoa(len(req.codes)))
+		intro = locales.ConfirmDownload(strconv.Itoa(len(req.codes)))
 	}
 	summary := intro
 	for _, code := range req.codes {
@@ -223,18 +224,4 @@ func (s *state) applyExport(v *viewResult) {
 			s.Selected[row.DriverCode] = true
 		}
 	}
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(buf[i:])
 }

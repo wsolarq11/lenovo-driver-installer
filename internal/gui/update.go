@@ -28,15 +28,8 @@ func checkForUpdates() {
 			})
 			return
 		}
-		res, err := mygo.Dialog.Message(mygo.MessageOptions{
-			Title:   locales.AppTitle(),
-			Message: locales.UpdateChecking(),
-			Buttons: []string{locales.ConfirmOk()},
-		})
-		_ = res
-		if err != nil {
-			return
-		}
+		// No "checking" dialog: it would block the very check it announces,
+		// and the outcome dialog follows within a second or two.
 		up, err := mygo.Updater.Check(context.Background())
 		if err != nil {
 			mygo.Dialog.Message(mygo.MessageOptions{
@@ -52,7 +45,7 @@ func checkForUpdates() {
 			})
 			return
 		}
-		res, err = mygo.Dialog.Message(mygo.MessageOptions{
+		res, err := mygo.Dialog.Message(mygo.MessageOptions{
 			Title:   locales.AppTitle(),
 			Message: locales.UpdateAvailable(up.Version),
 			Detail:  up.Notes,

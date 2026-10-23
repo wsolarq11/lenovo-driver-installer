@@ -7,10 +7,12 @@ package gui
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
 	"lenovo-driver/internal/app"
+	"lenovo-driver/internal/inventory"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -54,7 +56,7 @@ func splitGUIArgs(args []string) (gui bool, rest []string, elevated bool) {
 // single UAC entry for the GUI: the window never runs unelevated, because an
 // install pass started from an unelevated window could not elevate per-driver.
 func runElevated(args []string) int {
-	admin, err := isAdmin()
+	admin, err := inventory.IsAdministrator()
 	if err == nil && admin {
 		return runWindow(args)
 	}
@@ -66,9 +68,9 @@ func runElevated(args []string) int {
 	relaunch := append([]string{"-Gui", "-GuiElevated"}, args...)
 	quoted := make([]string, len(relaunch))
 	for i, arg := range relaunch {
-		quoted[i] = quoteWindowsArgument(arg)
+		quoted[i] = app.QuoteWindowsArgument(arg)
 	}
-	code, err := relaunchRunAs(exe, strings.Join(quoted, " "))
+	code, err := app.RelaunchElevated(exe, strings.Join(quoted, " "))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error: elevation failed:", err)
 		return 1
@@ -80,7 +82,7 @@ func runElevated(args []string) int {
 // loop until the window closes. The window is created in WhenReady, where
 // mygo requires it; the auto-refresh job starts after it exists.
 func runWindow(args []string) int {
-	a := app.New(ioDiscard(), ioDiscard(), emptyReader())
+	a := app.New(io.Discard, io.Discard, strings.NewReader(""))
 	s := newGUIState()
 	r := newEngineRunner(a, func(fn func(*state)) {
 		if win != nil {

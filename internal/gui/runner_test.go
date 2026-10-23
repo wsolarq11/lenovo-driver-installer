@@ -20,15 +20,15 @@ func TestStartRejectsASecondJob(t *testing.T) {
 	if !r.start(runRefresh) {
 		t.Fatal("first start must win")
 	}
-	if s.Busy != true || s.Running != runRefresh {
-		t.Fatalf("busy state = %v/%v, want true/runRefresh", s.Busy, s.Running)
+	if !s.Busy {
+		t.Fatal("a started job must mark the state busy")
 	}
 	if r.start(runInstall) {
 		t.Fatal("second start must be refused while a job runs")
 	}
 	r.done()
-	if s.Busy != false || s.Running != runNone {
-		t.Fatalf("after done: %v/%v, want false/runNone", s.Busy, s.Running)
+	if s.Busy {
+		t.Fatal("a finished job must clear the busy flag")
 	}
 }
 

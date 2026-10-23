@@ -21,7 +21,7 @@ import (
 // fixture files. Production code never overrides it.
 var verifyFileSignature = trust.VerifyFileSignature
 
-// InstallSelected downloads and installs the selected drivers, mirroring the PS1 main loop.
+// InstallSelected downloads and installs the selected drivers.
 func (a *App) InstallSelected(
 	ctx context.Context,
 	vc *ViewContext,

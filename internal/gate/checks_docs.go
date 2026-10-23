@@ -133,7 +133,7 @@ func checkCLIArtifactPathsMatchDocs(ctx *Context) error {
 	}
 
 	// The offer file's name has a machine source of its own: the constant the
-	// writer uses. help.go, contracts.md and the WPF layer are copies of it.
+	// writer uses. help.go and contracts.md are copies of it.
 	rollback, err := ctx.Repo.fileWithName("internal/app", "rollbackOfferFileName")
 	if err != nil {
 		return err

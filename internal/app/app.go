@@ -102,8 +102,8 @@ func artifactBaseDir() string {
 // New returns a configured app. The log, history ledger, and the regenerated
 // plan view all live under the stable per-user artifact directory so none of
 // the three disappears on a TEMP cleanup. The plan is still a per-run view, not
-// a persistent audit ledger: it is overwritten on every run and the WPF layer
-// reads the same stable path instead of hardcoding %TEMP%.
+// a persistent audit ledger: it is overwritten on every run and the GUI reads
+// the same stable path instead of hardcoding %TEMP%.
 func New(stdout, stderr io.Writer, stdin io.Reader) *App {
 	base := artifactBaseDir()
 	return &App{
@@ -186,7 +186,7 @@ func (a *App) runSelection(ctx context.Context, vc *ViewContext, view *DriverVie
 	}
 }
 
-// runExport writes the WPF-compatible JSON view and exits.
+// runExport writes the JSON view and exits.
 func (a *App) runExport(ctx context.Context, vc *ViewContext, view *DriverView) int {
 	if err := a.ExportGUIView(vc.Opts.GuiExportPath, vc, view); err != nil {
 		a.Log(ctx, "GUI export failed: "+err.Error(), "ERROR")
@@ -217,12 +217,7 @@ func (a *App) runInstallFlow(ctx context.Context, vc *ViewContext, view *DriverV
 // cancel with nothing to install).
 func (a *App) acquireSelection(ctx context.Context, vc *ViewContext, view *DriverView, listOsID string) ([]*model.AssessedDriver, int) {
 	if vc.Opts.GuiInstallCodes != "" {
-		selection := selectByCodes(view.Selected, vc.Opts.GuiInstallCodes)
-		if len(selection.Missing) > 0 || len(selection.NotApplicable) > 0 || len(selection.Selected) == 0 {
-			a.Log(ctx, "GUI-selected driver codes did not match the current list.", "ERROR")
-			return nil, 3
-		}
-		return selection.Selected, 0
+		return a.SelectByCodes(ctx, view, vc.Opts.GuiInstallCodes)
 	}
 	selection := a.SelectInteractive(ctx, vc, view, listOsID)
 	if selection == nil {
@@ -332,8 +327,8 @@ func (a *App) resolveListOS(ctx context.Context, vc *ViewContext, opts *Options)
 		return target.OSID, 0
 	}
 	// The hint names a control only the interactive selection menu has. Export,
-	// dry-run, and GUI-code runs never show that menu (the WPF switches OS with
-	// a dropdown), so advertising "press t" there describes a key that cannot
+	// dry-run, and GUI-code runs never show that menu (the desktop GUI switches
+	// OS with a dropdown), so advertising "press t" there describes a key that cannot
 	// do anything.
 	if !opts.LatestAcrossOS && !opts.CurrentOSOnly && len(vc.OsList) > 1 &&
 		!opts.DryRun && opts.GuiExportPath == "" && opts.GuiInstallCodes == "" {

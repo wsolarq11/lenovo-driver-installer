@@ -14,13 +14,11 @@
   "tooltipStatus": "官方版本与本地版本的比较结论;fact=本机实测,inference=来源推断,undetermined=无法判定",
   "tooltipEvidence": "fact=本机实测 / inference=来源推断 / undetermined=无法判定",
   "updateMenu": "检查更新...",
-  "updateChecking": "正在检查更新...",
   "updateUpToDate": "已是最新版本 {version}。",
   "updateCheckFailed": "检查更新失败: {err}",
   "updateAvailable": "发现新版本 {version}",
   "updateInstall": "下载并安装",
   "updateLater": "稍后",
-  "updateDownloading": "正在下载更新... {percent}%",
   "updateInstallFailed": "更新安装失败: {err}",
   "updateDisabled": "此构建未配置更新通道（个人单机构建）。自动更新仅对已发布的安装版启用。",
   "refreshButton": "刷新驱动列表",
@@ -71,5 +69,7 @@
   "rollbackIntro": "以下驱动安装后检测到设备问题，可回退到安装前的驱动程序：",
   "rollbackVersion": "    版本 {after} -> {before}",
   "rollbackInf": "    旧 INF {inf}",
-  "rollbackNote": "说明：问题码为本机实测；「由本次安装导致」为时间相关性推断，非直接测量。回退会先回退驱动程序，无备份时重装旧 INF，不删除驱动包。是否执行？"
+  "rollbackNote": "说明：问题码为本机实测；「由本次安装导致」为时间相关性推断，非直接测量。回退会先回退驱动程序，无备份时重装旧 INF，不删除驱动包。是否执行？",
+  "machineCaption": "{model} / {serial}  |  当前系统 {system}",
+  "currentSystemOnly": "当前系统"
 }

@@ -21,11 +21,13 @@ func (a *App) ResolveRuntime(ctx context.Context, opts *Options) (*ViewContext, 
 
 // SelectByCodes resolves an install selection from comma-separated driver
 // codes against a built view. code is 0 on success; 3 means the codes did not
-// match the current list (unknown or not-applicable), mirroring the CLI.
-func (a *App) SelectByCodes(vc *ViewContext, view *DriverView, codes string) ([]*model.AssessedDriver, int) {
+// match the current list (unknown or not-applicable), mirroring the CLI. It is
+// the single implementation of that policy: the CLI's -GuiInstallCodes path
+// calls it too.
+func (a *App) SelectByCodes(ctx context.Context, view *DriverView, codes string) ([]*model.AssessedDriver, int) {
 	selection := selectByCodes(view.Selected, codes)
 	if len(selection.Missing) > 0 || len(selection.NotApplicable) > 0 || len(selection.Selected) == 0 {
-		a.Log(context.Background(), "GUI-selected driver codes did not match the current list.", "ERROR")
+		a.Log(ctx, "GUI-selected driver codes did not match the current list.", "ERROR")
 		return nil, 3
 	}
 	return selection.Selected, 0

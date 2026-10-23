@@ -55,12 +55,13 @@ func TestApplyExportPrefmarksUpdateRows(t *testing.T) {
 
 func TestApplyExportDoesNotRewriteMachineCaption(t *testing.T) {
 	// The header is rendered by Refresh's first stage; applyExport (the row
-	// stage, also used by install jobs) must not rewrite it mid-run.
+	// stage, also used by install jobs) must not rewrite it mid-run. The
+	// result type no longer even carries a caption to write.
 	s := newTestState()
 	s.MachineCaption = "已识别的机器"
 	r := newTestRunner(s)
 	r.notify(func(st *state) {
-		st.applyExport(&viewResult{MachineCaption: "another caption", Rows: []driverRow{{DriverCode: "DRV-X"}}})
+		st.applyExport(&viewResult{Rows: []driverRow{{DriverCode: "DRV-X"}}})
 	})
 	if s.MachineCaption != "已识别的机器" {
 		t.Fatalf("caption = %q, want it untouched", s.MachineCaption)

@@ -175,16 +175,6 @@ func (msgs Messages) UpdateMenu() string {
 	return Catalog.Format(msgs.locale, "updateMenu", nil)
 }
 
-// UpdateChecking says "正在检查更新..."
-// in the language the app shows.
-func UpdateChecking() string { return In(i18n.Locale()).UpdateChecking() }
-
-// UpdateChecking says "正在检查更新..."
-// in the language of msgs.
-func (msgs Messages) UpdateChecking() string {
-	return Catalog.Format(msgs.locale, "updateChecking", nil)
-}
-
 // UpdateUpToDate says "已是最新版本 {version}。"
 // in the language the app shows.
 func UpdateUpToDate(version string) string { return In(i18n.Locale()).UpdateUpToDate(version) }
@@ -233,16 +223,6 @@ func UpdateLater() string { return In(i18n.Locale()).UpdateLater() }
 // in the language of msgs.
 func (msgs Messages) UpdateLater() string {
 	return Catalog.Format(msgs.locale, "updateLater", nil)
-}
-
-// UpdateDownloading says "正在下载更新... {percent}%"
-// in the language the app shows.
-func UpdateDownloading(percent string) string { return In(i18n.Locale()).UpdateDownloading(percent) }
-
-// UpdateDownloading says "正在下载更新... {percent}%"
-// in the language of msgs.
-func (msgs Messages) UpdateDownloading(percent string) string {
-	return Catalog.Format(msgs.locale, "updateDownloading", map[string]any{"percent": percent})
 }
 
 // UpdateInstallFailed says "更新安装失败: {err}"
@@ -757,4 +737,26 @@ func RollbackNote() string { return In(i18n.Locale()).RollbackNote() }
 // in the language of msgs.
 func (msgs Messages) RollbackNote() string {
 	return Catalog.Format(msgs.locale, "rollbackNote", nil)
+}
+
+// MachineCaption says "{model} / {serial}  |  当前系统 {system}"
+// in the language the app shows.
+func MachineCaption(model string, serial string, system string) string {
+	return In(i18n.Locale()).MachineCaption(model, serial, system)
+}
+
+// MachineCaption says "{model} / {serial}  |  当前系统 {system}"
+// in the language of msgs.
+func (msgs Messages) MachineCaption(model string, serial string, system string) string {
+	return Catalog.Format(msgs.locale, "machineCaption", map[string]any{"model": model, "serial": serial, "system": system})
+}
+
+// CurrentSystemOnly says "当前系统"
+// in the language the app shows.
+func CurrentSystemOnly() string { return In(i18n.Locale()).CurrentSystemOnly() }
+
+// CurrentSystemOnly says "当前系统"
+// in the language of msgs.
+func (msgs Messages) CurrentSystemOnly() string {
+	return Catalog.Format(msgs.locale, "currentSystemOnly", nil)
 }

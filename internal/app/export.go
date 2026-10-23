@@ -8,10 +8,10 @@ import (
 	"lenovo-driver/internal/model"
 )
 
-// This file owns the WPF-compatible JSON view export. Splitting the export
-// concern out of view.go keeps the comparison/view pipeline file under the
-// 500-line ceiling while the payload spec stays one hop away from the driver
-// view it serializes.
+// This file owns the JSON view export behind -GuiExportPath: a stable,
+// machine-readable projection of one comparison view for scripts and manual
+// inspection. The desktop GUI does not consume it (it calls the engine
+// directly), so this is an external contract, not an internal hop.
 
 // guiExportPayload matches Export-LenovoDriverViewJson.
 type guiExportPayload struct {
@@ -28,7 +28,7 @@ type guiExportPayload struct {
 	Drivers       []guiDriverRow      `json:"Drivers"`
 }
 
-// guiDriverRow is the WPF-facing projection of one assessed driver.
+// guiDriverRow is the exported projection of one assessed driver.
 type guiDriverRow struct {
 	Selected       bool   `json:"Selected"`
 	DriverCode     string `json:"DriverCode"`
@@ -49,7 +49,7 @@ type guiDriverRow struct {
 	IsUpdate       bool   `json:"IsUpdate"`
 }
 
-// ExportGUIView writes the WPF-compatible JSON view.
+// ExportGUIView writes the JSON view.
 func (a *App) ExportGUIView(path string, vc *ViewContext, view *DriverView) error {
 	currentOSName := model.OSNameByID(vc.OsList, vc.CurrentSystemOsID)
 	listOSName := model.OSNameByID(vc.OsList, view.OsID)
