@@ -88,7 +88,11 @@ func (r *engineRunner) Serve(s *state) *state {
 
 // Refresh resolves machine identity, builds the comparison view for osID
 // ("" selects the current system), and applies it to the state. It is the
-// CLI's resolveRuntime + resolveListOS + CompareOSDriverView sequence.
+// CLI's resolveRuntime + resolveListOS + CompareOSDriverView sequence,
+// rendered in two stages: the machine identity and OS dropdown appear as soon
+// as resolution lands (the state renders an empty table meanwhile), and the
+// rows follow when the comparison view is built. Every value still comes from
+// one live run; nothing is cached or reused across runs.
 func (r *engineRunner) Refresh(ctx context.Context, osID string, includeBios, skipHashCheck bool) {
 	if !r.start(runRefresh) {
 		return
@@ -98,6 +102,11 @@ func (r *engineRunner) Refresh(ctx context.Context, osID string, includeBios, sk
 	if err != nil {
 		return
 	}
+	r.notify(func(s *state) {
+		s.MachineCaption = machineCaption(vc)
+		s.OsList = osEntries(vc.OsList, vc.CurrentSystemOsID)
+		s.OsID = listOsID
+	})
 	view, err := r.app.CompareOSDriverView(ctx, vc, listOsID)
 	if err != nil {
 		r.logf("ERROR", "驱动对比失败: "+err.Error())

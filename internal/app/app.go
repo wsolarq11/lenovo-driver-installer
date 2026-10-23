@@ -245,8 +245,11 @@ func (a *App) maybeElevated(ctx context.Context, opts *Options, args []string) (
 	return true, 1
 }
 
-// resolveRuntime resolves the machine/OS identity, Lenovo category and OS
-// entry, and the local inventory snapshot into a single shared context.
+// resolveRuntime resolves the machine/OS identity and the Lenovo category and
+// OS entry over the network while the local inventory snapshots run in
+// parallel; the two legs join before the read-only view is built. The network
+// leg decides the exit code (hard fail); the local leg keeps its
+// degrade-to-empty policy.
 func (a *App) resolveRuntime(ctx context.Context, opts *Options) (*ViewContext, int) {
 	a.Log(ctx, "=== Lenovo driver update started ===", "INFO")
 	machine, err := inventory.GetMachineInfo(ctx)
@@ -264,46 +267,34 @@ func (a *App) resolveRuntime(ctx context.Context, opts *Options) (*ViewContext, 
 	a.Log(ctx, "System        : "+osInfo.Caption, "INFO")
 	a.Log(ctx, "OS match key  : "+osInfo.OSName, "INFO")
 
-	categoryID, err := a.APIClient.ResolveCategoryID(ctx, firstNonEmpty(opts.Model, machine.Model), machine.Serial)
-	if err != nil || categoryID == "" {
-		reason := ""
-		if err != nil {
-			reason = err.Error()
-		}
-		a.Log(ctx, "Could not resolve the Lenovo machine category. Use -Model \"82JQ\" if the automatic lookup fails: "+reason, "ERROR")
-		return nil, 1
-	}
-	a.Log(ctx, "Lenovo category ID : "+categoryID, "INFO")
-
-	osResolution, err := a.APIClient.ResolveOSEntry(ctx, categoryID, osInfo.OSName, osInfo.Kind)
-	if err != nil || osResolution == nil {
-		a.Log(ctx, "Could not resolve the current OS entry from Lenovo. Use -LatestAcrossOS only after confirming the OS list is complete.", "ERROR")
-		return nil, 1
-	}
-	sysID := osResolution.OSEntry.OSID
-	a.Log(ctx, "Matched OS entry : "+osResolution.OSEntry.OSName+" (OSID "+sysID+")", "INFO")
-	a.logOSResolution(ctx, osResolution)
-
-	localDevices, err := inventory.GetLocalDeviceSnapshot(ctx)
-	if err != nil {
-		a.Log(ctx, "Local device snapshot failed: "+err.Error(), "WARN")
-		localDevices = nil
-	}
-	installedApps, err := inventory.GetInstalledApps(ctx)
-	if err != nil {
-		a.Log(ctx, "Installed application snapshot failed: "+err.Error(), "WARN")
-		installedApps = nil
-	}
-	softwareSnapshot, err := inventory.GetSoftwareSnapshot(ctx, installedApps)
-	if err != nil {
-		a.Log(ctx, "Software snapshot failed: "+err.Error(), "WARN")
+	var (
+		wg               sync.WaitGroup
+		code             int
+		categoryID       string
+		osResolution     *api.OSResolution
+		localDevices     []model.Device
+		installedApps    []model.InstalledApp
+		softwareSnapshot model.SoftwareSnapshot
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		categoryID, osResolution, code = a.resolveLenovoIdentity(ctx, opts, machine, osInfo)
+	}()
+	go func() {
+		defer wg.Done()
+		localDevices, installedApps, softwareSnapshot = a.localSnapshots(ctx)
+	}()
+	wg.Wait()
+	if code != 0 {
+		return nil, code
 	}
 	history := a.ReadHistory(ctx)
 
 	return &ViewContext{
 		Opts:              *opts,
 		CategoryID:        categoryID,
-		CurrentSystemOsID: sysID,
+		CurrentSystemOsID: osResolution.OSEntry.OSID,
 		OsList:            osResolution.OSList,
 		LocalDevices:      localDevices,
 		InstalledApps:     installedApps,

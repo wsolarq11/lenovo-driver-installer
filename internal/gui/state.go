@@ -200,6 +200,8 @@ func (s *state) appendLog(level, text string) {
 }
 
 // applyExport replaces the table and dropdown from an engine view result.
+// The machine caption is not touched here: Refresh renders the header in its
+// earlier stage, and Install jobs must not rewrite it mid-run.
 func (s *state) applyExport(v *viewResult) {
 	s.Rows = v.Rows[:len(v.Rows):len(v.Rows)]
 	s.OsList = v.OsList
@@ -209,9 +211,6 @@ func (s *state) applyExport(v *viewResult) {
 		if row.IsUpdate {
 			s.Selected[row.DriverCode] = true
 		}
-	}
-	if v.MachineCaption != "" {
-		s.MachineCaption = v.MachineCaption
 	}
 }
 
