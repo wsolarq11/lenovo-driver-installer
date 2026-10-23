@@ -6,6 +6,8 @@ lenovo_driver_plan.txt
 
 # Go toolchain and build artifacts
 /bin/
+# mygo build output (exe, installer, update archives, manifests)
+/build/
 *.exe
 *.test
 *.out

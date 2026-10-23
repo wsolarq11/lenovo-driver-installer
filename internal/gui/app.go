@@ -105,12 +105,15 @@ func runWindow(args []string) int {
 				s.view(c)
 			}),
 		})
+		// Show explicitly: a window restored from a hidden state (the tray
+		// flow leaves one behind) would otherwise start invisible with no
+		// visible way back except the tray.
+		win.Show()
 		// The real changed hook needs the window, which exists by now.
 		s.changed = func() { win.Update(func() {}) }
-		// Close-to-tray: the window hides and the tray keeps the app
-		// reachable; the tray menu's 退出 quits for real. A second close
-		// request while quitting runs must fall through (the engine is
-		// embedding real work, but a quit is a quit).
+		// Close-to-tray: a user close hides the window and the tray keeps the
+		// app reachable. A quit must pass through, or App.Quit() would hide
+		// the window it is trying to close and the process would linger.
 		win.OnClose(func(e *mygo.CloseEvent) {
 			if !quitting {
 				e.PreventDefault()

@@ -4,12 +4,13 @@
 
 六条不变量是审计脚本规格的不可回退约束。产品能力（签名、升级、遥测）只能作为核心之外的层加入，不得违反任何一条。
 
-三处出现，但权威关系固定：`AGENTS.md` 是清单权威（硬门禁，CI 阻断），本文件是语义展开的唯一权威（每条“禁止什么、在哪里强制”）；`docs/decisions/distribution-frozen.md` 里的六条是决策时的引述（冻结，不随语义演进）。改语义只改本文件，改清单只改 `AGENTS.md`，决策记录不参与演进。
+三处出现，但权威关系固定：`AGENTS.md` 是清单权威（硬门禁，CI 阻断），本文件是语义展开的唯一权威（每条“禁止什么、在哪里强制”）；`docs/decisions/distribution-frozen.md` 里的六条是决策时的引述（该记录的分发结论已由 `distribution-unfrozen.md` 解冻，但六条不变量本身不变）。改语义只改本文件，改清单只改 `AGENTS.md`，决策记录不参与演进。
 
 ## 1. 确定性
 
 - 约束：CLI 引擎零遥测、无隐藏联网、无后台服务。
 - 强制点：门禁步骤 `engine zero-network import (local side-effect packages)`——`internal/install`、`internal/compare`、`internal/inventory`、`internal/plan`、`internal/audit` 不得 import `net/http` / `net/url`，只有 `download` / `api` 能碰网络。运行时只派生到原生 Windows API 与联想官方接口，从不派生 PowerShell。该步骤的检查体在 `internal/gate`（由 `cmd/gatecheck` 驱动、`scripts/verify.ps1` 逐条调用），用 AST 判定导入而不是匹配源码文本。
+- 强制点：门禁步骤 `the update check is operator-initiated, never timed`——分发解冻后新增：`Updater.Check` / `Updater.Install` 只能从 `checkForUpdates` 调用（托盘菜单唯一入口），且 `internal/gui` 生产文件不得出现 `NewTicker`/`NewTimer`/`Tick`/`AfterFunc`。理由：定时轮询就是"隐藏联网"，即使目标是 release feed；更新检查必须由操作者显式触发。
 - 强制点：门禁步骤 `the architecture doc names the network boundary the imports show`——`docs/spec/architecture.md` §2.1 声明的联网包集合必须**等于**实际 import 网络库的包集合（双向比对，多一个少一个都红）。规格是给人读的那一半，代码是给编译器读的那一半，两边曾漂移：`architecture.md` 把 `api` 列进“确定性包”，而 `api` import `net/http`。
 - 强制点：门禁步骤 `the running Go toolchain is the one the module pins`——跑门禁的编译器必须**等于** `go.mod` 的 `toolchain` 指令所钉的版本，否则直接 FAIL 并点名。理由不是惯例而是实测：门禁的覆盖率下限读自 `go test -cover`，而 Go 的语句插桩在补丁版本之间会变——同一份源码、同一台机器，`go1.27.0` 把 `internal/trust` 量成 45.8%（33/72 条语句），`go1.27.2` 量成 34.5%（19/55 条），一字未改。于是「下限」不再是阈值而是随编译器漂移的数：以修测试前的测试集为例，完好值在两工具链上是 45.8% / 34.5%，删掉注入测试后的腐化信号是 38.9% / 25.5%，于是**不存在**一个同时高于腐化信号（最大的 38.9%）又低于完好值（最小的 34.5%）的数——任何下限都可能在一台机器上假绿、在另一台上假红。确定性要求同一个提交给出同一个判定，所以先钉编译器再谈下限。注意 `toolchain` 指令语义是下限（本地更新的工具链仍胜出），精确钉靠这条断言而非指令本身；CI 侧由 `setup-go` 的 `go-version-file: go.mod` 从同一处读取，避免出现第二份版本真相。
 

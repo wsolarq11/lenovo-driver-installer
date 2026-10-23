@@ -165,6 +165,106 @@ func (msgs Messages) TooltipEvidence() string {
 	return Catalog.Format(msgs.locale, "tooltipEvidence", nil)
 }
 
+// UpdateMenu says "检查更新..."
+// in the language the app shows.
+func UpdateMenu() string { return In(i18n.Locale()).UpdateMenu() }
+
+// UpdateMenu says "检查更新..."
+// in the language of msgs.
+func (msgs Messages) UpdateMenu() string {
+	return Catalog.Format(msgs.locale, "updateMenu", nil)
+}
+
+// UpdateChecking says "正在检查更新..."
+// in the language the app shows.
+func UpdateChecking() string { return In(i18n.Locale()).UpdateChecking() }
+
+// UpdateChecking says "正在检查更新..."
+// in the language of msgs.
+func (msgs Messages) UpdateChecking() string {
+	return Catalog.Format(msgs.locale, "updateChecking", nil)
+}
+
+// UpdateUpToDate says "已是最新版本 {version}。"
+// in the language the app shows.
+func UpdateUpToDate(version string) string { return In(i18n.Locale()).UpdateUpToDate(version) }
+
+// UpdateUpToDate says "已是最新版本 {version}。"
+// in the language of msgs.
+func (msgs Messages) UpdateUpToDate(version string) string {
+	return Catalog.Format(msgs.locale, "updateUpToDate", map[string]any{"version": version})
+}
+
+// UpdateCheckFailed says "检查更新失败: {err}"
+// in the language the app shows.
+func UpdateCheckFailed(err string) string { return In(i18n.Locale()).UpdateCheckFailed(err) }
+
+// UpdateCheckFailed says "检查更新失败: {err}"
+// in the language of msgs.
+func (msgs Messages) UpdateCheckFailed(err string) string {
+	return Catalog.Format(msgs.locale, "updateCheckFailed", map[string]any{"err": err})
+}
+
+// UpdateAvailable says "发现新版本 {version}"
+// in the language the app shows.
+func UpdateAvailable(version string) string { return In(i18n.Locale()).UpdateAvailable(version) }
+
+// UpdateAvailable says "发现新版本 {version}"
+// in the language of msgs.
+func (msgs Messages) UpdateAvailable(version string) string {
+	return Catalog.Format(msgs.locale, "updateAvailable", map[string]any{"version": version})
+}
+
+// UpdateInstall says "下载并安装"
+// in the language the app shows.
+func UpdateInstall() string { return In(i18n.Locale()).UpdateInstall() }
+
+// UpdateInstall says "下载并安装"
+// in the language of msgs.
+func (msgs Messages) UpdateInstall() string {
+	return Catalog.Format(msgs.locale, "updateInstall", nil)
+}
+
+// UpdateLater says "稍后"
+// in the language the app shows.
+func UpdateLater() string { return In(i18n.Locale()).UpdateLater() }
+
+// UpdateLater says "稍后"
+// in the language of msgs.
+func (msgs Messages) UpdateLater() string {
+	return Catalog.Format(msgs.locale, "updateLater", nil)
+}
+
+// UpdateDownloading says "正在下载更新... {percent}%"
+// in the language the app shows.
+func UpdateDownloading(percent string) string { return In(i18n.Locale()).UpdateDownloading(percent) }
+
+// UpdateDownloading says "正在下载更新... {percent}%"
+// in the language of msgs.
+func (msgs Messages) UpdateDownloading(percent string) string {
+	return Catalog.Format(msgs.locale, "updateDownloading", map[string]any{"percent": percent})
+}
+
+// UpdateInstallFailed says "更新安装失败: {err}"
+// in the language the app shows.
+func UpdateInstallFailed(err string) string { return In(i18n.Locale()).UpdateInstallFailed(err) }
+
+// UpdateInstallFailed says "更新安装失败: {err}"
+// in the language of msgs.
+func (msgs Messages) UpdateInstallFailed(err string) string {
+	return Catalog.Format(msgs.locale, "updateInstallFailed", map[string]any{"err": err})
+}
+
+// UpdateDisabled says "此构建未配置更新通道（个人单机构建）。自动更新仅对已发布的安装版启用。"
+// in the language the app shows.
+func UpdateDisabled() string { return In(i18n.Locale()).UpdateDisabled() }
+
+// UpdateDisabled says "此构建未配置更新通道（个人单机构建）。自动更新仅对已发布的安装版启用。"
+// in the language of msgs.
+func (msgs Messages) UpdateDisabled() string {
+	return Catalog.Format(msgs.locale, "updateDisabled", nil)
+}
+
 // RefreshButton says "刷新驱动列表"
 // in the language the app shows.
 func RefreshButton() string { return In(i18n.Locale()).RefreshButton() }

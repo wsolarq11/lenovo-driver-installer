@@ -326,3 +326,66 @@ func callsTempDir(f *ast.File) bool {
 	})
 	return found
 }
+
+// checkUpdatesExplicitOnly holds the determinism invariant after the
+// distribution unfreeze: the update check may only run from an explicit
+// operator action, never from a timer or a poll. A background poll is the
+// "hidden network" the invariant forbids even when the URL is a release feed.
+//
+// Updater.Check and Updater.Install may only be called from checkForUpdates,
+// which is the function the tray menu invokes; and no ticker or timer may
+// appear in the GUI's production files.
+func checkUpdatesExplicitOnly(ctx *Context) error {
+	callers := map[string]bool{}
+	for _, f := range ctx.Repo.dirProd("internal/gui") {
+		for _, decl := range f.ast.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			if callsUpdater(fn.Body) {
+				callers[fn.Name.Name] = true
+			}
+		}
+	}
+	if len(callers) == 0 {
+		return fmt.Errorf("internal/gui no longer calls Updater.Check; the rule has lost its subject " +
+			"(delete this check deliberately if updates were removed)")
+	}
+	for name := range callers {
+		if name != "checkForUpdates" {
+			return fmt.Errorf("Updater.Check is called from %s; only checkForUpdates may call it, "+
+				"because that is the function the tray menu invokes", name)
+		}
+	}
+	for _, f := range ctx.Repo.dirProd("internal/gui") {
+		ids := identsIn(f.ast)
+		for _, name := range []string{"NewTicker", "NewTimer", "Tick", "AfterFunc"} {
+			if ids[name] {
+				return fmt.Errorf("%s uses %s; the update check must stay operator-initiated, not timed",
+					f.relPath, name)
+			}
+		}
+	}
+	return nil
+}
+
+// callsUpdater reports whether a node calls the updater's Check or Install.
+// The callee is spelled with the qualified name, so a local variable named
+// check cannot satisfy it; the package alias is left free by matching on the
+// selector tail.
+func callsUpdater(n ast.Node) bool {
+	found := false
+	ast.Inspect(n, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		switch qualifiedName(call.Fun) {
+		case "mygo.Updater.Check", "mygo.Updater.Install":
+			found = true
+		}
+		return true
+	})
+	return found
+}

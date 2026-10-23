@@ -22,6 +22,7 @@ type trayActions struct {
 	Quit       func()
 	ShowWindow func()
 	OpenPlan   func()
+	CheckForUp func()
 }
 
 // newTray builds the tray icon with its menu. Called from WhenReady after the
@@ -35,6 +36,8 @@ func newTray(actions trayActions) (*mygo.Tray, error) {
 			{Label: locales.TrayShowWindow(), Click: func(*mygo.MenuItem, *mygo.Window) { actions.ShowWindow() }},
 			{Label: locales.TrayRefresh(), Click: func(*mygo.MenuItem, *mygo.Window) { actions.Refresh() }},
 			{Label: locales.TrayOpenPlan(), Click: func(*mygo.MenuItem, *mygo.Window) { actions.OpenPlan() }},
+			mygo.Separator(),
+			{Label: locales.UpdateMenu(), Click: func(*mygo.MenuItem, *mygo.Window) { actions.CheckForUp() }},
 			mygo.Separator(),
 			{Role: mygo.RoleQuit},
 		}),

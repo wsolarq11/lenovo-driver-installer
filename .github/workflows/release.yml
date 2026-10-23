@@ -1,0 +1,59 @@
+name: release
+
+# Builds, signs, and publishes a release when a version tag is pushed.
+#
+# The signing key lives in the MYGO_UPDATER_PRIVATE_KEY repository secret:
+# installed apps only accept updates signed with it, so the secret never
+# prints and never lands in an artifact. A run without the secret (forks)
+# still builds and uploads unsigned artifacts; only the update archive and
+# its manifest are skipped.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      GOTOOLCHAIN: go1.27.2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Report Go version
+        shell: pwsh
+        run: go version
+      - name: Build and sign
+        shell: pwsh
+        # NSIS for the Windows installer is downloaded by mygo build itself.
+        # The signing key comes from the environment; without it mygo build
+        # produces the installer only, which is exactly what a fork gets.
+        env:
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+        run: |
+          go run github.com/egoist/mygo/cmd/mygo@v0.6.2 build -platform windows/amd64 -o build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem build/windows-amd64 | ForEach-Object { Write-Host $_.Name }
+      - name: Publish the GitHub release (draft)
+        shell: pwsh
+        # gh release create fails when the release exists; a re-run of a
+        # tagged build then uploads into the existing draft instead.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $files = Get-ChildItem build/windows-amd64 -File | ForEach-Object { $_.FullName }
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag $files --draft --title $tag --generate-notes
+          } else {
+            gh release upload $tag $files --clobber
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

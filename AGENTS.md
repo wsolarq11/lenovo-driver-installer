@@ -29,9 +29,12 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 ## 驱动审计脚本不变量
 > 语义展开与强制点见 `docs/spec/invariants.md`。
 
-部署形态已定为个人单机审计脚本。产品尾（自签名、支持矩阵、安装器/卸载器、升级、遥测、品牌合规）不在本规格内，保持冻结。
+部署形态：**作者自用的审计工具，现已带安装器与更新通道**。原"个人单机审计脚本"定位在
+`docs/decisions/distribution-frozen.md` 中冻结，由 `docs/decisions/distribution-unfrozen.md`
+解冻——解冻的条件与代价写在那份记录里（无 Authenticode 证书、更新私钥成为关键资产、
+D0 的问题仍未回答，因此仍不对陌生用户分发）。遥测与品牌合规**仍然冻结**。
 
-以下性质是个人审计脚本规格的不可回退约束。产品能力（签名、升级、遥测）只能作为核心之外的层加入，不得违反：
+以下性质是不可回退约束。产品能力（签名、升级）只能作为核心之外的层加入，不得违反：
 
 1. 确定性：CLI 引擎零遥测、无隐藏联网、无后台服务。
 2. 证据优先：计划文件保留原始证据行；桌面 GUI 只做薄渲染，不折叠“待定”与来源审计。
@@ -45,7 +48,7 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 - 产品/架构规范（人读，单一源）：`docs/spec/` — fact-standard / invariants / architecture / contracts / behavior。
 - 编码规范（人读，单一源）：`docs/spec/coding/` — directory / error / logging / quality / single-source / guides。
 - 任务导向手册：`docs/howto/` — run / develop / verify-rollback。
-- 决策记录（冻结）：`docs/decisions/`。
+- 决策记录：`docs/decisions/`（`distribution-frozen.md` 为历史决定，`distribution-unfrozen.md` 与 `mygo-modules-declined.md` 为当前决定）。
 - 历史证据与日志（append-only，非规范）：`docs/records/`。
 - 入口与总地图：`README.md`。
 

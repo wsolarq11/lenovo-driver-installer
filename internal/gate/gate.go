@@ -237,6 +237,7 @@ type check struct {
 func checks() []check {
 	return []check{
 		{"engine zero-network import (local side-effect packages)", checkZeroNetworkImport},
+		{"the update check is operator-initiated, never timed", checkUpdatesExplicitOnly},
 		{"package cleanup is never presented as rollback", checkPackageCleanupBanned},
 		{"ledger device identity stays a column (not free text)", checkLedgerDeviceIdentity},
 		{"ledger hash column located by header name", checkLedgerHashByName},

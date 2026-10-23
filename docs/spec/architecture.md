@@ -50,7 +50,11 @@ internal/gate                门禁规则本体：go/parser + go/types 的只读
                              checks_docs.go=契约文档比对；checks_fixtures.go=记录数据与证据链；
                              checks_behavior.go=行为规范比对；checks_rules.go=不变量规则；
                              checks_install.go=安装/账本规则；checks_conventions.go=规范单一源
-internal/gui                 桌面 GUI：mygo 原生 UI 壳（状态→视图纯函数 + 引擎嵌入 runner + UAC 提权入口）
+internal/gui                 桌面 GUI：mygo 原生 UI 壳（状态→视图、引擎嵌入 runner、托盘、右键菜单、
+                             剪贴板、深链、更新检查、UAC 提权入口）
+locales                      mygo generate 产出的消息 catalog 访问器（zh-Hans，生成的代码随仓库提交）
+resources/icon.png           mygo build 的应用图标源（1024×1024）
+mygo.json                    mygo 项目配置：应用名、标识、版本、URL scheme、更新源
 internal/install             安装器分发与 EXE 回退；原生 INF 安装（pnputil 回退）
 internal/ledger              WORM 账本：列定义、哈希链、按表头名定位、schema 拒绝
 internal/inventory           Windows 机器/OS/PnP/应用快照（原生 SetupAPI/CfgMgr32/注册表）
@@ -64,6 +68,7 @@ scripts/lib/go-toolchain.ps1 go 工具链发现（单一源）
 scripts/lib/ensure-engine.bat 引擎新鲜度判定与重建（启动器共用）
 install_lenovo_drivers.bat   薄 CLI 启动器
 install_lenovo_drivers_gui.bat 薄 GUI 启动器（-Gui）
+build/<os>-<arch>/           mygo build 的产物（exe、NSIS 安装器、签名更新档与 manifest），不入库
 docs/                        本文档树
 ```
 
@@ -106,3 +111,5 @@ docs/                        本文档树
 - 不新增第二个运行时语言入口点。
 - 任何行为变更必须更新测试并通过 `scripts/verify.ps1`。
 - 不复活已删除的旧 PowerShell 引擎文件与 WPF 表现层。
+- 发布的构建一律经 `mygo build`（`mygo.json` 是单一配置源）；`scripts/lib/ensure-engine.bat` 的
+  裸 `go build` 只服务于开发期的 `bin\lenovo-driver.exe`，两者产物路径不同、互不覆盖。
