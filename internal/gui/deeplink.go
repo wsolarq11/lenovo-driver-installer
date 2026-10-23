@@ -6,10 +6,24 @@ package gui
 
 import (
 	"net/url"
+	"strings"
 )
 
 // urlScheme is the protocol the app registers and handles.
 const urlScheme = "lenovo-driver"
+
+// auditURL returns the first argument that is a URL of this app's scheme, ""
+// when the command line carries none. Windows hands a deep link to the
+// registered handler as an argument, so this is how a launch started from a
+// link differs from a plain CLI run.
+func auditURL(args []string) string {
+	for _, arg := range args {
+		if u, err := url.Parse(arg); err == nil && strings.EqualFold(u.Scheme, urlScheme) {
+			return arg
+		}
+	}
+	return ""
+}
 
 // deeplinkOSID extracts the osid query parameter of an audit deep link; ""
 // selects the current system. A non-audit path or an unparseable URL yields

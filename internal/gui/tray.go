@@ -16,18 +16,27 @@ import (
 var trayIcon []byte
 
 // trayActions carries the closures the tray menu needs. They are the runner's
-// own dispatch entry points, shared with the view.
+// own dispatch entry points, shared with the view. It is a struct of required
+// functions with no zero value: callers pass it positionally, so a missing
+// action is a compile error rather than a nil call at click time. Quit is
+// mygo's RoleQuit, which calls App.Quit and so passes through the same
+// OnBeforeQuit hook as every other quit.
 type trayActions struct {
-	Refresh    func()
-	Quit       func()
 	ShowWindow func()
+	Refresh    func()
 	OpenPlan   func()
 	CheckForUp func()
 }
 
 // newTray builds the tray icon with its menu. Called from WhenReady after the
-// window exists.
-func newTray(actions trayActions) (*mygo.Tray, error) {
+// window exists. The actions come in order and none may be nil.
+func newTray(showWindow, refresh, openPlan, checkForUpdates func()) (*mygo.Tray, error) {
+	actions := trayActions{
+		ShowWindow: showWindow,
+		Refresh:    refresh,
+		OpenPlan:   openPlan,
+		CheckForUp: checkForUpdates,
+	}
 	return mygo.NewTray(mygo.TrayOptions{
 		ID:      "lenovo-driver",
 		Icon:    trayIcon,

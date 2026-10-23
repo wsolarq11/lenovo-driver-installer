@@ -34,6 +34,14 @@ func driverTableColumns() []ui.TableColumn {
 // view builds the window from the state. The mygo-provided default (empty
 // state) shows an idle empty window; the real one is assembled by newGUIState.
 func (s *state) view(c *ui.Context) {
+	// The install labels carry the CLI's (y) and (a); a label naming a key
+	// that does nothing is a promise the operator pays for. Both open the
+	// same confirmation dialog the buttons open, so a stray keypress cannot
+	// install anything by itself, and a focused widget that takes the key
+	// first (a text field) keeps it.
+	c.OnShortcut(0, ui.KeyY, func() { s.askInstall("updates", false) })
+	c.OnShortcut(0, ui.KeyA, func() { s.askInstall("applicable", false) })
+
 	ui.Column(c).Fill().Children(func() {
 		s.headerRegion(c)
 		if s.Busy {
@@ -267,22 +275,25 @@ func (s *state) askInstallFor(codes []string, downloadOnly bool) {
 	s.changed()
 }
 
-// logRegion builds the read-only run log pane.
+// logRegion builds the read-only run log pane: a fixed-height band under the
+// table so a long run cannot push the actions off screen.
 func (s *state) logRegion(c *ui.Context) {
 	s.logListState.FollowEnd = true
-	ui.Column(c).Height(170).FillWidth().Children(func() {
+	theme := c.Theme()
+	ui.Column(c).Height(170).FillWidth().Padding(8, 6).Clip().
+		Background(theme.Surface).Children(func() {
 		ui.List(c, &s.logListState, len(s.Log), func(i int) {
 			line := s.Log[i]
-			color := c.Theme().Text
+			color := theme.Text
 			switch line.Level {
 			case "ERROR":
-				color = c.Theme().Danger
+				color = theme.Danger
 			case "WARN":
-				color = c.Theme().Warning
+				color = theme.Warning
 			}
 			ui.Text(c, line.Text).SingleLine().TextColor(color)
 		}).FillWidth()
-	}).Background(c.Theme().Inverse)
+	})
 }
 
 // confirmRegion builds the pending confirmation dialog, if any.

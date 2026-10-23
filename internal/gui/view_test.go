@@ -211,3 +211,105 @@ func TestViewRendersTabsAndPlanPaneSwitches(t *testing.T) {
 		t.Fatalf("plan buffer = %q", got)
 	}
 }
+
+// The install labels say (y) and (a); pressing those keys must open the same
+// confirmation the buttons open, or the labels advertise a key that does
+// nothing. The dialog (not a direct install) is the contract: one keystroke
+// cannot install anything.
+func TestInstallShortcutKeysOpenTheConfirmDialog(t *testing.T) {
+	cases := []struct {
+		key   ui.Key
+		codes []string
+	}{
+		{ui.KeyY, []string{"DRV-A"}},
+		{ui.KeyA, []string{"DRV-A", "DRV-B", "DRV-C"}},
+	}
+	for _, c := range cases {
+		s := newTestState()
+		tt := ui.NewTester(s.view, 1240, 760)
+		tt.Key(ui.Modifiers(0), c.key)
+		if s.Confirm == nil {
+			t.Fatalf("key %v must open the install confirmation", c.key)
+		}
+		var got dispatchRequest
+		s.dispatch = func(req dispatchRequest) { got = req }
+		s.Confirm.Confirm()
+		if got.kind != runInstall || len(got.install.codes) != len(c.codes) {
+			t.Fatalf("key %v dispatched %+v, want runInstall for %v", c.key, got, c.codes)
+		}
+		for i, want := range c.codes {
+			if got.install.codes[i] != want {
+				t.Fatalf("key %v dispatched %v, want %v", c.key, got.install.codes, c.codes)
+			}
+		}
+	}
+}
+
+// A launch that names the desktop app's URL scheme is the window even without
+// -Gui: Windows hands a deep link to the registered handler with no flags of
+// its own, and running the CLI there would open a console that cannot be
+// typed into.
+func TestWantsGUIDispatch(t *testing.T) {
+	cases := []struct {
+		name     string
+		args     []string
+		packaged bool
+		want     bool
+	}{
+		{"deep link in a plain build", []string{"lenovo-driver://audit?osid=248"}, false, true},
+		{"deep link in a packaged build", []string{"lenovo-driver://audit"}, true, true},
+		{"packaged launch with no arguments", nil, true, true},
+		{"unpackaged launch with no arguments", nil, false, false},
+		{"packaged CLI run", []string{"-DryRun"}, true, false},
+		{"unpackaged CLI run", []string{"-DryRun"}, false, false},
+		{"an unrelated URL argument", []string{"https://example.com"}, true, false},
+	}
+	for _, c := range cases {
+		if got := wantsGUI(c.args, c.packaged); got != c.want {
+			t.Errorf("%s: wantsGUI(%v, %v) = %v, want %v", c.name, c.args, c.packaged, got, c.want)
+		}
+	}
+}
+
+// At the real minimum DIP width the header must keep the OS dropdown, both
+// option check boxes and the Refresh button inside the viewport. The dropdown
+// has a fixed width, so an oversized one pushes the actions out of the window
+// where they cannot be reached at all.
+func TestHeaderFitsTheNarrowestWindow(t *testing.T) {
+	for _, width := range []int{900, 826, 768} {
+		s := newTestState()
+		s.MachineCaption = "82JQ / PF2SBWJA  |  当前系统 Windows 10 Enterprise"
+		tt := ui.NewTester(s.view, width, 506)
+		for _, label := range []string{"驱动列表系统", "包含 BIOS/EC", "跳过哈希校验", "刷新驱动列表"} {
+			r, ok := tt.Find(label)
+			if !ok {
+				t.Fatalf("width %d: %q missing", width, label)
+			}
+			if r.X < 0 || r.X+r.W > float32(width) {
+				t.Errorf("width %d: %q at X=%.0f W=%.0f is outside the window", width, label, r.X, r.W)
+			}
+		}
+	}
+}
+
+// The log is a fixed-height band, not a single collapsed line: lines stack
+// downward and the pane keeps its own surface instead of vanishing into the
+// window background.
+func TestLogPaneKeepsItsBand(t *testing.T) {
+	s := newTestState()
+	s.appendLog("INFO", "one")
+	tt := ui.NewTester(s.view, 900, 700)
+	first, ok := tt.Find("one")
+	if !ok {
+		t.Fatal("log line missing")
+	}
+	s.appendLog("INFO", "two")
+	tt.Frame()
+	second, ok := tt.Find("two")
+	if !ok {
+		t.Fatal("second log line missing")
+	}
+	if second.Y <= first.Y {
+		t.Errorf("log lines must stack downward: one at %.0f, two at %.0f", first.Y, second.Y)
+	}
+}

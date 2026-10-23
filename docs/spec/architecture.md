@@ -28,6 +28,8 @@ Go 引擎拥有全部驱动业务逻辑：API 访问与归一化、本机/OS/PnP
 
 `internal/gui` 只是表现壳：状态 → mygo 视图的纯函数、后台 goroutine 调引擎、经 `Window.Update` 把结果写回状态。它不实现驱动匹配、来源归因或安装集判定；安装集成员资格直接投影 `model.InAutomaticInstallSet`。GUI 启动时经唯一 UAC 入口提权（`-Gui` 非管理员即 runas 重启自身）。
 
+**启动分发**（`internal/gui/app.go` 的 `Run` / `wantsGUI`）：`-Gui` 恒为窗口；不带 `-Gui` 时，**打包构建**（`mygo build` 产物带 `-H=windowsgui`，无控制台）的无参启动也是窗口——安装器快捷方式、安装完成页与深链都这样启动它，跑交互式 CLI 会等一个没人能输入的标准输入。带任何显式参数仍是 CLI（同一个引擎；要 `-DryRun` 的人要的是控制台）。深链参数（`lenovo-driver://`）在任何构建里都判为窗口。窗口模式只允许一个实例：第二次启动把命令行交给第一个实例并退出，`OnSecondInstance` 把已有窗口显示到前台。
+
 ### 2.1 确定性边界（架构级约束）
 
 - **确定性包**（`compare`、`audit`、`plan`、`model`）：不碰网络、注册表、PnP、控制台、进程或文件 API。同输入同输出。

@@ -20,10 +20,39 @@
 | `dc6f27f` | 阶段 3：`mygo build` 产 exe + NSIS 安装器；签名更新档 + manifest；`release.yml`；两份决策记录 |
 | `dc1e485` | 全仓整洁：删转发层/死字段/死函数，合并重复的选择策略，catalog 无死 key |
 | `82426e8` | `mygo.json` 的更新源仓库名修正为真实的 `wsolarq11/...` |
+| `6212ffe` | 第一版交接文档 |
+| 本轮 | 真机对拍修复六处缺陷（见 §1.1），已用 `mygo build` 产物在真窗口上逐条验证 |
+
+### 1.1 本轮修掉的缺陷（都是真机可见的，不是风格问题）
+
+| 缺陷 | 后果 | 修法 |
+| --- | --- | --- |
+| 托盘"检查更新"调用未接线的 nil 闭包 | 点菜单即 panic | `newTray` 改成位置参数，漏一个就是编译错误 |
+| 打包 exe 无参启动走进 CLI | `mygo build` 产物是 `-H=windowsgui`（无控制台），快捷方式/安装完成页都以无参启动 → 等一个没人能输入的标准输入，窗口永不出现 | `wantsGUI`：打包构建的无参启动即窗口；带显式参数仍是 CLI；深链参数任何构建都判窗口 |
+| 深链在 Windows 以 CLI 启动 | 注册命令是 `"exe" "%1"`，不带 `-Gui` | 同上（深链参数判窗口）+ 参数交给已运行实例 |
+| 没有单实例锁 | 重复启动开第二个窗口、第二个托盘、第二个引擎 | `RequestSingleInstanceLock` + `OnSecondInstance` 把已有窗口调到前台 |
+| `App.Quit()` 被关闭到托盘拦截 | 托盘"退出"只隐藏窗口，进程留着且没有任何入口回来 | `OnBeforeQuit` 置 `quitting`，关闭处理器据此放行 |
+| 日志面板背景透明 | 170 DIP 的日志带在浅色主题下与窗口同色，看不出是面板 | 改 `theme.Surface`，加内边距与 `Clip` |
+
+同轮补的还有：标签早就写着的 `(y)`/`(a)` 快捷键（都先弹确认框）、窗口几何记忆（`StateKey`）、
+`OpenPlan` 从 `exec.Command("rundll32")` 改为 `mygo.Shell.OpenPath`（少一条自造的进程边界）。
+
+新增测试锁住这些：`TestInstallShortcutKeysOpenTheConfirmDialog`、`TestWantsGUIDispatch`、
+`TestHeaderFitsTheNarrowestWindow`、`TestLogPaneKeepsItsBand`。前两个断言的是"按键→确认框"与
+"启动分发判据"，不是渲染细节。
 
 **CI 状态**：run `39986622133`（`82426e8`）与 `39986495524`（`dc1e485`）两个宿主（pwsh 7 /
 Windows PowerShell 5.1）均 `success`。
 本地门禁 `scripts/verify.ps1`：**58 步全绿**（原 57 步 + 新增的更新检查规则）。
+
+## 1.2 真机验证记录（本轮）
+
+用 `go run .../mygo@v0.6.2 build` 的产物（13.4 MB exe + 4.4 MB NSIS）逐条对拍：
+
+- 无参启动 → 进程存活、`MainWindowHandle != 0`、窗口 1240×760、DPI 144（150% 缩放）、真实驱动数据。
+- 第二次启动 → 新进程 exit 0，原 pid 继续运行，进程数仍为 1。
+- `lenovo-driver://audit?osid=248` → 打到已运行实例，引擎日志出现 `Driver source : QuickFix (OSID 248)`。
+- 截图确认日志面板有独立底色、表头四个控件（下拉框、两个复选框、刷新）都在窗口内。
 
 ## 2. 现在的形状
 
@@ -76,15 +105,18 @@ go run github.com/egoist/mygo/cmd/mygo@v0.6.2 build -platform windows/amd64 -o b
 用户真正需要的事？"——**至今没有答案**。解冻的理由是"要把壳做全"，不是"问题被解决了"。
 新会话不要假装这个问题已经闭合；`distribution-unfrozen.md` §1 明确写了这一点。
 
-### 4.4 gui 包覆盖率 39.9%（下限 35）
+### 4.4 gui 包覆盖率（下限 35）
 
-余量不大。新增 GUI 逻辑时要同步加 `ui.NewTester` 视图测试，否则容易跌破下限。
+本轮又加了一批 `ui.NewTester` 视图测试，余量比上一轮宽。新增 GUI 逻辑时要同步加视图测试，
+否则容易跌破下限。
 
-### 4.5 托盘"退出"与关闭的语义
+### 4.5 托盘"退出"与关闭的语义（本轮已修，别退回）
 
-现在的行为：点窗口关闭 → 隐藏到托盘；托盘菜单"退出" → 真退出。首次启动时窗口**显式
-`Show()`**（曾经因为漏掉它 + 关闭时隐藏，导致 `mygo build` 产物首次启动窗口不可见——这个
-坑已经踩过，别再退回不显式 Show 的写法）。
+现在的行为：点窗口关闭 → 隐藏到托盘；托盘菜单"退出" → 真退出。两件事必须同时成立：
+
+1. 首次启动窗口**显式 `Show()`**（漏掉它 + 关闭时隐藏，会让 `mygo build` 产物首次启动不可见）。
+2. **`OnBeforeQuit` 置 `quitting`**，关闭处理器据此放行。只做第 1 条不够：`App.Quit()` 也会走
+   `OnClose`，被"关闭即隐藏"拦下，结果是托盘退出只隐藏窗口、进程留着且没有任何入口回来。
 
 ## 5. 不要再踩的坑
 
@@ -132,6 +164,25 @@ Windows PowerShell 5.1 按 ANSI 码页解码 BOM-less UTF-8。截图/诊断用�
 `wpf/`、`lenovo_driver_wpf.ps1`、`install_lenovo_drivers_wpf.bat`、`scripts/fix-bom.ps1` 已被
 门禁步骤 `Legacy PowerShell files removed` 钉死为"不得存在"。理由：第二个运行时壳会让门禁
 看不见它。
+
+### 5.9 打包构建的 exe 没有控制台
+
+`mygo build` 给 Windows 产物加 `-H=windowsgui`。任何"无参运行它"的入口——NSIS 快捷方式、安装
+完成页、深链——都不会有控制台可读可写，所以判据必须落在 `wantsGUI` 里，不能靠"让它跑 CLI 再
+抱怨"。反过来，`go build` 出来的 `bin\lenovo-driver.exe` **不带**版本资源，`App.IsPackaged()`
+为 false，因此本地开发和门禁走的仍是 CLI 路径，两条路互不干扰。
+
+### 5.10 托盘动作是结构体字面量时，漏字段不会报错
+
+本轮第一个缺陷就是这么来的：`trayActions{...}` 少写 `CheckForUp`，编译通过、点菜单 nil panic。
+现在 `newTray` 收位置参数，漏一个就是编译错误。以后加托盘项请继续用位置参数，不要退回具名
+字面量。
+
+### 5.11 看 GUI 要看真窗口，不要只看 `ui.NewTester`
+
+`ui.NewTester` 不会应用系统 DPI 缩放。150% 缩放下 1240 物理像素只有 ~827 DIP；布局问题
+（表头被挤出窗口、面板背景看不出）只有真窗口截图能发现。截图用 `PrintWindow`，尺寸要乘以
+`GetDpiForWindow / 96`，否则截出来是被裁的左上角。
 
 ## 6. 需要读的文档
 

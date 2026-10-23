@@ -57,7 +57,9 @@ install_lenovo_drivers.bat -LatestAcrossOS
 install_lenovo_drivers_gui.bat
 ```
 
-桌面窗口与 CLI 共用同一个引擎二进制（启动器带 `-Gui` 分发到 `internal/gui`，先按同一份规则重建陈旧引擎）：启动时非管理员会先经一次 UAC 提权重启自身，然后嵌入引擎加载官方驱动列表，显示相同的 `Update` / `Up to date` / `Not installed` / `Local newer` / `Not applicable` 状态与来源审计标签。按钮对应 CLI 选择：刷新驱动列表、安装更新项 (y)、安装需更新项 (a)、安装选中项、仅下载选中项、打开计划文件。其中 (a) 装的是 CLI 的自动安装集（`Update` + `Not installed`），不是「全部可安装项」。启动前先构建引擎：`go build -o bin\lenovo-driver.exe .\cmd\lenovo-driver`。
+桌面窗口与 CLI 共用同一个引擎二进制（启动器带 `-Gui` 分发到 `internal/gui`，先按同一份规则重建陈旧引擎）：启动时非管理员会先经一次 UAC 提权重启自身，然后嵌入引擎加载官方驱动列表，显示相同的 `Update` / `Up to date` / `Not installed` / `Local newer` / `Not applicable` 状态与来源审计标签。按钮对应 CLI 选择：刷新驱动列表、安装更新项 (y)、安装需更新项 (a)、安装选中项、仅下载选中项、打开计划文件，其中 (y) 与 (a) 也是快捷键（都会先弹确认框）。其中 (a) 装的是 CLI 的自动安装集（`Update` + `Not installed`），不是「全部可安装项」。启动前先构建引擎：`go build -o bin\lenovo-driver.exe .\cmd\lenovo-driver`。
+
+`mygo build` 产出的 exe 是 Windows GUI 子系统程序（无控制台），安装器快捷方式、安装完成页和 `lenovo-driver://` 深链都以无参方式启动它，因此打包构建的无参启动直接进窗口；带任何显式参数仍是 CLI。窗口同一时刻只有一个实例：再次启动会把已有窗口调到前台。关闭窗口是隐藏到托盘，托盘菜单的「退出」才结束进程。
 
 ## 参数
 

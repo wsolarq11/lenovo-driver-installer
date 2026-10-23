@@ -7,10 +7,11 @@ package gui
 import (
 	"context"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/egoist/mygo"
 
 	"lenovo-driver/internal/app"
 	"lenovo-driver/internal/compare"
@@ -255,14 +256,15 @@ func (r *engineRunner) Rollback(ctx context.Context, codes []string) {
 	r.logf("INFO", locales.RollbackDone())
 }
 
-// OpenPlan opens the engine's plan file in the default editor. The plan path
-// comes from the engine itself, never re-derived on the GUI side.
+// OpenPlan opens the engine's plan file with the system's default handler.
+// The plan path comes from the engine itself, never re-derived on the GUI
+// side.
 func (r *engineRunner) OpenPlan() {
 	if _, err := os.Stat(r.app.PlanPath); err != nil {
 		r.logf("INFO", locales.PlanNotReady())
 		return
 	}
-	if err := exec.Command("rundll32", "url.dll,FileProtocolHandler", r.app.PlanPath).Start(); err != nil {
+	if err := mygo.Shell.OpenPath(r.app.PlanPath); err != nil {
 		r.logf("ERROR", locales.PlanOpenFailed(err.Error()))
 	}
 }
