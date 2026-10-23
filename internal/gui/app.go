@@ -98,6 +98,26 @@ func runWindow(args []string) int {
 		})
 		// The real changed hook needs the window, which exists by now.
 		s.changed = func() { win.Update(func() {}) }
+		// Close-to-tray: the window hides and the tray keeps the app
+		// reachable; the tray menu's 退出 quits for real. A second close
+		// request while quitting runs must fall through (the engine is
+		// embedding real work, but a quit is a quit).
+		win.OnClose(func(e *mygo.CloseEvent) {
+			if !quitting {
+				e.PreventDefault()
+				win.Hide()
+			}
+		})
+		if _, err := newTray(trayActions{
+			ShowWindow: func() { win.Show() },
+			Refresh: func() {
+				s.dispatch(dispatchRequest{kind: runRefresh, includeBios: s.IncludeBios, skipHashCheck: s.SkipHashCheck})
+			},
+			OpenPlan: func() { s.dispatch(dispatchRequest{kind: runOpenPlan}) },
+			Quit:     quit,
+		}); err != nil {
+			r.logf("WARN", "托盘图标创建失败: "+err.Error())
+		}
 		// Auto-refresh on launch so the header never sits on the placeholder.
 		go r.Refresh(context.Background(), "", s.IncludeBios, s.SkipHashCheck)
 	})
@@ -107,6 +127,15 @@ func runWindow(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// quitting distinguishes a real quit (tray menu) from a window close that
+// only hides to the tray.
+var quitting = false
+
+func quit() {
+	quitting = true
+	mygo.App.Quit()
 }
 
 // win is the window the notify hook posts to. mygo windows are created on the

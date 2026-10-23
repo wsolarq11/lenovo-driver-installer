@@ -5,12 +5,16 @@ package gui
 // the view rebuilds around it frame to frame.
 
 import (
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
 )
 
-// driverTableColumns names the table's columns in display order.
+// driverTableColumns names the table's columns in display order. The ID pins
+// the column identity for the user's saved order/widths (ListState.Columns).
 var driverTableColumns = []ui.TableColumn{
-	{Title: "安装", Width: 52, Fixed: true},
+	{Title: "安装", Width: 52, Fixed: true, ID: "check"},
 	{Title: "驱动代码", Width: 150},
 	{Title: "驱动名称", Width: 320},
 	{Title: "官方版本", Width: 140},
@@ -30,11 +34,23 @@ func (s *state) view(c *ui.Context) {
 		if s.Busy {
 			ui.Progress(c, -1).FillWidth()
 		}
-		s.tableRegion(c)
-		s.actionRegion(c)
+		ui.Tabs(c, &s.Tab, "驱动列表", "计划文件").Padding(0, 10)
+		switch s.Tab {
+		case 1:
+			s.planRegion(c)
+		default:
+			s.tableRegion(c)
+			s.actionRegion(c)
+		}
 		s.logRegion(c)
 	})
 	s.confirmRegion(c)
+}
+
+// planRegion shows the engine's plan artifact in a read-only editor: the same
+// evidence-first text the plan file carries, selectable and copyable in place.
+func (s *state) planRegion(c *ui.Context) {
+	editor.View(c, s.planEditor).FillWidth().Grow(1)
 }
 
 // headerRegion builds the machine caption, OS dropdown and option checkboxes.
@@ -97,10 +113,12 @@ func (s *state) tableRegion(c *ui.Context) {
 			return
 		}
 		r := s.Rows[row]
+		var cell ui.Element
 		switch col {
 		case 0:
 			checked := s.Selected[r.DriverCode]
-			if ui.CheckboxBase(c, &checked).Clicked() {
+			cell = ui.CheckboxBase(c, &checked)
+			if cell.Clicked() {
 				if checked {
 					s.Selected[r.DriverCode] = true
 				} else {
@@ -108,25 +126,74 @@ func (s *state) tableRegion(c *ui.Context) {
 				}
 			}
 		case 1:
-			ui.Text(c, r.DriverCode).SingleLine()
+			cell = ui.Text(c, r.DriverCode).SingleLine()
 		case 2:
-			ui.Text(c, r.DriverName).SingleLine()
+			cell = ui.Text(c, r.DriverName).SingleLine()
 		case 3:
-			ui.Text(c, r.Version).SingleLine()
+			cell = ui.Text(c, r.Version).SingleLine()
 		case 4:
-			ui.Text(c, r.LocalVersion).SingleLine()
+			cell = ui.Text(c, r.LocalVersion).SingleLine()
 		case 5:
-			ui.Text(c, r.CompareStatus).SingleLine().TextColor(statusColor(c, r.CompareStatus))
+			cell = ui.Text(c, r.CompareStatus).SingleLine().TextColor(statusColor(c, r.CompareStatus)).
+				Tooltip("官方版本与本地版本的比较结论;fact=本机实测,inference=来源推断,undetermined=无法判定")
 		case 6:
-			ui.Text(c, r.EvidenceBasis).SingleLine().TextColor(c.Theme().TextMuted)
+			cell = ui.Text(c, r.EvidenceBasis).SingleLine().TextColor(c.Theme().TextMuted).
+				Tooltip("fact=本机实测 / inference=来源推断 / undetermined=无法判定")
 		case 7:
-			ui.Text(c, r.SourceAudit).SingleLine().TextColor(c.Theme().TextMuted)
+			cell = ui.Text(c, r.SourceAudit).SingleLine().TextColor(c.Theme().TextMuted)
 		case 8:
-			ui.Text(c, r.DeviceProblem).SingleLine().TextColor(c.Theme().TextMuted)
+			cell = ui.Text(c, r.DeviceProblem).SingleLine().TextColor(c.Theme().TextMuted)
 		case 9:
-			ui.Text(c, r.NonMatchReason).SingleLine().TextColor(c.Theme().TextMuted)
+			cell = ui.Text(c, r.NonMatchReason).SingleLine().TextColor(c.Theme().TextMuted)
+		default:
+			return
 		}
+		rowMenu(c, s, r, cell)
 	}).Grow(1)
+}
+
+// rowMenu gives a table cell a right-click menu: copy the row's identity
+// fields to the clipboard, and offer the row's install/download actions. The
+// builder re-runs after a choice, where Chosen reports it.
+func rowMenu(c *ui.Context, s *state, r driverRow, cell ui.Element) {
+	cell.ContextMenu(func(m *ui.Menu) {
+		if m.Item("复制驱动码 " + r.DriverCode).Chosen() {
+			copyToClipboard(c, s, r.DriverCode)
+		}
+		if m.Item("复制驱动名称").Chosen() {
+			copyToClipboard(c, s, r.DriverName)
+		}
+		if r.FileName != "" && m.Item("复制文件名 "+r.FileName).Chosen() {
+			copyToClipboard(c, s, r.FileName)
+		}
+		if r.IsApplicable {
+			m.Separator()
+			if m.Item("安装此项").Chosen() {
+				s.askInstallFor([]string{r.DriverCode}, false)
+			}
+			if m.Item("仅下载此项").Chosen() {
+				s.askInstallFor([]string{r.DriverCode}, true)
+			}
+		}
+	})
+}
+
+// copyToClipboard writes plain text to the system clipboard and confirms with
+// a toast.
+func copyToClipboard(c *ui.Context, s *state, text string) {
+	err := mygo.Clipboard.Write(transfer.New(transfer.NewItem(
+		transfer.Bytes(transfer.Text, []byte(text)),
+	)))
+	if err != nil {
+		s.toast(c, "复制失败: "+err.Error())
+		return
+	}
+	s.toast(c, "已复制: "+text)
+}
+
+// toast shows a transient message near the window's bottom edge.
+func (s *state) toast(c *ui.Context, message string) {
+	c.Toast(message)
 }
 
 // statusColor colors a compare status by its evidence class: danger for the
@@ -173,13 +240,18 @@ func (s *state) downloadButton(c *ui.Context) {
 	ui.Button(c, "仅下载选中项").Disabled(s.Busy).OnClick(func() { s.askInstall("selected", true) })
 }
 
-// askInstall resolves the target codes for one button and opens the
-// confirmation dialog; with nothing to act on it logs instead.
+// askInstall resolves the target codes for one of the three install buttons
+// and opens the confirmation dialog.
 func (s *state) askInstall(kind string, downloadOnly bool) {
+	s.askInstallFor(updateTargets(s.Rows, s.Selected, kind), downloadOnly)
+}
+
+// askInstallFor opens the confirmation dialog for an explicit code list; the
+// row context menu uses it. With nothing to act on it logs instead.
+func (s *state) askInstallFor(codes []string, downloadOnly bool) {
 	if s.Busy {
 		return
 	}
-	codes := updateTargets(s.Rows, s.Selected, kind)
 	if len(codes) == 0 {
 		s.appendLog("INFO", "没有符合条件的驱动。")
 		s.changed()

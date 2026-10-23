@@ -6,6 +6,7 @@ package gui
 
 import (
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
 )
 
 // logLine is one entry of the run log pane, colored by level.
@@ -104,6 +105,10 @@ type state struct {
 	listState    ui.ListState
 	logListState ui.ListState
 
+	// Tab is the main area's page: 0 = driver table, 1 = plan view.
+	Tab        int
+	planEditor *editor.State
+
 	// dispatch carries confirmed actions to the window, which binds them to
 	// the runner; nil in view-only tests.
 	dispatch func(req dispatchRequest)
@@ -125,6 +130,10 @@ func newGUIState() *state {
 		Selected: map[string]bool{},
 		changed:  func() {},
 		dispatch: func(dispatchRequest) {},
+		planEditor: &editor.State{
+			Buffer:   editor.NewBuffer(""),
+			ReadOnly: true,
+		},
 	}
 }
 

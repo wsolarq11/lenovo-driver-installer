@@ -119,7 +119,21 @@ func (r *engineRunner) Refresh(ctx context.Context, osID string, includeBios, sk
 		Rows:           projectRows(view.Selected),
 	}
 	r.notify(func(s *state) { s.applyExport(&result) })
+	r.loadPlan()
 	r.logf("INFO", "已加载 "+itoa(len(result.Rows))+" 行驱动列表，来自 "+osLabelFor(vc.OsList, listOsID))
+}
+
+// loadPlan reads the engine's plan artifact into the read-only plan pane. A
+// missing plan (first run, failed comparison) leaves the pane's last content;
+// the log already says the plan is not there.
+func (r *engineRunner) loadPlan() {
+	text, err := os.ReadFile(r.app.PlanPath)
+	if err != nil {
+		return
+	}
+	r.notify(func(s *state) {
+		s.planEditor.Buffer.Reset(string(text))
+	})
 }
 
 // resolve is the shared runtime resolution for every job: machine, OS list,

@@ -157,3 +157,54 @@ func TestLogLevelsRenderColored(t *testing.T) {
 		t.Fatalf("log pane missing lines: %v", tt.Texts())
 	}
 }
+
+func TestAskInstallForExplicitCodesOpensDialog(t *testing.T) {
+	// The row context menu's 安装此项 path: an explicit code list opens the
+	// same confirmation dialog as the buttons.
+	s := newTestState()
+	var got dispatchRequest
+	s.dispatch = func(req dispatchRequest) { got = req }
+	s.askInstallFor([]string{"DRV-B"}, false)
+	if s.Confirm == nil || !s.confirming {
+		t.Fatal("explicit codes must open the confirm dialog")
+	}
+	s.Confirm.Confirm()
+	if len(got.install.codes) != 1 || got.install.codes[0] != "DRV-B" {
+		t.Fatalf("dispatch = %+v, want [DRV-B]", got)
+	}
+}
+
+func TestAskInstallForEmptyCodesLogsOnly(t *testing.T) {
+	s := newTestState()
+	s.askInstallFor(nil, false)
+	if s.Confirm != nil {
+		t.Fatal("empty codes must not open a dialog")
+	}
+	if len(s.Log) == 0 || s.Log[len(s.Log)-1].Text != "没有符合条件的驱动。" {
+		t.Fatalf("log tail = %v", s.Log)
+	}
+}
+
+func TestViewRendersTabsAndPlanPaneSwitches(t *testing.T) {
+	s := newTestState()
+	s.planEditor.Buffer.Reset("PLAN LINE ONE")
+	tt := ui.NewTester(s.view, 1240, 760)
+	if !tt.HasText("计划文件") {
+		t.Fatalf("tabs missing 计划文件: %v", tt.Texts())
+	}
+	// Switch to the plan tab; the read-only editor shows the plan text. Each
+	// NewTester owns its build pass, so a fresh state carries the switch. The
+	// editor's buffer content lives in its AT value channel, not in the texts
+	// the tester reads, so the pane is verified by its label and by the buffer
+	// the view renders.
+	s2 := newTestState()
+	s2.Tab = 1
+	s2.planEditor.Buffer.Reset("PLAN LINE ONE")
+	tt2 := ui.NewTester(s2.view, 1240, 760)
+	if !tt2.HasText("Code editor") {
+		t.Fatalf("plan pane missing the editor: %v", tt2.Texts())
+	}
+	if got := s2.planEditor.Buffer.String(); got != "PLAN LINE ONE" {
+		t.Fatalf("plan buffer = %q", got)
+	}
+}
