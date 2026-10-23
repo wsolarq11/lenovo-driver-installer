@@ -4,11 +4,16 @@
   "version": "0.7.0",
   "copyright": "Personal audit tool, not for distribution",
   "main": "lenovo-driver/cmd/lenovo-driver",
-  "urlSchemes": ["lenovo-driver"],
+  "urlSchemes": [
+    "lenovo-driver"
+  ],
   "updates": {
     "publicKey": "fka0jJ7I0nr5xu5NGNpII6yMvGdVIAraGCWuvmsdOZ0=",
-    "github": "wsolarq/lenovo-driver-installer",
+    "github": "wsolarq11/lenovo-driver-installer",
     "deltas": 2
   },
-  "i18n": { "dir": "locales", "source": "zh-Hans" }
+  "i18n": {
+    "dir": "locales",
+    "source": "zh-Hans"
+  }
 }
