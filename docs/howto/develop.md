@@ -48,7 +48,7 @@ $env:LENOVO_TRUST_SMOKE=1; go test ./internal/trust/ -run TestVerifyLenovoPackag
 构建引擎后 smoke GUI 表面（连真实 API，会请求 UAC 提权）：
 
 ```powershell
-.in\lenovo-driver.exe -Gui
+.\install_lenovo_drivers_gui.bat
 ```
 
 ## CI

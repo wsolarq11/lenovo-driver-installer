@@ -407,28 +407,27 @@ Assert-Step 'the invariants spec carries every rule the code enforces' {
 }
 
 Assert-Step 'the launcher rebuilds a stale engine' {
-    # The CLI launcher runs bin\lenovo-driver.exe. If it builds only when the
-    # file is missing, a binary from an older checkout runs forever and reports
-    # the results of code that is no longer in the tree -- which is exactly what
-    # happened: a three-month-old exe answered a live run with pre-fix output
-    # and nothing in the log said so. The GUI shares the same binary and is
-    # launched through it (-Gui), so one launcher rule covers both surfaces.
-    #
-    # The rule is a call to the shared script, so this step checks the call and
-    # the script's own freshness logic rather than restating either.
+    # Both launchers run bin\lenovo-driver.exe (the CLI directly, the GUI with
+    # -Gui). If they build only when the file is missing, a binary from an
+    # older checkout runs forever and reports the results of code that is no
+    # longer in the tree -- which is exactly what happened: a three-month-old
+    # exe answered a live run with pre-fix output and nothing in the log said
+    # so. The rule is a call to the shared script, so this step checks the call
+    # and the script's own freshness logic rather than restating either.
     $shared = Join-Path $repoRoot 'scripts\lib\ensure-engine.bat'
     if (-not (Test-Path -LiteralPath $shared)) {
-        throw 'scripts/lib/ensure-engine.bat is gone; the launcher has no freshness rule'
+        throw 'scripts/lib/ensure-engine.bat is gone; the launchers have no freshness rule'
     }
-    $launcher = 'install_lenovo_drivers.bat'
-    $text = Read-GateText (Join-Path $repoRoot $launcher)
-    if ($text -notmatch '(?i)call\s+"%~dp0scripts\\lib\\ensure-engine\.bat"') {
-        throw "$launcher does not call the shared engine-freshness script"
-    }
-    # The old shape was a bare existence test guarding the build. Its
-    # presence means the launcher went back to ignoring a stale binary.
-    if ($text -match '(?i)if\s+not\s+exist\s+"?bin\\lenovo-driver\.exe') {
-        throw "$launcher still builds only when the engine is missing, so a stale binary would run silently"
+    foreach ($launcher in @('install_lenovo_drivers.bat', 'install_lenovo_drivers_gui.bat')) {
+        $text = Read-GateText (Join-Path $repoRoot $launcher)
+        if ($text -notmatch '(?i)call\s+"%~dp0scripts\\lib\\ensure-engine\.bat"') {
+            throw "$launcher does not call the shared engine-freshness script"
+        }
+        # The old shape was a bare existence test guarding the build. Its
+        # presence means the launcher went back to ignoring a stale binary.
+        if ($text -match '(?i)if\s+not\s+exist\s+"?bin\\lenovo-driver\.exe') {
+            throw "$launcher still builds only when the engine is missing, so a stale binary would run silently"
+        }
     }
     $rule = Read-GateText $shared
     foreach ($needle in @('xcopy /L /D', 'go build', 'no Go toolchain')) {

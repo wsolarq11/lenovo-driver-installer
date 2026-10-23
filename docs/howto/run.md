@@ -54,10 +54,10 @@ install_lenovo_drivers.bat -LatestAcrossOS
 ## 桌面界面（mygo 原生 UI）
 
 ```bat
-bin\lenovo-driver.exe -Gui
+install_lenovo_drivers_gui.bat
 ```
 
-桌面窗口与 CLI 共用同一个引擎二进制（`-Gui` 分发到 `internal/gui`）：启动时非管理员会先经一次 UAC 提权重启自身，然后嵌入引擎加载官方驱动列表，显示相同的 `Update` / `Up to date` / `Not installed` / `Local newer` / `Not applicable` 状态与来源审计标签。按钮对应 CLI 选择：刷新驱动列表、安装更新项 (y)、安装需更新项 (a)、安装选中项、仅下载选中项、打开计划文件。其中 (a) 装的是 CLI 的自动安装集（`Update` + `Not installed`），不是「全部可安装项」。启动前先构建引擎：`go build -o bin\lenovo-driver.exe .\cmd\lenovo-driver`。
+桌面窗口与 CLI 共用同一个引擎二进制（启动器带 `-Gui` 分发到 `internal/gui`，先按同一份规则重建陈旧引擎）：启动时非管理员会先经一次 UAC 提权重启自身，然后嵌入引擎加载官方驱动列表，显示相同的 `Update` / `Up to date` / `Not installed` / `Local newer` / `Not applicable` 状态与来源审计标签。按钮对应 CLI 选择：刷新驱动列表、安装更新项 (y)、安装需更新项 (a)、安装选中项、仅下载选中项、打开计划文件。其中 (a) 装的是 CLI 的自动安装集（`Update` + `Not installed`），不是「全部可安装项」。启动前先构建引擎：`go build -o bin\lenovo-driver.exe .\cmd\lenovo-driver`。
 
 ## 参数
 
@@ -83,5 +83,5 @@ bin\lenovo-driver.exe -Gui
 4. `.\scripts\verify.ps1`。
 5. `go build -o bin\lenovo-driver.exe .\cmd\lenovo-driver`。
 6. `.\install_lenovo_drivers.bat -DryRun` 验证机型/API 解析（不下载不安装）。
-7. `.\bin\lenovo-driver.exe -Gui` 验证桌面窗口（连真实 API；会请求 UAC 提权）。
+7. `.\install_lenovo_drivers_gui.bat` 验证桌面窗口（连真实 API；会请求 UAC 提权）。
 8. 实际安装：管理员 shell 里跑 `.\install_lenovo_drivers.bat`。

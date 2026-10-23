@@ -30,7 +30,7 @@ install_lenovo_drivers.bat -DryRun
 桌面界面（启动时经 UAC 提权，单实例窗口）：
 
 ```bat
-bin\lenovo-driver.exe -Gui
+install_lenovo_drivers_gui.bat
 ```
 
 运行参数见 `-Help`（机器源 `internal/app/help.go`）；用法与排障见 `docs/howto/run.md`。

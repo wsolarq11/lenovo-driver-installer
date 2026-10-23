@@ -15,7 +15,7 @@ Lenovo 驱动安装器是面向联想中国大陆机型的 Windows 桌面工具�
 ```text
 User
   |
-  | install_lenovo_drivers.bat（CLI 模式）/ bin\lenovo-driver.exe -Gui（GUI 模式）
+  | install_lenovo_drivers.bat（CLI）/ install_lenovo_drivers_gui.bat（GUI, -Gui）
   v
 Go 引擎 (cmd/lenovo-driver -> internal/app)
   ^                             |
@@ -63,6 +63,7 @@ scripts/dev.ps1              快速内循环
 scripts/lib/go-toolchain.ps1 go 工具链发现（单一源）
 scripts/lib/ensure-engine.bat 引擎新鲜度判定与重建（启动器共用）
 install_lenovo_drivers.bat   薄 CLI 启动器
+install_lenovo_drivers_gui.bat 薄 GUI 启动器（-Gui）
 docs/                        本文档树
 ```
 
