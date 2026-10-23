@@ -2,28 +2,33 @@ package gui
 
 // The view: state -> mygo native UI, one function per region. Pure over the
 // state; widget state (table selection, scroll) lives on the state itself so
-// the view rebuilds around it frame to frame.
+// the view rebuilds around it frame to frame. Every user-facing string comes
+// from the locales catalog.
 
 import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
+
+	"lenovo-driver/locales"
 )
 
 // driverTableColumns names the table's columns in display order. The ID pins
 // the column identity for the user's saved order/widths (ListState.Columns).
-var driverTableColumns = []ui.TableColumn{
-	{Title: "安装", Width: 52, Fixed: true, ID: "check"},
-	{Title: "驱动代码", Width: 150},
-	{Title: "驱动名称", Width: 320},
-	{Title: "官方版本", Width: 140},
-	{Title: "本地版本", Width: 150},
-	{Title: "状态", Width: 110},
-	{Title: "证据分级", Width: 90},
-	{Title: "来源", Width: 300},
-	{Title: "设备问题", Width: 140},
-	{Title: "不适用原因", Width: 240},
+func driverTableColumns() []ui.TableColumn {
+	return []ui.TableColumn{
+		{Title: locales.ColInstall(), Width: 52, Fixed: true, ID: "check"},
+		{Title: locales.ColCode(), Width: 150},
+		{Title: locales.ColName(), Width: 320},
+		{Title: locales.ColOfficial(), Width: 140},
+		{Title: locales.ColLocal(), Width: 150},
+		{Title: locales.ColStatus(), Width: 110},
+		{Title: locales.ColEvidence(), Width: 90},
+		{Title: locales.ColSource(), Width: 300},
+		{Title: locales.ColProblem(), Width: 140},
+		{Title: locales.ColNonMatch(), Width: 240},
+	}
 }
 
 // view builds the window from the state. The mygo-provided default (empty
@@ -34,7 +39,7 @@ func (s *state) view(c *ui.Context) {
 		if s.Busy {
 			ui.Progress(c, -1).FillWidth()
 		}
-		ui.Tabs(c, &s.Tab, "驱动列表", "计划文件").Padding(0, 10)
+		ui.Tabs(c, &s.Tab, locales.TabDrivers(), locales.TabPlan()).Padding(0, 10)
 		switch s.Tab {
 		case 1:
 			s.planRegion(c)
@@ -57,18 +62,18 @@ func (s *state) planRegion(c *ui.Context) {
 func (s *state) headerRegion(c *ui.Context) {
 	ui.Row(c).FillWidth().Padding(12, 10).Gap(12).Children(func() {
 		ui.Column(c).Gap(2).Children(func() {
-			ui.Text(c, "联想驱动安装器").FontSize(20).Bold()
+			ui.Text(c, locales.AppTitle()).FontSize(20).Bold()
 			ui.Text(c, s.MachineCaption).TextColor(c.Theme().TextMuted)
 		}).Grow(1)
 		ui.Column(c).Gap(2).Width(320).Children(func() {
-			ui.Text(c, "驱动列表系统").TextColor(c.Theme().TextMuted)
+			ui.Text(c, locales.OsListLabel()).TextColor(c.Theme().TextMuted)
 			s.osSelect(c)
 		})
 		ui.Column(c).Gap(2).Children(func() {
-			ui.Checkbox(c, &s.IncludeBios, "包含 BIOS/EC")
-			ui.Checkbox(c, &s.SkipHashCheck, "跳过哈希校验")
+			ui.Checkbox(c, &s.IncludeBios, locales.IncludeBios())
+			ui.Checkbox(c, &s.SkipHashCheck, locales.SkipHashCheck())
 		})
-		ui.PrimaryButton(c, "刷新驱动列表").Disabled(s.Busy).OnClick(s.refreshAction)
+		ui.PrimaryButton(c, locales.RefreshButton()).Disabled(s.Busy).OnClick(s.refreshAction)
 	})
 }
 
@@ -108,7 +113,7 @@ func (s *state) osIDFor(label string) string {
 
 // tableRegion builds the driver table.
 func (s *state) tableRegion(c *ui.Context) {
-	ui.Table(c, &s.listState, driverTableColumns, len(s.Rows), func(row, col int) {
+	ui.Table(c, &s.listState, driverTableColumns(), len(s.Rows), func(row, col int) {
 		if row < 0 || row >= len(s.Rows) {
 			return
 		}
@@ -135,10 +140,10 @@ func (s *state) tableRegion(c *ui.Context) {
 			cell = ui.Text(c, r.LocalVersion).SingleLine()
 		case 5:
 			cell = ui.Text(c, r.CompareStatus).SingleLine().TextColor(statusColor(c, r.CompareStatus)).
-				Tooltip("官方版本与本地版本的比较结论;fact=本机实测,inference=来源推断,undetermined=无法判定")
+				Tooltip(locales.TooltipStatus())
 		case 6:
 			cell = ui.Text(c, r.EvidenceBasis).SingleLine().TextColor(c.Theme().TextMuted).
-				Tooltip("fact=本机实测 / inference=来源推断 / undetermined=无法判定")
+				Tooltip(locales.TooltipEvidence())
 		case 7:
 			cell = ui.Text(c, r.SourceAudit).SingleLine().TextColor(c.Theme().TextMuted)
 		case 8:
@@ -157,21 +162,21 @@ func (s *state) tableRegion(c *ui.Context) {
 // builder re-runs after a choice, where Chosen reports it.
 func rowMenu(c *ui.Context, s *state, r driverRow, cell ui.Element) {
 	cell.ContextMenu(func(m *ui.Menu) {
-		if m.Item("复制驱动码 " + r.DriverCode).Chosen() {
+		if m.Item(locales.CopyCodeItem(r.DriverCode)).Chosen() {
 			copyToClipboard(c, s, r.DriverCode)
 		}
-		if m.Item("复制驱动名称").Chosen() {
+		if m.Item(locales.CopyNameItem()).Chosen() {
 			copyToClipboard(c, s, r.DriverName)
 		}
-		if r.FileName != "" && m.Item("复制文件名 "+r.FileName).Chosen() {
+		if r.FileName != "" && m.Item(locales.CopyFileItem(r.FileName)).Chosen() {
 			copyToClipboard(c, s, r.FileName)
 		}
 		if r.IsApplicable {
 			m.Separator()
-			if m.Item("安装此项").Chosen() {
+			if m.Item(locales.InstallThisItem()).Chosen() {
 				s.askInstallFor([]string{r.DriverCode}, false)
 			}
-			if m.Item("仅下载此项").Chosen() {
+			if m.Item(locales.DownloadThisItem()).Chosen() {
 				s.askInstallFor([]string{r.DriverCode}, true)
 			}
 		}
@@ -185,15 +190,10 @@ func copyToClipboard(c *ui.Context, s *state, text string) {
 		transfer.Bytes(transfer.Text, []byte(text)),
 	)))
 	if err != nil {
-		s.toast(c, "复制失败: "+err.Error())
+		c.Toast(locales.CopyFailed(err.Error()))
 		return
 	}
-	s.toast(c, "已复制: "+text)
-}
-
-// toast shows a transient message near the window's bottom edge.
-func (s *state) toast(c *ui.Context, message string) {
-	c.Toast(message)
+	c.Toast(locales.Copied(text))
 }
 
 // statusColor colors a compare status by its evidence class: danger for the
@@ -216,15 +216,15 @@ func statusColor(c *ui.Context, status string) ui.Color {
 // actionRegion builds the install/download buttons and the run status.
 func (s *state) actionRegion(c *ui.Context) {
 	ui.Row(c).FillWidth().Padding(10, 8).Gap(10).Children(func() {
-		s.installButton(c, "安装更新项 (y)", "updates")
-		s.installButton(c, "安装需更新项 (a)", "applicable")
-		s.installButton(c, "安装选中项", "selected")
+		s.installButton(c, locales.InstallUpdatesButton(), "updates")
+		s.installButton(c, locales.InstallApplicableButton(), "applicable")
+		s.installButton(c, locales.InstallSelectedButton(), "selected")
 		s.downloadButton(c)
-		ui.Button(c, "打开计划文件").Disabled(s.Busy).OnClick(s.openPlanAction)
+		ui.Button(c, locales.OpenPlanButton()).Disabled(s.Busy).OnClick(s.openPlanAction)
 		ui.Spacer(c).Grow(1)
-		status := "就绪"
+		status := locales.StatusReady()
 		if s.Busy {
-			status = "正在运行 Lenovo 驱动引擎..."
+			status = locales.StatusRunning()
 		}
 		ui.Text(c, status).TextColor(c.Theme().TextMuted)
 	})
@@ -237,7 +237,7 @@ func (s *state) installButton(c *ui.Context, label, kind string) {
 
 // downloadButton opens the download-only confirmation for the checked rows.
 func (s *state) downloadButton(c *ui.Context) {
-	ui.Button(c, "仅下载选中项").Disabled(s.Busy).OnClick(func() { s.askInstall("selected", true) })
+	ui.Button(c, locales.DownloadSelectedButton()).Disabled(s.Busy).OnClick(func() { s.askInstall("selected", true) })
 }
 
 // askInstall resolves the target codes for one of the three install buttons
@@ -253,13 +253,13 @@ func (s *state) askInstallFor(codes []string, downloadOnly bool) {
 		return
 	}
 	if len(codes) == 0 {
-		s.appendLog("INFO", "没有符合条件的驱动。")
+		s.appendLog("INFO", locales.NoMatchingDrivers())
 		s.changed()
 		return
 	}
 	req := installRequest{codes: codes, downloadOnly: downloadOnly}
 	s.Confirm = &confirmDialog{
-		Title:   "确认驱动集合",
+		Title:   locales.ConfirmTitle(),
 		Message: installSummary(req, s.Rows),
 		Confirm: func() { s.dispatchInstall(req) },
 	}
@@ -290,7 +290,7 @@ func (s *state) confirmRegion(c *ui.Context) {
 	if s.Confirm == nil {
 		return
 	}
-	switch ui.AlertDialog(c, &s.confirming, s.Confirm.Title, s.Confirm.Message, "取消", "确定") {
+	switch ui.AlertDialog(c, &s.confirming, s.Confirm.Title, s.Confirm.Message, locales.ConfirmCancel(), locales.ConfirmOk()) {
 	case 1:
 		confirm := s.Confirm
 		s.Confirm = nil

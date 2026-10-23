@@ -7,6 +7,8 @@ package gui
 import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
+
+	"lenovo-driver/locales"
 )
 
 // logLine is one entry of the run log pane, colored by level.
@@ -184,11 +186,11 @@ func installSummary(req installRequest, rows []driverRow) string {
 	for _, row := range rows {
 		byCode[row.DriverCode] = row
 	}
-	action := "下载并安装"
+	intro := locales.ConfirmInstall(itoa(len(req.codes)))
 	if req.downloadOnly {
-		action = "仅下载"
+		intro = locales.ConfirmDownload(itoa(len(req.codes)))
 	}
-	summary := action + "以下 " + itoa(len(req.codes)) + " 个驱动："
+	summary := intro
 	for _, code := range req.codes {
 		if row, ok := byCode[code]; ok {
 			summary += "\n" + code + "  " + row.DriverName + "  " + row.Version + " -> " + row.LocalVersion

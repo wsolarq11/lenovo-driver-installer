@@ -1,0 +1,9 @@
+{
+  "name": "联想驱动安装器",
+  "identifier": "com.wsolarq.lenovo-driver",
+  "version": "0.7.0",
+  "copyright": "Personal audit tool, not for distribution",
+  "main": "cmd/lenovo-driver",
+  "urlSchemes": ["lenovo-driver"],
+  "i18n": { "dir": "locales", "source": "zh-Hans" }
+}

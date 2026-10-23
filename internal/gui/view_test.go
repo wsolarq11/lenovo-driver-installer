@@ -201,7 +201,9 @@ func TestViewRendersTabsAndPlanPaneSwitches(t *testing.T) {
 	s2.Tab = 1
 	s2.planEditor.Buffer.Reset("PLAN LINE ONE")
 	tt2 := ui.NewTester(s2.view, 1240, 760)
-	if !tt2.HasText("Code editor") {
+	// The editor announces itself through the accessibility label; with the
+	// zh-Hans catalog registered, mygo's own string for it is 代码编辑器.
+	if !tt2.HasText("代码编辑器") && !tt2.HasText("Code editor") {
 		t.Fatalf("plan pane missing the editor: %v", tt2.Texts())
 	}
 	if got := s2.planEditor.Buffer.String(); got != "PLAN LINE ONE" {

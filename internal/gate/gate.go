@@ -51,12 +51,13 @@ type Repo struct {
 	files     []*file
 }
 
-// Load parses every .go file under internal/ and cmd/.
+// Load parses every .go file under internal/, cmd/ and locales/.
 //
 // Every file is kept, including the ones the current build excludes: the text
 // checks looked at all of them, and a file carved out by a build tag is exactly
 // where a rule can hide. Checks that need a coherent package take the in-build
-// subset instead.
+// subset instead. locales/ is mygo's generated catalog package: the GUI
+// imports it, so the type-checker must resolve it like any other package.
 func Load(root string) (*Repo, error) {
 	module, goVersion, err := readGoMod(root)
 	if err != nil {
@@ -66,7 +67,7 @@ func Load(root string) (*Repo, error) {
 	ctx.BuildTags = nil
 
 	r := &Repo{root: root, module: module, goVersion: goVersion, fset: token.NewFileSet()}
-	for _, top := range []string{"internal", "cmd"} {
+	for _, top := range []string{"internal", "cmd", "locales"} {
 		base := filepath.Join(root, top)
 		if _, err := os.Stat(base); err != nil {
 			continue

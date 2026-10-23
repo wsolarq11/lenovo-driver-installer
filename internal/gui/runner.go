@@ -14,6 +14,7 @@ import (
 	"lenovo-driver/internal/app"
 	"lenovo-driver/internal/compare"
 	"lenovo-driver/internal/model"
+	"lenovo-driver/locales"
 )
 
 // viewResult is one refresh outcome applied to the state on the main thread.
@@ -109,7 +110,7 @@ func (r *engineRunner) Refresh(ctx context.Context, osID string, includeBios, sk
 	})
 	view, err := r.app.CompareOSDriverView(ctx, vc, listOsID)
 	if err != nil {
-		r.logf("ERROR", "驱动对比失败: "+err.Error())
+		r.logf("ERROR", locales.CompareFailed(err.Error()))
 		return
 	}
 	result := viewResult{
@@ -120,7 +121,7 @@ func (r *engineRunner) Refresh(ctx context.Context, osID string, includeBios, sk
 	}
 	r.notify(func(s *state) { s.applyExport(&result) })
 	r.loadPlan()
-	r.logf("INFO", "已加载 "+itoa(len(result.Rows))+" 行驱动列表，来自 "+osLabelFor(vc.OsList, listOsID))
+	r.logf("INFO", locales.RowsLoaded(itoa(len(result.Rows)), osLabelFor(vc.OsList, listOsID)))
 }
 
 // loadPlan reads the engine's plan artifact into the read-only plan pane. A
@@ -142,14 +143,14 @@ func (r *engineRunner) resolve(ctx context.Context, osID string, includeBios, sk
 	opts := &app.Options{IncludeBios: includeBios, SkipHashCheck: skipHashCheck}
 	vc, code := r.app.ResolveRuntime(ctx, opts)
 	if code != 0 {
-		r.logf("ERROR", "运行时解析失败，请查看日志。")
+		r.logf("ERROR", locales.ResolveFailed())
 		return nil, "", errEngineFailed
 	}
 	listOsID := vc.CurrentSystemOsID
 	if osID != "" {
 		target := compare.ResolveTargetOsEntry(vc.OsList, osID)
 		if target == nil {
-			r.logf("ERROR", "无法从联想 OS 列表解析 OSID "+osID)
+			r.logf("ERROR", locales.OsidUnresolved(osID))
 			return nil, "", errEngineFailed
 		}
 		listOsID = target.OSID
@@ -171,26 +172,26 @@ func (r *engineRunner) Install(ctx context.Context, osID string, req installRequ
 	}
 	view, err := r.app.CompareOSDriverView(ctx, vc, listOsID)
 	if err != nil {
-		r.logf("ERROR", "驱动对比失败: "+err.Error())
+		r.logf("ERROR", locales.CompareFailed(err.Error()))
 		return
 	}
 	selected, code := r.app.SelectByCodes(vc, view, strings.Join(req.codes, ","))
 	if code != 0 {
-		r.logf("ERROR", "选中的驱动码与当前列表不匹配。")
+		r.logf("ERROR", locales.CodesMismatch())
 		return
 	}
 	if req.downloadOnly {
 		vc.Opts.DownloadOnly = true
 	}
 	if err := r.app.InstallSelected(ctx, vc, selected, view.Source, listOsID); err != nil {
-		r.logf("ERROR", "安装失败: "+err.Error())
+		r.logf("ERROR", locales.InstallFailed(err.Error()))
 		return
 	}
 	if req.downloadOnly {
-		r.logf("INFO", "驱动下载任务完成。")
+		r.logf("INFO", locales.DownloadDone())
 		return
 	}
-	r.logf("INFO", "驱动下载/安装任务完成。")
+	r.logf("INFO", locales.InstallDone())
 	r.offerRollbacks(ctx)
 }
 
@@ -231,10 +232,9 @@ func openRollbackConfirm(s *state, offers []app.PendingOffer) {
 	}
 	message := "以下驱动安装后检测到设备问题，可回退到安装前的驱动程序：\n\n" +
 		strings.Join(lines, "\n\n") + "\n\n" +
-		"说明：问题码为本机实测；「由本次安装导致」为时间相关性推断，非直接测量。" +
-		"回退会先回退驱动程序，无备份时重装旧 INF，不删除驱动包。是否执行？"
+		locales.RollbackNote()
 	s.Confirm = &confirmDialog{
-		Title:   "回退确认",
+		Title:   locales.RollbackTitle(),
 		Message: message,
 		Confirm: func() { s.dispatch(dispatchRequest{kind: runRollback, install: installRequest{codes: codes}}) },
 	}
@@ -248,21 +248,21 @@ func (r *engineRunner) Rollback(ctx context.Context, codes []string) {
 	}
 	defer r.done()
 	if code := r.app.RunRollback(ctx, strings.Join(codes, ",")); code != 0 {
-		r.logf("ERROR", "回退任务失败，请查看日志。")
+		r.logf("ERROR", locales.RollbackFailed())
 		return
 	}
-	r.logf("INFO", "回退任务完成，请刷新列表查看结果。")
+	r.logf("INFO", locales.RollbackDone())
 }
 
 // OpenPlan opens the engine's plan file in the default editor. The plan path
 // comes from the engine itself, never re-derived on the GUI side.
 func (r *engineRunner) OpenPlan() {
 	if _, err := os.Stat(r.app.PlanPath); err != nil {
-		r.logf("INFO", "计划文件尚未生成。")
+		r.logf("INFO", locales.PlanNotReady())
 		return
 	}
 	if err := exec.Command("rundll32", "url.dll,FileProtocolHandler", r.app.PlanPath).Start(); err != nil {
-		r.logf("ERROR", "无法打开计划文件: "+err.Error())
+		r.logf("ERROR", locales.PlanOpenFailed(err.Error()))
 	}
 }
 

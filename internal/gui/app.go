@@ -14,6 +14,8 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+
+	"lenovo-driver/locales"
 )
 
 // Run dispatches on the GUI flag: with it, the process is the desktop front
@@ -87,9 +89,16 @@ func runWindow(args []string) int {
 	})
 	r.Serve(s)
 
+	// The app is the handler of lenovo-driver:// URLs for the current user;
+	// registering again is cheap, so it happens on every launch. The scheme
+	// itself is declared in mygo.json (urlSchemes) for `mygo build`.
+	if err := mygo.App.RegisterURLScheme(urlScheme); err != nil {
+		fmt.Fprintln(os.Stderr, "WARN: url scheme registration failed:", err)
+	}
+
 	mygo.App.WhenReady(func() {
 		win = mygo.NewWindow(mygo.WindowOptions{
-			Title:  "联想驱动安装器",
+			Title:  locales.AppTitle(),
 			Width:  1240,
 			Height: 760,
 			Content: ui.View(func(c *ui.Context) {
@@ -116,10 +125,18 @@ func runWindow(args []string) int {
 			OpenPlan: func() { s.dispatch(dispatchRequest{kind: runOpenPlan}) },
 			Quit:     quit,
 		}); err != nil {
-			r.logf("WARN", "托盘图标创建失败: "+err.Error())
+			r.logf("WARN", locales.TrayFailed(err.Error()))
 		}
 		// Auto-refresh on launch so the header never sits on the placeholder.
 		go r.Refresh(context.Background(), "", s.IncludeBios, s.SkipHashCheck)
+		// Deep links: lenovo-driver://audit?osid=248 refreshes the list for
+		// that OS; lenovo-driver://audit refreshes for the current one. The
+		// subscription starts after the window exists, the only place a
+		// dispatched job can be rendered into.
+		mygo.App.OnOpenURL(func(u string) {
+			osid := deeplinkOSID(u)
+			go r.Refresh(context.Background(), osid, s.IncludeBios, s.SkipHashCheck)
+		})
 	})
 
 	if err := mygo.App.Run(); err != nil {

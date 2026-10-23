@@ -8,6 +8,8 @@ import (
 	_ "embed"
 
 	"github.com/egoist/mygo"
+
+	"lenovo-driver/locales"
 )
 
 //go:embed resources/tray.png
@@ -28,11 +30,11 @@ func newTray(actions trayActions) (*mygo.Tray, error) {
 	return mygo.NewTray(mygo.TrayOptions{
 		ID:      "lenovo-driver",
 		Icon:    trayIcon,
-		ToolTip: "联想驱动安装器",
+		ToolTip: locales.AppTitle(),
 		Menu: mygo.NewMenu([]*mygo.MenuItem{
-			{Label: "显示窗口", Click: func(*mygo.MenuItem, *mygo.Window) { actions.ShowWindow() }},
-			{Label: "刷新驱动列表", Click: func(*mygo.MenuItem, *mygo.Window) { actions.Refresh() }},
-			{Label: "打开计划文件", Click: func(*mygo.MenuItem, *mygo.Window) { actions.OpenPlan() }},
+			{Label: locales.TrayShowWindow(), Click: func(*mygo.MenuItem, *mygo.Window) { actions.ShowWindow() }},
+			{Label: locales.TrayRefresh(), Click: func(*mygo.MenuItem, *mygo.Window) { actions.Refresh() }},
+			{Label: locales.TrayOpenPlan(), Click: func(*mygo.MenuItem, *mygo.Window) { actions.OpenPlan() }},
 			mygo.Separator(),
 			{Role: mygo.RoleQuit},
 		}),
