@@ -5,157 +5,143 @@
 
 ## 1. 本会话落地了什么
 
-五个提交：一个主体重构，四个 CI 修复（后者是让前者能上 CI 的过程）。
+**主题：桌面壳从 PowerShell/WPF 迁移到 mygo 原生 UI，并把 mygo 的完整形态做完。**
+
+九个提交，全部已推送到 `origin/main`，CI 双宿主全绿。
 
 | 提交 | 内容 |
 | --- | --- |
-| `dbb860e` | 主体重构：抽出 `internal/ledger`；`model.LocalEvidence` 改为密封联合；四个闭集改为枚举；`app`/`audit`/`compare` 拆文件；门禁规则改按函数定位；编码规范搬进 `docs/spec/coding/` |
-| `9633fdc` | CI：失败时把门禁输出尾部写进 step summary（job 日志要 admin token，summary 公开可读） |
-| `b2f2c6a` | CI：在 setup-go 步骤设 `GOTOOLCHAIN`（步骤级作用域，未生效，见 §4.1） |
-| `723fee5` | CI：`GOTOOLCHAIN` 移到 job 级，run 54 双宿主全绿 |
+| `7baaa0f` | 主体迁移：删 `wpf/` + 入口 ps1 + wpf bat；新建 `internal/gui`（mygo 原生 UI，引擎嵌入同进程）；`-Gui` 单一 UAC 入口；`internal/app/gui.go` 引擎出口门面 |
+| `3027d4e` | 清掉引入 mygo 后已不成立的 "stdlib-only" 声明 |
+| `8a70fa7` | `install_lenovo_drivers_gui.bat`：GUI 启动器接上共享的陈旧引擎重建规则 |
+| `afd5414` | 性能：`resolveRuntime` 网络腿与本地盘点腿并行（5.6s→3.6s）；GUI 两段渲染（首帧 ~1s） |
+| `f2bf970` | 阶段 1：托盘（关闭到托盘）、行右键菜单、剪贴板复制 + toast、计划文件只读页（code editor） |
+| `0c6e79b` | 阶段 2：`mygo.json`；`locales/zh-Hans.json` 71 条消息全部接管 GUI 字符串；`lenovo-driver://audit?osid=N` 深链 |
+| `dc6f27f` | 阶段 3：`mygo build` 产 exe + NSIS 安装器；签名更新档 + manifest；`release.yml`；两份决策记录 |
+| `dc1e485` | 全仓整洁：删转发层/死字段/死函数，合并重复的选择策略，catalog 无死 key |
+| `82426e8` | `mygo.json` 的更新源仓库名修正为真实的 `wsolarq11/...` |
 
-CI 状态：**run 54（`723fee5`）两个宿主（pwsh 7 / Windows PowerShell 5.1）均 success。**
+**CI 状态**：run `39986622133`（`82426e8`）与 `39986495524`（`dc1e485`）两个宿主（pwsh 7 /
+Windows PowerShell 5.1）均 `success`。
+本地门禁 `scripts/verify.ps1`：**58 步全绿**（原 57 步 + 新增的更新检查规则）。
 
-### 1.1 `model.LocalEvidence` 是密封联合
+## 2. 现在的形状
 
-```go
-type LocalEvidence struct {
-    kind     LocalEvidenceKind
-    version  string
-    versions []string
-}
+```text
+cmd/lenovo-driver          单一入口：-Gui 分发到 internal/gui，否则 CLI
+internal/gui               mygo 原生 UI 壳
+  app.go                   -Gui/-GuiElevated 分发、UAC 提权、窗口装配、托盘接线
+  runner.go                引擎调用（后台 goroutine）+ 两段渲染 + 托盘/更新/回滚弹窗
+  state.go                 状态、行投影、安装集目标解析、确认对话框
+  view.go                  状态→视图纯函数（表格/页签/日志/对话框/右键菜单）
+  tray.go                  托盘图标与菜单
+  update.go                更新检查（只能从托盘菜单进）
+  deeplink.go              lenovo-driver:// URL 解析
+internal/app/gui.go        GUI 用的引擎出口门面（ResolveRuntime/SelectByCodes/RunRollback/...）
+locales/                   mygo generate 产出的 catalog 访问器（生成代码，随仓库提交）
+mygo.json                  mygo 项目配置（名字/标识/版本/URL scheme/更新源/i18n）
+resources/icon.png         mygo build 的应用图标源
 ```
 
-五个状态，各有构造器，载荷不可导出，**零值 = `Unobserved`**：
+依赖方向：`cmd → gui → app`。引擎 12 个包**零 mygo 依赖**；mygo 只在 `internal/gui` 和 `locales` 里。
 
-| 状态 | 构造器 | 含义 |
-| --- | --- | --- |
-| `Unobserved` | `NotObserved()` | 零值。本机什么都没测到 |
-| `Version` | `ObservedVersion(v)` | 测得唯一版本；空串会退化为 `Unobserved` |
-| `Absent` | `ObservedAbsence()` | 匹配到设备但它没有绑定驱动 —— 唯一能推出 `Not installed` 的状态 |
-| `Conflicted` | `ObservedConflict(vs)` | 多设备版本不一致；≤1 个值会退化，不会造出矛盾 |
-| `Provisioned` | `ObservedProvisioning()` | Windows 持有预置包，既不证明装了也不证明没装 |
+## 3. 立即可用的入口
 
-判据（`invariants.md` §4.2）：`Not installed` 只由 `Absent` 产生；其余三态一律 `Unknown`（undetermined），全部挡在自动安装集之外。
-
-### 1.2 同类已收编的枚举
-
-| 类型 | 零值 | 说明 |
-| --- | --- | --- |
-| `bindingVerdict` | `bindingUndetected` | 装后复核结论；零值不确认成功 |
-| `causalBasis` | `causalNone` | 回退因果基底；零值不构成归因 |
-| `model.EvidenceBasis` | `BasisUndetermined` | 事实分级；零值不冒充测量 |
-| `installOutcome` | `outcomeFailed` | 安装结果；零值不是成功 |
-
-### 1.3 顺手修掉的真实缺陷（每条都先复现再修）
-
-1. 多设备版本冲突被拼成 `"a, b"`，解析失败后被解释为"版本无法解析"——冲突是测量结果，不是解析失败。
-2. 无设备匹配时判 `Not installed` 并**进入自动安装集**——依据是证据缺失。这是最严重的一条。
-3. 冲突驱动的来源审计拿拼接串比对，历史与设备证据全部失配，把"有证据"报成"无证据"。
-4. `Display()` 的散文（`not detected`、`a, b`）写进账本 `VerifiedVersion`/`BeforeVersion`——散文进了版本列。
-5. `candidateVersions` 的散文兜底：散文能与账本里同名散文匹配，**凭空产出"已由本工具安装"的归因**。
-
-第 1、3、5 条是同族：一个字符串承载了多个认识论状态。第 4、5 条是我上一轮把 `LocalVersion` 改成展示投影时引入的回归。
-
-## 2. 门禁现状
-
-`scripts/verify.ps1`：**63 步**，本地双宿主（pwsh 7 / Windows PowerShell 5.1）全绿。
-
-新增规则（每条都有红/绿两向测试）：
-
-- `the coding conventions have one tracked authority`
-- `local evidence is a closed union`
-- `ledger version columns hold measured versions`
-- `the source audit matches every measured version`
-
-原有规则中被**改按函数定位**的（原先钉文件名，拆包后会静默失效）：`automatic install set excludes downgrade...`、`rows dropped before selection are reported`、`local newer is not logged as an anomaly`、`one comparison primitive...`、`a run reports only what the recheck confirmed`、`the behavior doc names the flags...`。
-
-行数上限只有一处声明：`scripts/verify.ps1` 的 `$script:ProdFileLineLimit = 400`。所有生产 Go 文件当前都在 400 行以内。
-
-## 3. 未闭合事项（按优先级）
-
-### 3.1 CI 已全绿（run 54）
-
-run 51/52/53 红的根因均为 runner 预装 go1.27.3 ≠ go.mod 钉的 go1.27.2；`723fee5` 把 `GOTOOLCHAIN` 移到 job 级后，run 54（`723fee5`）**双宿主 success**。本地干净克隆双宿主也全绿（63 步）。
-
-后续查 CI 状态的命令（`gh` keyring 已失效，git 凭据可用）：
-
-```bash
-TOKEN=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill | grep '^password=' | cut -d= -f2)
-curl -s --ssl-no-revoke -H "Authorization: token $TOKEN" \
-  "https://api.github.com/repos/wsolarq11/lenovo-driver-installer/actions/runs?per_page=1" \
-  | python -c "import json,sys; r=json.load(sys.stdin)['workflow_runs'][0]; print(r['run_number'], r['head_sha'][:7], r['status'], r['conclusion'])"
+```bat
+install_lenovo_drivers_gui.bat                        :: 开发期 GUI（自动重建 bin\ 引擎）
+install_lenovo_drivers.bat                            :: CLI
+build\windows-amd64\联想驱动安装器.exe -Gui            :: mygo build 产物（带图标）
+go run github.com/egoist/mygo/cmd/mygo@v0.6.2 build -platform windows/amd64 -o build
 ```
 
-失败时拉日志（**先拉日志再动手，run 51→53 烧了三轮，每一轮的根因日志第一次就能看到**）：
+发布：`git tag v0.8.0 && git push --tags` → `release.yml` 构建签名并建 draft release。
+**前提**：仓库 secret `MYGO_UPDATER_PRIVATE_KEY` 必须存在，否则只产安装器（不产更新档）。
 
-```bash
-curl -s --ssl-no-revoke -H "Authorization: token $TOKEN" -L \
-  "https://api.github.com/repos/wsolarq11/lenovo-driver-installer/actions/jobs/<job_id>/logs" -o log.txt
-grep -E 'FAIL |Verify summary' log.txt
-```
+## 4. 未闭合的事（按优先级）
 
-### 3.2 WPF 层从未被审查
+### 4.1 更新通道还没有真实 release
 
-`wpf/`（741 行）与 `lenovo_driver_wpf.ps1`（124 行）在本轮重构中**一次都没碰过**。可能存在的同类问题：
+`mygo.json` 的 `updates.github` 已指向真实仓库，但**一个 release 都还没发**。因此托盘菜单的
+"检查更新"在真机上会弹 "检查更新失败"（`Updater.Check` 拉不到 manifest）。这是**有意的诚实
+行为**（不假装检查过），不是 bug。要闭合：配置 secret → 打第一个 tag → 等 draft release 出现。
 
-- PowerShell 里是否有闭集字符串在裸比较
-- 渲染层是否把"未观测"折叠成"正常"（违反不变量 3 的展示侧）
-- 它自己重算了 artifact 路径（`rollbackOfferFileName` 等），与引擎是否仍一致
+### 4.2 没有 Authenticode 代码签名证书
 
-### 3.3 尚未穷尽的结构审查
+更新档是 Ed25519 签名的（mygo 自己的信任链），但 exe/安装器本身没有 Authenticode。SmartScreen
+会对安装器报警。**对外分发前必须解决**，见 `docs/decisions/distribution-unfrozen.md` §3。
 
-本轮每次宣布"审完了"都能再找出东西，说明审法是抽样的。已审：值如何流进决策与持久化。未审：
+### 4.3 D0 仍未回答
 
-- 错误分支的错误消息是否把推断说成事实
-- `api` 层响应归一化里是否还有字符串形态的重载（如 `AuditCategory` 仍是 `type X string`，未枚举化）
-- `AuditCategory` / `rollbackOffer.State` 特意保留为字符串：前者走 JSON 契约与展示，后者只写不读。若要改，先确认没有门禁/测试/golden 依赖它们的字符串形态。
+`distribution-frozen.md` 提的问题——"分发后它做哪一件 Vantage/Windows Update 做不到、而目标
+用户真正需要的事？"——**至今没有答案**。解冻的理由是"要把壳做全"，不是"问题被解决了"。
+新会话不要假装这个问题已经闭合；`distribution-unfrozen.md` §1 明确写了这一点。
 
-## 4. 踩过的坑（不要再踩）
+### 4.4 gui 包覆盖率 39.9%（下限 35）
 
-### 4.1 CI 的 Go 补丁版本会漂（本会话烧了三轮才修对）
+余量不大。新增 GUI 逻辑时要同步加 `ui.NewTester` 视图测试，否则容易跌破下限。
 
-runner 镜像升级到预装 `go1.27.3`，而 `go.mod` 钉 `go1.27.2`。`setup-go` 的 `go-version-file` 只解析 `go 1.27` 这一行，保留了预装补丁版。门禁的 `the running Go toolchain is the one the module pins` 正确地失败了——这不是 bug，是它在工作。
+### 4.5 托盘"退出"与关闭的语义
 
-修法走了两步错一步对：
+现在的行为：点窗口关闭 → 隐藏到托盘；托盘菜单"退出" → 真退出。首次启动时窗口**显式
+`Show()`**（曾经因为漏掉它 + 关闭时隐藏，导致 `mygo build` 产物首次启动窗口不可见——这个
+坑已经踩过，别再退回不显式 Show 的写法）。
 
-1. `b2f2c6a`：把 `GOTOOLCHAIN: go1.27.2` 写在 **setup-go 步骤的 `env:`** —— 无效。run 53 的日志显示 setup-go 进程里 `go version` 报 go1.27.2，而后面 verify 步骤的 `go env GOVERSION` 仍是 go1.27.3。**步骤级 `env:` 只进该步骤的进程。**
-2. `723fee5`：移到 **job 级 `env:`**，所有步骤继承。
+## 5. 不要再踩的坑
 
-教训：GitHub Actions 的环境变量作用域与 Go 工具链切换机制（`GOTOOLCHAIN` 只在发起 go 命令的进程生效）叠加后，"在哪里设"比"设什么"更重要。判断依据：`invariants.md` §1——覆盖率下限只在钉死的编译器上有意义。
+### 5.1 `mygo build` 的 `main` 必须是模块路径
 
-### 4.2 `gh` 不可用，但 git 凭据可用
+`mygo.json` 的 `"main": "cmd/lenovo-driver"` 会被 Go 当成**标准库候选**（`cmd/` 与 GOROOT 的
+`cmd/` 冲突），报 `package cmd/lenovo-driver is not in std`，即使 `go list ./cmd/lenovo-driver`
+正常。必须写 `"main": "lenovo-driver/cmd/lenovo-driver"`。
 
-- `gh auth status` 报 keyring token 无效；`gh auth refresh` 因 TLS 拦截失败
-- `git push` 正常，`git credential fill` 能取出有效 token（40 字符）
-- 直接用该 token 调 API 返回 200
+### 5.2 `locales/` 必须进 gate 的扫描根
 
-本地 curl 的 TLS 链不被信任，必须加 `--ssl-no-revoke`；PowerShell 用 `-SkipCertificateCheck`（仅 pwsh 7 支持）。
+`internal/gate` 的 `Load` 原本只走 `internal/` 和 `cmd/`。`internal/gui` import
+`lenovo-driver/locales` 后，type-checker 报 `no source for in-module import`。已加入 `locales`
+（见 `gate.go` 的 `for _, top := range []string{...}`）。新增顶层 Go 包时同样要加。
 
-### 4.3 `.trellis/` 被 gitignore，不能作为权威
+### 5.3 PowerShell 脚本不能带非 ASCII
 
-本会话已把编码规范搬到 `docs/spec/coding/`（受版本控制），`.trellis/spec/` 只剩指针桩。**已跟踪的文档不要指向 `.trellis/` 下的任何路径**——克隆里不存在。门禁 `the coding conventions have one tracked authority` 会检查这条，包括"被忽略的树里不得出现规范副本"。
+Windows PowerShell 5.1 按 ANSI 码页解码 BOM-less UTF-8。截图/诊断用的临时 ps1 带中文，会
+报"字符串缺少终止符"。临时脚本一律用纯 ASCII（或加 BOM）。
 
-### 4.4 提交信息与 CI 触发顺序
+### 5.4 `ui.NewTester` 的 ListState 不能跨 Tester 复用
 
-`AGENTS.md` 规定：需要触发 CI 时一律先转公开再跑，禁止先私有跑、失败、再转公开重跑。工作流里出现私有可见性设置会被 `the CI trigger is public` 当场判红。
+一个 `ui.ListState` 被两个 List 显示会 panic（`a ListState shown by two Lists`）。写视图测试
+时，切换页签要新建 state，不能复用已渲染过的那个。
 
-## 5. 上手命令
+### 5.5 GUI 里的中文必须进 catalog
 
-```powershell
-# 内循环
-.\scripts\dev.ps1
+门禁没强制这条，但 `dc1e485` 已把最后一批硬编码中文字符串（OS 下拉标签、机器标题、回滚
+对话框详情）搬进 catalog。新增字符串请加到 `locales/zh-Hans.json` 并重新
+`go run github.com/egoist/mygo/cmd/mygo@v0.6.2 generate`（生成的 `catalog_gen.go` 要一起提交）。
 
-# 全量门禁（双宿主都跑一遍才算数）
-pwsh -NoProfile -File .\scripts\verify.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify.ps1
+### 5.6 更新检查不许变成定时轮询
 
-# 看某一步的细节
-pwsh -NoProfile -File .\scripts\verify.ps1 2>&1 | Select-String -Pattern 'FAIL|Verify summary'
-```
+门禁步骤 `the update check is operator-initiated, never timed` 会挡：`Updater.Check` 只能从
+`checkForUpdates` 调用，且 `internal/gui` 生产文件不得出现 `NewTicker`/`NewTimer`/`Tick`/`AfterFunc`。
+这是"零隐藏联网"不变量在分发解冻后的唯一保底。
 
-改代码前先读 `docs/spec/coding/index.md` 与 `docs/spec/architecture.md` §2.1（包分类的唯一表）。
+### 5.7 git 二进制有坑
 
-## 6. 一句话
+`/ucrt64/bin/git`（PATH 里的默认）连不上 github.com（`Could not connect ... after 33 ms`），
+而 `/c/Program Files/Git/cmd/git.exe` 正常。push 失败时先换这个二进制再怀疑网络。
 
-结构已收敛到"证据状态由类型决定、每个决策由一个原语决定"，**CI 在 run 54 双宿主全绿**；剩下的是 WPF 层还没被同样地审过，以及错误消息与 `AuditCategory` 等残余字符串闭集。
+### 5.8 删掉的东西别再复活
+
+`wpf/`、`lenovo_driver_wpf.ps1`、`install_lenovo_drivers_wpf.bat`、`scripts/fix-bom.ps1` 已被
+门禁步骤 `Legacy PowerShell files removed` 钉死为"不得存在"。理由：第二个运行时壳会让门禁
+看不见它。
+
+## 6. 需要读的文档
+
+| 想知道 | 读 |
+| --- | --- |
+| 为什么解冻分发、代价是什么 | `docs/decisions/distribution-unfrozen.md` |
+| 为什么不用 frontend/audio/plugins/launchers | `docs/decisions/mygo-modules-declined.md` |
+| 原来的冻结结论（历史） | `docs/decisions/distribution-frozen.md` |
+| 分层与数据流 | `docs/spec/architecture.md` |
+| 六条不变量及其门禁强制点 | `docs/spec/invariants.md` |
+| 编码约定 | `docs/spec/coding/` |
+| 怎么开发/跑门禁 | `docs/howto/develop.md` |
+| 怎么用 | `docs/howto/run.md` |
