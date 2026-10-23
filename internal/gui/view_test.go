@@ -313,3 +313,16 @@ func TestLogPaneKeepsItsBand(t *testing.T) {
 		t.Errorf("log lines must stack downward: one at %.0f, two at %.0f", first.Y, second.Y)
 	}
 }
+
+// Closing the window hides it to the tray; a quit must be allowed through.
+// The tray's Quit role calls App.Quit, which reaches the same OnClose handler
+// as the operator's X button, so getting this backwards strands the process
+// with no window and no visible way back.
+func TestQuitIsNotSwallowedByCloseToTray(t *testing.T) {
+	if !closeHidesWindow(false) {
+		t.Error("a user close must hide the window to the tray")
+	}
+	if closeHidesWindow(true) {
+		t.Error("a quit must not be turned into a hide: OnBeforeQuit already marked it")
+	}
+}

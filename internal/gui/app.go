@@ -171,7 +171,7 @@ func runWindow(args []string) int {
 		// Close-to-tray: a user close hides the window and the tray keeps the
 		// app reachable. A quit passes through, see OnBeforeQuit above.
 		win.OnClose(func(e *mygo.CloseEvent) {
-			if !quitting {
+			if closeHidesWindow(quitting) {
 				e.PreventDefault()
 				win.Hide()
 			}
@@ -202,6 +202,13 @@ func runWindow(args []string) int {
 // quitting distinguishes a real quit from a window close that only hides to
 // the tray. OnBeforeQuit sets it before mygo closes any window.
 var quitting = false
+
+// closeHidesWindow reports whether a window close is the operator hiding the
+// window rather than the app quitting. The two are the same event to mygo; a
+// quit means the close must go through, or App.Quit() is cancelled by the very
+// handler that sends the window to the tray and the process outlives its last
+// window with no way back.
+func closeHidesWindow(quitting bool) bool { return !quitting }
 
 // win is the window the notify hook posts to. mygo windows are created on the
 // main thread and process updates there; the single window is the app's whole
