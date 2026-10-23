@@ -41,10 +41,16 @@ jobs:
           go run github.com/egoist/mygo/cmd/mygo@v0.6.2 build -platform windows/amd64 -o build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem build/windows-amd64 | ForEach-Object { Write-Host $_.Name }
-      - name: Publish the GitHub release (draft)
+      - name: Publish the GitHub release
         shell: pwsh
+        # The release is published, not drafted: the build's update feed is
+        # releases/latest/download/update-windows-amd64.json, and GitHub
+        # resolves "latest" to published releases only. A draft would upload
+        # the signed manifest where no installed app can fetch it, which
+        # looks like a working update channel and is not one.
+        #
         # gh release create fails when the release exists; a re-run of a
-        # tagged build then uploads into the existing draft instead.
+        # tagged build then uploads into the existing release instead.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -52,7 +58,7 @@ jobs:
           $files = Get-ChildItem build/windows-amd64 -File | ForEach-Object { $_.FullName }
           gh release view $tag 2>$null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $tag $files --draft --title $tag --generate-notes
+            gh release create $tag $files --title $tag --generate-notes
           } else {
             gh release upload $tag $files --clobber
           }
